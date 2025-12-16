@@ -1,5 +1,5 @@
 import { useState, FormEvent, ChangeEvent, useEffect } from 'react';
-import { Player, updatePlayer, fileToBase64, UpdatePlayerData } from '../api/players';
+import { Player, updatePlayer, UpdatePlayerData } from '../api/players';
 import ImagePositioner from './ImagePositioner';
 
 interface EditPlayerModalProps {
@@ -62,7 +62,6 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
         // Calculate the crop area
         // We want to crop a square from the image based on the position
         const minDimension = Math.min(img.width, img.height);
-        const scale = minDimension / outputSize;
         
         // Position is in percentage (0-100), where 50 is center
         // Convert to offset from center

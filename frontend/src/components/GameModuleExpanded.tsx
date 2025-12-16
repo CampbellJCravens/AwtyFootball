@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Game, Goal } from '../api/games';
+import { fetchGame, updateGame, Goal } from '../api/games';
 import { incrementGuestCount } from '../api/settings';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';

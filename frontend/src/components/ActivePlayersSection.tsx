@@ -1,5 +1,4 @@
 import { Player } from '../api/players';
-import GamePlayerCard from './GamePlayerCard';
 
 interface ActivePlayersSectionProps {
   players: Player[];
@@ -12,7 +11,7 @@ interface ActivePlayersSectionProps {
   isAdmin?: boolean; // Whether user is admin (can modify games)
 }
 
-export default function ActivePlayersSection({ players, playerTeams, onTeamSelect, onAddGuest, onRemoveFromTeam, onSwapTeam, onGoalClick, isAdmin = true }: ActivePlayersSectionProps) {
+export default function ActivePlayersSection({ players, playerTeams, onTeamSelect: _onTeamSelect, onAddGuest, onRemoveFromTeam, onSwapTeam, onGoalClick, isAdmin = true }: ActivePlayersSectionProps) {
   const colorTeamPlayers = players
     .filter(player => playerTeams[player.id] === 'color')
     .sort((a, b) => a.name.localeCompare(b.name));

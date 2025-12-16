@@ -1,5 +1,5 @@
 import { useState, FormEvent, ChangeEvent } from 'react';
-import { createPlayer, CreatePlayerData, fileToBase64 } from '../api/players';
+import { createPlayer, CreatePlayerData } from '../api/players';
 import ImagePositioner from './ImagePositioner';
 
 interface PlayerFormProps {
@@ -51,7 +51,6 @@ export default function PlayerForm({ onSubmitSuccess }: PlayerFormProps) {
         // Calculate the crop area
         // We want to crop a square from the image based on the position
         const minDimension = Math.min(img.width, img.height);
-        const scale = minDimension / outputSize;
         
         // Position is in percentage (0-100), where 50 is center
         // Convert to offset from center
