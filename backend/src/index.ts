@@ -1,0 +1,88 @@
+/**
+ * Awty Football Backend API
+ * 
+ * SETUP INSTRUCTIONS:
+ * 
+ * 1. Install dependencies:
+ *    npm install
+ * 
+ * 2. Set up environment variables:
+ *    - Copy .env.example to .env
+ *    - Update DATABASE_URL with your PostgreSQL connection string
+ *    - Example: DATABASE_URL="postgresql://user:password@localhost:5432/awty_football?schema=public"
+ * 
+ * 3. Run database migrations:
+ *    npm run prisma:migrate
+ *    (This will create the database schema and generate the Prisma client)
+ * 
+ * 4. Start the development server:
+ *    npm run dev
+ *    (Server will run on http://localhost:4000 by default)
+ * 
+ * API ENDPOINTS:
+ * - POST   /api/players    - Create a new player
+ * - GET    /api/players    - Get all players (ordered by createdAt DESC)
+ * - GET    /api/players/:id - Get a single player by ID
+ * - PATCH  /api/players/:id - Update a player
+ * - DELETE /api/players/:id - Delete a player by ID
+ */
+
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import { ZodError } from 'zod';
+import { env } from './env';
+import playersRouter from './routes/players';
+import gamesRouter from './routes/games';
+import settingsRouter from './routes/settings';
+
+const app = express();
+
+// Middleware
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true,
+}));
+// Increase body size limit to 10MB for image uploads
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Routes
+app.use('/api/players', playersRouter);
+app.use('/api/games', gamesRouter);
+app.use('/api/settings', settingsRouter);
+
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+});
+
+// Error handling middleware
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof ZodError) {
+    console.error('Validation error:', err.errors);
+    return res.status(400).json({
+      error: 'Validation error',
+      details: err.errors,
+    });
+  }
+
+  console.error('Unhandled error:', err);
+  console.error('Error stack:', err.stack);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: err.message 
+  });
+});
+
+// 404 handler
+app.use((req: Request, res: Response) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+const PORT = env.PORT;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📡 API available at http://localhost:${PORT}/api`);
+});
+

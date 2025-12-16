@@ -1,0 +1,299 @@
+import { useState, useMemo } from 'react';
+import { Player } from '../api/players';
+import { Game } from '../api/games';
+
+interface PlayerStats {
+  player: Player;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  winPercentage: number; // 0-100
+  goals: number;
+  assists: number;
+  score: number;
+}
+
+interface OverallStatsTableProps {
+  players: Player[];
+  games: Game[];
+}
+
+type SortColumn = 'wins' | 'winPercentage' | 'gamesPlayed' | 'goals' | 'assists';
+type SortDirection = 'asc' | 'desc';
+
+export default function OverallStatsTable({ players, games }: OverallStatsTableProps) {
+  const [sortColumn, setSortColumn] = useState<SortColumn>('wins');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // Calculate stats for each player
+  const playerStats = useMemo(() => {
+    const statsMap = new Map<string, PlayerStats>();
+
+    // Initialize stats for all players
+    players.forEach(player => {
+      statsMap.set(player.id, {
+        player,
+        gamesPlayed: 0,
+        wins: 0,
+        losses: 0,
+        winPercentage: 0,
+        goals: 0,
+        assists: 0,
+        score: 0,
+      });
+    });
+
+    // Process each game
+    games.forEach(game => {
+      if (!game.teamAssignments || !game.goals) return;
+
+      const teamAssignments = game.teamAssignments;
+      const goals = game.goals;
+
+      // Count goals by team
+      const colorGoals = goals.filter(g => g.team === 'color').length;
+      const whiteGoals = goals.filter(g => g.team === 'white').length;
+
+      // Determine winner
+      const colorWon = colorGoals > whiteGoals;
+      const whiteWon = whiteGoals > colorGoals;
+
+      // Track which players participated in this game
+      const playersInGame = new Set<string>();
+
+      // Process team assignments
+      Object.entries(teamAssignments).forEach(([playerId, team]) => {
+        // Skip if player not found (guests are now regular players, so they should be in the list)
+        if (!statsMap.has(playerId)) {
+          return;
+        }
+
+        const stats = statsMap.get(playerId)!;
+        stats.gamesPlayed++;
+        playersInGame.add(playerId);
+
+        // Count wins/losses
+        if (team === 'color' && colorWon) {
+          stats.wins++;
+        } else if (team === 'color' && whiteWon) {
+          stats.losses++;
+        } else if (team === 'white' && whiteWon) {
+          stats.wins++;
+        } else if (team === 'white' && colorWon) {
+          stats.losses++;
+        }
+      });
+
+      // Process goals and assists
+      goals.forEach(goal => {
+        // Count goals
+        if (statsMap.has(goal.scorerId)) {
+          const stats = statsMap.get(goal.scorerId)!;
+          stats.goals++;
+          // Only count GP if they weren't already counted via team assignment
+          if (!playersInGame.has(goal.scorerId)) {
+            stats.gamesPlayed++;
+            playersInGame.add(goal.scorerId);
+          }
+        } else {
+          // Player should exist in the players list (guests are now regular players)
+          // Skip if player not found
+          return;
+        }
+
+        // Count assists
+        if (goal.assisterId) {
+          if (statsMap.has(goal.assisterId)) {
+            const stats = statsMap.get(goal.assisterId)!;
+            stats.assists++;
+            // Only count GP if they weren't already counted
+            if (!playersInGame.has(goal.assisterId)) {
+              stats.gamesPlayed++;
+              playersInGame.add(goal.assisterId);
+            }
+          } else {
+            // Player should exist in the players list (guests are now regular players)
+            // Skip if player not found
+            return;
+          }
+        }
+      });
+    });
+
+    // Calculate scores and win percentages
+    statsMap.forEach(stats => {
+      stats.score = stats.wins + stats.gamesPlayed + stats.goals + stats.assists;
+      // Calculate win percentage: (wins / gamesPlayed) * 100, rounded to 1 decimal
+      if (stats.gamesPlayed > 0) {
+        stats.winPercentage = Math.round((stats.wins / stats.gamesPlayed) * 1000) / 10;
+      } else {
+        stats.winPercentage = 0;
+      }
+    });
+
+    return Array.from(statsMap.values()).filter(stats => stats.gamesPlayed > 0);
+  }, [players, games]);
+
+  // Sort stats
+  const sortedStats = useMemo(() => {
+    const sorted = [...playerStats].sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortColumn) {
+        case 'wins':
+          comparison = a.wins - b.wins;
+          // Tie-breaker: goals, then assists, then games played
+          if (comparison === 0) {
+            comparison = a.goals - b.goals;
+            if (comparison === 0) {
+              comparison = a.assists - b.assists;
+              if (comparison === 0) {
+                comparison = a.gamesPlayed - b.gamesPlayed;
+              }
+            }
+          }
+          break;
+        case 'winPercentage':
+          comparison = a.winPercentage - b.winPercentage;
+          // Tie-breaker: goals, then assists
+          if (comparison === 0) {
+            comparison = a.goals - b.goals;
+            if (comparison === 0) {
+              comparison = a.assists - b.assists;
+            }
+          }
+          break;
+        case 'gamesPlayed':
+          comparison = a.gamesPlayed - b.gamesPlayed;
+          // Tie-breaker: goals, then assists
+          if (comparison === 0) {
+            comparison = a.goals - b.goals;
+            if (comparison === 0) {
+              comparison = a.assists - b.assists;
+            }
+          }
+          break;
+        case 'goals':
+          comparison = a.goals - b.goals;
+          // Tie-breaker: wins
+          if (comparison === 0) {
+            comparison = a.wins - b.wins;
+          }
+          break;
+        case 'assists':
+          comparison = a.assists - b.assists;
+          // Tie-breaker: wins
+          if (comparison === 0) {
+            comparison = a.wins - b.wins;
+          }
+          break;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return sorted;
+  }, [playerStats, sortColumn, sortDirection]);
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('desc');
+    }
+  };
+
+  const SortIcon = ({ column }: { column: SortColumn }) => {
+    if (sortColumn !== column) return null;
+    return (
+      <span className="ml-1">
+        {sortDirection === 'asc' ? '↑' : '↓'}
+      </span>
+    );
+  };
+
+  const getInitial = (name: string) => {
+    return name.charAt(0).toUpperCase();
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-b-2 border-gray-600">
+            <th className="text-left py-3 px-4 font-semibold text-gray-300">Rank</th>
+            <th className="text-left py-3 px-4 font-semibold text-gray-300">Player</th>
+            <th 
+              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={() => handleSort('wins')}
+            >
+              Wins <SortIcon column="wins" />
+            </th>
+            <th 
+              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={() => handleSort('winPercentage')}
+            >
+              Win% <SortIcon column="winPercentage" />
+            </th>
+            <th 
+              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={() => handleSort('gamesPlayed')}
+            >
+              GP <SortIcon column="gamesPlayed" />
+            </th>
+            <th 
+              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={() => handleSort('goals')}
+            >
+              Goals <SortIcon column="goals" />
+            </th>
+            <th 
+              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={() => handleSort('assists')}
+            >
+              Assists <SortIcon column="assists" />
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {sortedStats.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="text-center py-8 text-gray-400">
+                No stats available. Play some games first!
+              </td>
+            </tr>
+          ) : (
+            sortedStats.map((stats, index) => (
+              <tr key={stats.player.id} className="border-b border-gray-700 hover:bg-gray-800">
+                <td className="py-3 px-4 text-gray-300 font-medium">{index + 1}</td>
+                <td className="py-3 px-4">
+                  <div className="flex items-center gap-3">
+                    {stats.player.pictureUrl ? (
+                      <img
+                        src={stats.player.pictureUrl}
+                        alt={stats.player.name}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-gray-600 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                        {getInitial(stats.player.name)}
+                      </div>
+                    )}
+                    <span className="font-medium text-gray-100">{stats.player.name}</span>
+                  </div>
+                </td>
+                <td className="py-3 px-4 text-gray-300">{stats.wins}</td>
+                <td className="py-3 px-4 text-gray-300">{stats.winPercentage.toFixed(1)}%</td>
+                <td className="py-3 px-4 text-gray-300">{stats.gamesPlayed}</td>
+                <td className="py-3 px-4 text-gray-300">{stats.goals}</td>
+                <td className="py-3 px-4 text-gray-300">{stats.assists}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+

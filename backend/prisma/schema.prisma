@@ -1,0 +1,40 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id         String   @id @default(uuid())
+  name       String
+  pictureUrl String?
+  team       String?  // "dark" or "white" or null
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Game {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Store game data as JSON
+  // Team assignments: { playerId: "color" | "white" }
+  teamAssignments String? // JSON string of Record<string, "color" | "white">
+  
+  // Goals: Array of { scorerId, assisterId?, timestamp, team }
+  goals String? // JSON string of goal array
+}
+
+model AppSettings {
+  id          String   @id @default("singleton")
+  guestCount  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+}
+
