@@ -24,7 +24,9 @@ Before you begin, ensure you have the following installed:
 
 - **Node.js** (v18 or higher recommended)
 - **npm** or **yarn**
-- **PostgreSQL** (v12 or higher)
+- **PostgreSQL** (v12 or higher) - Required for production
+  - For local development: Install PostgreSQL locally or use Docker
+  - For production: Use a cloud database (Railway, Render, Supabase, etc.)
   - Make sure PostgreSQL is running and accessible
   - You'll need to create a database (or the migration will create it if configured)
 
@@ -165,17 +167,15 @@ Or set the `FRONTEND_URL` environment variable in your backend `.env` file.
 
 ## Database Schema
 
-The `Entry` model has the following structure:
+The app uses PostgreSQL with the following main models:
 
-```prisma
-model Entry {
-  id        String   @id @default(uuid())
-  title     String
-  content   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-```
+- **Player**: Stores player information (name, picture, team)
+- **Game**: Stores game data (team assignments, goals)
+- **User**: Stores authenticated user information
+- **AllowedEmail**: Email allowlist for authentication
+- **AppSettings**: Global app settings (guest count)
+
+See `backend/prisma/schema.prisma` for the complete schema.
 
 ## Troubleshooting
 
@@ -197,14 +197,22 @@ model Entry {
 - Backend: Change `PORT` in `backend/.env`
 - Frontend: Modify `vite.config.ts` or use `npm run dev -- --port 3000`
 
+## Authentication
+
+The app uses Google OAuth for authentication. See `OAUTH_SETUP.md` for setup instructions.
+
+## Deployment
+
+For production deployment, see:
+- `DEPLOYMENT_GUIDE.md` - General deployment guide
+- `PRODUCTION_SETUP.md` - Production setup for awtyfootballclub.com
+
 ## Next Steps
 
-- Add authentication/authorization
-- Implement user-specific entries
-- Add more complex data models
-- Enhance UI with additional features
-- Add unit and integration tests
-- Set up CI/CD pipeline
+- Deploy to production (Railway + Vercel recommended)
+- Set up custom domain (awtyfootballclub.com)
+- Add more features as needed
+- Set up monitoring and error tracking
 
 ## License
 

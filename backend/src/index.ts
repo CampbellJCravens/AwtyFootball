@@ -59,7 +59,8 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
     httpOnly: true,
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' needed for cross-domain in production
+    domain: process.env.NODE_ENV === 'production' ? '.awtyfootballclub.com' : undefined, // Set domain for production
   },
 }));
 

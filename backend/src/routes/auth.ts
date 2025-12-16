@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import passport from 'passport';
 import prisma from '../prisma';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { env } from '../env';
 
 const router = Router();
 
@@ -21,8 +22,7 @@ router.get('/google/callback',
   passport.authenticate('google', { failureRedirect: '/login' }),
   async (req: AuthenticatedRequest, res: Response) => {
     // Successful authentication, redirect to frontend
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.redirect(`${frontendUrl}/?auth=success`);
+    res.redirect(`${env.FRONTEND_URL}/?auth=success`);
   }
 );
 
