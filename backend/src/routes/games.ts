@@ -1,11 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { updateGameSchema, UpdateGameInput } from '../schemas/game';
+import { requireAdmin, requireRegularOrAdmin, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
-// POST /api/games - Create a new game
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+// POST /api/games - Create a new game (admin only)
+router.post('/', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const game = await prisma.game.create({
       data: {},
@@ -17,8 +18,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// GET /api/games - Get all games
-router.get('/', async (req: Request, res: Response) => {
+// GET /api/games - Get all games (authenticated users can view)
+router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const games = await prisma.game.findMany({
       orderBy: {
@@ -40,8 +41,8 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/games/:id - Get a single game
-router.get('/:id', async (req: Request, res: Response) => {
+// GET /api/games/:id - Get a single game (authenticated users can view)
+router.get('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const game = await prisma.game.findUnique({
@@ -66,8 +67,8 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/games/:id - Update game data
-router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
+// PUT /api/games/:id - Update game data (admin only)
+router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     
@@ -119,8 +120,8 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// DELETE /api/games/:id - Delete a game
-router.delete('/:id', async (req: Request, res: Response) => {
+// DELETE /api/games/:id - Delete a game (admin only)
+router.delete('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     await prisma.game.delete({

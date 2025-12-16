@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Player, fetchPlayers, deletePlayer } from './api/players';
 import { Game, fetchGames, createGame, deleteGame } from './api/games';
+import { useAuth } from './contexts/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
 import PlayerForm from './components/PlayerForm';
 import PlayerList from './components/PlayerList';
 import EditPlayerModal from './components/EditPlayerModal';
@@ -11,6 +13,7 @@ import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import Stats from './components/Stats';
 
 function App() {
+  const { user, logout, isAdmin } = useAuth();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,17 +197,20 @@ function App() {
           gameDate={expandedGame.createdAt}
           onClose={handleCloseExpandedGame}
           onPlayerAdded={loadPlayers}
+          isAdmin={isAdmin}
         />
       );
     })()
   ) : (
     <div className="h-full flex flex-col max-w-4xl mx-auto px-4 py-6">
-      <button
-        onClick={handleAddNewGame}
-        className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-500 active:bg-blue-700 transition-colors text-base mb-6 flex-shrink-0"
-      >
-        Add New Game
-      </button>
+      {isAdmin && (
+        <button
+          onClick={handleAddNewGame}
+          className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-600 active:bg-blue-700 transition-colors text-base mb-6 flex-shrink-0"
+        >
+          Add New Game
+        </button>
+      )}
       {gamesError && (
         <div className="mb-6 p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-400">
           <p className="font-medium">Error</p>
@@ -252,6 +258,8 @@ function App() {
                   onClick={() => handleEditGame(game.id)}
                   onDelete={() => handleDeleteGame(game.id)}
                   onDateUpdated={loadGames}
+                  showDelete={isAdmin}
+                  showEditDate={isAdmin}
                 />
               ));
           })()
@@ -284,10 +292,36 @@ function App() {
   ];
 
   return (
-    <div className="h-screen bg-gray-900 flex flex-col">
-      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 sticky top-0 z-20 shadow-sm">
-        <h1 className="text-2xl font-bold text-white">Awty Football</h1>
-      </header>
+    <ProtectedRoute>
+      <div className="h-screen bg-gray-900 flex flex-col">
+        <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 sticky top-0 z-20 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-white">Awty Football</h1>
+            <div className="flex items-center gap-3">
+              {user && (
+                <div className="flex items-center gap-2">
+                  {user.picture && (
+                    <img
+                      src={user.picture}
+                      alt={user.name || user.email}
+                      className="w-8 h-8 rounded-full"
+                    />
+                  )}
+                  <div className="text-right">
+                    <p className="text-sm text-white font-medium">{user.name || user.email}</p>
+                    <p className="text-xs text-gray-400">{user.role === 'admin' ? 'Admin' : 'User'}</p>
+                  </div>
+                  <button
+                    onClick={logout}
+                    className="ml-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
 
       <div className="flex-1 overflow-hidden">
         <Tabs
@@ -320,7 +354,8 @@ function App() {
           itemType="player"
         />
       )}
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }
 

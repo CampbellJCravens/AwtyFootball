@@ -6,9 +6,10 @@ interface PlayerListProps {
   players: Player[];
   onEdit: (player: Player) => void;
   onDelete: (player: Player) => void;
+  showDelete?: boolean; // Only admins can delete
 }
 
-export default function PlayerList({ players, onEdit, onDelete }: PlayerListProps) {
+export default function PlayerList({ players, onEdit, onDelete, showDelete = true }: PlayerListProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredAndSortedPlayers = useMemo(() => {
@@ -51,6 +52,7 @@ export default function PlayerList({ players, onEdit, onDelete }: PlayerListProp
             player={player}
             onEdit={onEdit}
             onDelete={onDelete}
+            showDelete={showDelete}
           />
         ))
       )}

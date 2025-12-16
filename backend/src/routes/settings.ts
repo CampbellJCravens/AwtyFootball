@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
+import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -24,8 +25,8 @@ router.get('/guest-count', async (req: Request, res: Response, next: NextFunctio
   }
 });
 
-// POST /api/settings/increment-guest-count - Increment and return new guest count
-router.post('/increment-guest-count', async (req: Request, res: Response, next: NextFunction) => {
+// POST /api/settings/increment-guest-count - Increment and return new guest count (admin only)
+router.post('/increment-guest-count', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     let settings = await prisma.appSettings.findUnique({
       where: { id: 'singleton' },

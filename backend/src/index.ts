@@ -29,24 +29,46 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import session from 'express-session';
+import passport from 'passport';
 import { ZodError } from 'zod';
 import { env } from './env';
+import './config/passport'; // Initialize passport strategies
 import playersRouter from './routes/players';
 import gamesRouter from './routes/games';
 import settingsRouter from './routes/settings';
+import authRouter from './routes/auth';
 
 const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: env.FRONTEND_URL,
   credentials: true,
 }));
 // Increase body size limit to 10MB for image uploads
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Session configuration
+app.use(session({
+  secret: env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+    httpOnly: true,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    sameSite: 'lax',
+  },
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Routes
+app.use('/api/auth', authRouter);
 app.use('/api/players', playersRouter);
 app.use('/api/games', gamesRouter);
 app.use('/api/settings', settingsRouter);

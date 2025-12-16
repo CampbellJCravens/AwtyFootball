@@ -3,7 +3,9 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
 
 // Get current guest count
 export async function getGuestCount(): Promise<number> {
-  const response = await fetch(`${API_BASE_URL}/settings/guest-count`);
+  const response = await fetch(`${API_BASE_URL}/settings/guest-count`, {
+    credentials: 'include', // Include cookies for authentication
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch guest count');
   }
@@ -18,6 +20,7 @@ export async function incrementGuestCount(): Promise<number> {
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include', // Include cookies for authentication
   });
   if (!response.ok) {
     throw new Error('Failed to increment guest count');

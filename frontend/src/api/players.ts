@@ -24,8 +24,13 @@ export interface UpdatePlayerData {
 
 // Fetch all players
 export async function fetchPlayers(): Promise<Player[]> {
-  const response = await fetch(`${API_BASE_URL}/players`);
+  const response = await fetch(`${API_BASE_URL}/players`, {
+    credentials: 'include', // Include cookies for authentication
+  });
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Authentication required');
+    }
     throw new Error('Failed to fetch players');
   }
   return response.json();
@@ -50,6 +55,7 @@ export async function createPlayer(data: CreatePlayerData): Promise<Player> {
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include', // Include cookies for authentication
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -70,6 +76,7 @@ export async function updatePlayer(id: string, data: UpdatePlayerData): Promise<
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include', // Include cookies for authentication
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -86,6 +93,7 @@ export async function updatePlayer(id: string, data: UpdatePlayerData): Promise<
 export async function deletePlayer(id: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/players/${id}`, {
     method: 'DELETE',
+    credentials: 'include', // Include cookies for authentication
   });
   if (!response.ok) {
     if (response.status === 404) {

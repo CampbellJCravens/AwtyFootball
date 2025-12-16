@@ -9,9 +9,10 @@ interface ActivePlayersSectionProps {
   onRemoveFromTeam: (playerId: string) => void;
   onSwapTeam: (playerId: string) => void;
   onGoalClick: (player: Player) => void;
+  isAdmin?: boolean; // Whether user is admin (can modify games)
 }
 
-export default function ActivePlayersSection({ players, playerTeams, onTeamSelect, onAddGuest, onRemoveFromTeam, onSwapTeam, onGoalClick }: ActivePlayersSectionProps) {
+export default function ActivePlayersSection({ players, playerTeams, onTeamSelect, onAddGuest, onRemoveFromTeam, onSwapTeam, onGoalClick, isAdmin = true }: ActivePlayersSectionProps) {
   const colorTeamPlayers = players
     .filter(player => playerTeams[player.id] === 'color')
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -25,16 +26,18 @@ export default function ActivePlayersSection({ players, playerTeams, onTeamSelec
       <div className="grid grid-cols-2 gap-4">
         {/* Color Team Column */}
         <div className="bg-gray-900 rounded-lg p-4 min-h-[200px] max-h-[400px] flex flex-col relative">
-          <div className="flex items-center justify-between mb-3 flex-shrink-0 relative z-10">
-            <h4 className="text-white font-medium text-center flex-1">Color Team ({colorTeamPlayers.length})</h4>
-            <button
-              onClick={() => onAddGuest('color')}
-              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors flex-shrink-0"
-              data-tooltip="Add Guest"
-            >
-              Add Guest
-            </button>
-          </div>
+              <div className="flex items-center justify-between mb-3 flex-shrink-0 relative z-10">
+                <h4 className="text-white font-medium text-center flex-1">Color Team ({colorTeamPlayers.length})</h4>
+                {isAdmin && (
+                  <button
+                    onClick={() => onAddGuest('color')}
+                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors flex-shrink-0"
+                    data-tooltip="Add Guest"
+                  >
+                    Add Guest
+                  </button>
+                )}
+              </div>
               <div className="flex-1 overflow-y-auto space-y-2 relative z-0">
                 {colorTeamPlayers.length === 0 ? (
                   <p className="text-gray-400 text-sm text-center py-4">
@@ -57,13 +60,14 @@ export default function ActivePlayersSection({ players, playerTeams, onTeamSelec
                     )}
                     <span className="text-white text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
                     <div className="flex gap-1 flex-shrink-0">
-                      {/* Goal Icon (Soccer Ball + Goal) */}
-                      <button
-                        onClick={() => onGoalClick(player)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
-                        aria-label="Goal"
-                        data-tooltip="Goal"
-                      >
+                      {/* Goal Icon (Soccer Ball + Goal) - Admin only */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onGoalClick(player)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
+                          aria-label="Goal"
+                          data-tooltip="Goal"
+                        >
                         <svg
                           className="w-6 h-6 text-white"
                           fill="none"
@@ -79,51 +83,56 @@ export default function ActivePlayersSection({ players, playerTeams, onTeamSelec
                           <circle cx="12" cy="12" r="4" fill="currentColor"/>
                           <path d="M12 8.5L13.5 11.5L16 12L13.5 12.5L12 15.5L10.5 12.5L8 12L10.5 11.5L12 8.5Z" fill="rgba(0, 0, 0, 0.6)" stroke="rgba(0, 0, 0, 0.8)" strokeWidth="0.3"/>
                         </svg>
-                      </button>
-                      {/* Swap Icon */}
-                      <button
-                        onClick={() => onSwapTeam(player.id)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
-                        aria-label="Swap"
-                        data-tooltip="Swap Team"
-                      >
-                        <svg
-                          className="w-4 h-4 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
+                        </button>
+                      )}
+                      {/* Swap Icon - Admin only */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onSwapTeam(player.id)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
+                          aria-label="Swap"
+                          data-tooltip="Swap Team"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-                          />
-                        </svg>
-                      </button>
-                      {/* Remove Icon (X) */}
-                      <button
-                        onClick={() => onRemoveFromTeam(player.id)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-700 active:bg-red-600 transition-colors"
-                        aria-label="Remove"
-                        data-tooltip="Remove from Team"
-                      >
-                        <svg
-                          className="w-4 h-4 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
+                          <svg
+                            className="w-4 h-4 text-white"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                            />
+                          </svg>
+                        </button>
+                      )}
+                      {/* Remove Icon (X) - Admin only */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onRemoveFromTeam(player.id)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-700 active:bg-red-600 transition-colors"
+                          aria-label="Remove"
+                          data-tooltip="Remove from Team"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
+                          <svg
+                            className="w-4 h-4 text-white"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -166,73 +175,79 @@ export default function ActivePlayersSection({ players, playerTeams, onTeamSelec
                     )}
                     <span className="text-gray-100 text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
                     <div className="flex gap-1 flex-shrink-0">
-                      {/* Goal Icon (Soccer Ball + Goal) */}
-                      <button
-                        onClick={() => onGoalClick(player)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-600 active:bg-gray-300 transition-colors"
-                        aria-label="Goal"
-                        data-tooltip="Goal"
-                      >
-                        <svg
-                          className="w-6 h-6 text-gray-300"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
+                      {/* Goal Icon (Soccer Ball + Goal) - Admin only */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onGoalClick(player)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-500 active:bg-gray-400 transition-colors"
+                          aria-label="Goal"
+                          data-tooltip="Goal"
                         >
-                          {/* Goal posts - dark for light background */}
-                          <line x1="5" y1="6" x2="5" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                          <line x1="19" y1="6" x2="19" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                          <line x1="5" y1="6" x2="19" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                          {/* Soccer ball - dark with lighter pattern */}
-                          <circle cx="12" cy="12" r="4" fill="currentColor"/>
-                          <path d="M12 8.5L13.5 11.5L16 12L13.5 12.5L12 15.5L10.5 12.5L8 12L10.5 11.5L12 8.5Z" fill="rgba(255, 255, 255, 0.6)" stroke="rgba(255, 255, 255, 0.8)" strokeWidth="0.3"/>
-                        </svg>
-                      </button>
-                      {/* Swap Icon */}
-                      <button
-                        onClick={() => onSwapTeam(player.id)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-600 active:bg-gray-300 transition-colors"
-                        aria-label="Swap"
-                        data-tooltip="Swap Team"
-                      >
-                        <svg
-                          className="w-4 h-4 text-gray-300"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
+                          <svg
+                            className="w-6 h-6 text-gray-300"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            {/* Goal posts - dark for light background */}
+                            <line x1="5" y1="6" x2="5" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                            <line x1="19" y1="6" x2="19" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                            <line x1="5" y1="6" x2="19" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                            {/* Soccer ball - dark with lighter pattern */}
+                            <circle cx="12" cy="12" r="4" fill="currentColor"/>
+                            <path d="M12 8.5L13.5 11.5L16 12L13.5 12.5L12 15.5L10.5 12.5L8 12L10.5 11.5L12 8.5Z" fill="rgba(255, 255, 255, 0.6)" stroke="rgba(255, 255, 255, 0.8)" strokeWidth="0.3"/>
+                          </svg>
+                        </button>
+                      )}
+                      {/* Swap Icon - Admin only */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onSwapTeam(player.id)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-500 active:bg-gray-400 transition-colors"
+                          aria-label="Swap"
+                          data-tooltip="Swap Team"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-                          />
-                        </svg>
-                      </button>
-                      {/* Remove Icon (X) */}
-                      <button
-                        onClick={() => onRemoveFromTeam(player.id)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-100 active:bg-red-200 transition-colors"
-                        aria-label="Remove"
-                        data-tooltip="Remove from Team"
-                      >
-                        <svg
-                          className="w-4 h-4 text-red-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
+                          <svg
+                            className="w-4 h-4 text-gray-200"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                            />
+                          </svg>
+                        </button>
+                      )}
+                      {/* Remove Icon (X) - Admin only */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onRemoveFromTeam(player.id)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-900/30 active:bg-red-900/50 transition-colors"
+                          aria-label="Remove"
+                          data-tooltip="Remove from Team"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
+                          <svg
+                            className="w-4 h-4 text-red-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

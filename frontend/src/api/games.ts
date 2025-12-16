@@ -24,8 +24,13 @@ export interface UpdateGameData {
 
 // Fetch all games
 export async function fetchGames(): Promise<Game[]> {
-  const response = await fetch(`${API_BASE_URL}/games`);
+  const response = await fetch(`${API_BASE_URL}/games`, {
+    credentials: 'include', // Include cookies for authentication
+  });
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Authentication required');
+    }
     throw new Error('Failed to fetch games');
   }
   return response.json();
@@ -50,6 +55,7 @@ export async function createGame(): Promise<Game> {
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include', // Include cookies for authentication
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to create game' }));
@@ -65,6 +71,7 @@ export async function updateGame(id: string, data: UpdateGameData): Promise<Game
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include', // Include cookies for authentication
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -81,6 +88,7 @@ export async function updateGame(id: string, data: UpdateGameData): Promise<Game
 export async function deleteGame(id: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/games/${id}`, {
     method: 'DELETE',
+    credentials: 'include', // Include cookies for authentication
   });
   if (!response.ok) {
     if (response.status === 404) {

@@ -15,9 +15,10 @@ interface GameModuleExpandedProps {
   gameDate: string;
   onClose: () => void;
   onPlayerAdded?: () => void; // Callback to refresh players list
+  isAdmin?: boolean; // Whether user is admin (can modify games)
 }
 
-export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded }: GameModuleExpandedProps) {
+export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded, isAdmin = true }: GameModuleExpandedProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -130,6 +131,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   }, [playerTeams, goals, loading, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
+    // Only admins can modify team assignments
+    if (!isAdmin) return;
+    
     setPlayerTeams(prev => {
       // If clicking the same team, deselect it
       if (prev[playerId] === team) {
@@ -143,6 +147,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   };
 
   const handleRemoveFromTeam = (playerId: string) => {
+    // Only admins can remove players from teams
+    if (!isAdmin) return;
+    
     setPlayerTeams(prev => {
       const newTeams = { ...prev };
       delete newTeams[playerId];
@@ -151,6 +158,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   };
 
   const handleSwapTeam = (playerId: string) => {
+    // Only admins can swap teams
+    if (!isAdmin) return;
+    
     setPlayerTeams(prev => {
       const currentTeam = prev[playerId];
       if (currentTeam === 'color') {
@@ -304,17 +314,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   return (
     <div className="h-full flex flex-col bg-gray-800">
       {/* Header with Save and Close Buttons */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
-        <h2 className="text-xl font-semibold text-gray-100">{gameTitle}</h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={saveGameData}
-            disabled={saving || loading}
-            className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
-            data-tooltip="Report Stats"
-          >
-            {saving ? 'Reporting...' : 'Report Stats'}
-          </button>
+            <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+              <h2 className="text-xl font-semibold text-gray-100">{gameTitle}</h2>
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button
+                    onClick={saveGameData}
+                    disabled={saving || loading}
+                    className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                    data-tooltip="Report Stats"
+                  >
+                    {saving ? 'Reporting...' : 'Report Stats'}
+                  </button>
+                )}
           <button
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
@@ -440,48 +452,52 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                         <span className="text-sm text-gray-400 whitespace-nowrap">
                           {new Date(goal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
-                        <button
-                          onClick={() => handleEditGoal(index)}
-                          className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-600 active:bg-gray-300 transition-colors flex-shrink-0"
-                          aria-label="Edit goal"
-                          data-tooltip="Edit"
-                        >
-                          <svg
-                            className="w-4 h-4 text-gray-300"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                            />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteGoal(index)}
-                          className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-100 active:bg-red-200 transition-colors flex-shrink-0"
-                          aria-label="Delete goal"
-                          data-tooltip="Delete"
-                        >
-                          <svg
-                            className="w-4 h-4 text-red-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              onClick={() => handleEditGoal(index)}
+                              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors flex-shrink-0"
+                              aria-label="Edit goal"
+                              data-tooltip="Edit"
+                            >
+                              <svg
+                                className="w-4 h-4 text-gray-300"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGoal(index)}
+                              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-900/30 active:bg-red-900/50 transition-colors flex-shrink-0"
+                              aria-label="Delete goal"
+                              data-tooltip="Delete"
+                            >
+                              <svg
+                                className="w-4 h-4 text-red-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
