@@ -15,14 +15,10 @@ passport.use(new GoogleStrategy({
       return done(new Error('No email found in Google profile'), undefined);
     }
 
-    // Check if email is in allowlist
+    // Check if email is in allowlist (optional). If absent, default to regular.
     const allowedEmail = await prisma.allowedEmail.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
-
-    if (!allowedEmail) {
-      return done(new Error('Email not in allowlist. Contact an admin for access.'), undefined);
-    }
 
     // Find or create user
     let user = await prisma.user.findUnique({
@@ -36,7 +32,7 @@ passport.use(new GoogleStrategy({
           email: email.toLowerCase().trim(),
           name: profile.displayName || profile.name?.givenName || null,
           picture: profile.photos?.[0]?.value || null,
-          role: allowedEmail.role,
+          role: allowedEmail?.role || 'regular', // default to regular when not allowlisted
         },
       });
     } else {
@@ -46,7 +42,7 @@ passport.use(new GoogleStrategy({
         data: {
           name: profile.displayName || profile.name?.givenName || user.name,
           picture: profile.photos?.[0]?.value || user.picture,
-          role: allowedEmail.role, // Update role from allowlist
+          role: allowedEmail?.role || user.role || 'regular', // Refresh role if allowlisted
         },
       });
     }
