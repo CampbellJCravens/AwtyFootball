@@ -21,7 +21,7 @@ export default function ActivePlayersSection({
   leftPlayers,
   onTeamSelect: _onTeamSelect,
   onAddGuest,
-  onRemoveFromTeam,
+  onRemoveFromTeam: _onRemoveFromTeam,
   onSwapTeam,
   onGoalClick,
   onLeaveTeam,
