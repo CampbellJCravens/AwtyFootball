@@ -38,7 +38,9 @@ export async function fetchGames(): Promise<Game[]> {
 
 // Fetch a single game by ID
 export async function fetchGame(id: string): Promise<Game> {
-  const response = await fetch(`${API_BASE_URL}/games/${id}`);
+  const response = await fetch(`${API_BASE_URL}/games/${id}`, {
+    credentials: 'include', // Include cookies for authentication
+  });
   if (!response.ok) {
     if (response.status === 404) {
       throw new Error('Game not found');
