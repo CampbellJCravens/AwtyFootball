@@ -33,13 +33,18 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playerTeams, setPlayerTeams] = useState<Record<string, 'color' | 'white'>>({});
+  const [leftPlayers, setLeftPlayers] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<{ scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null }>>([]);
+  const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
   const [editingGoalIndex, setEditingGoalIndex] = useState<number | null>(null);
   const [editingScorer, setEditingScorer] = useState<Player | null>(null);
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
+  const [teamChangeToDelete, setTeamChangeToDelete] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showGoals, setShowGoals] = useState<boolean>(true);
+  const [showTeamChanges, setShowTeamChanges] = useState<boolean>(true); // active by default
 
   // Load game data and players
   useEffect(() => {
@@ -144,6 +149,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       // Otherwise, set the new team
       return { ...prev, [playerId]: team };
     });
+    // If they were marked as left, reset them to active
+    setLeftPlayers(prev => {
+      const next = { ...prev };
+      delete next[playerId];
+      return next;
+    });
   };
 
   const handleRemoveFromTeam = (playerId: string) => {
@@ -161,15 +172,68 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     // Only admins can swap teams
     if (!isAdmin) return;
     
-    setPlayerTeams(prev => {
-      const currentTeam = prev[playerId];
-      if (currentTeam === 'color') {
-        return { ...prev, [playerId]: 'white' };
-      } else if (currentTeam === 'white') {
-        return { ...prev, [playerId]: 'color' };
+    const currentTeam = playerTeams[playerId];
+    if (!currentTeam) return;
+
+    const newTeam = currentTeam === 'color' ? 'white' : 'color';
+    const now = new Date();
+
+    // If the player is switching back and no goals happened in between,
+    // remove the previous swap entry instead of adding another.
+    setTeamChanges(tc => {
+      const player = allPlayers.find(p => p.id === playerId);
+      if (!player) return tc;
+
+      const lastSwapIndex = [...tc].reverse().findIndex(
+        entry => entry.player.id === playerId && entry.type === 'swap'
+      );
+
+      if (lastSwapIndex !== -1) {
+        const actualIndex = tc.length - 1 - lastSwapIndex;
+        const lastSwap = tc[actualIndex];
+
+        // Check if coming back to previous team and no goals since last swap
+        const isReverting = lastSwap.previousTeam === newTeam;
+        const goalAfterLastSwap = goals.some(g => g.timestamp > lastSwap.timestamp);
+
+        if (isReverting && !goalAfterLastSwap) {
+          // Remove the old swap entry and do not add a new one
+          return [...tc.slice(0, actualIndex), ...tc.slice(actualIndex + 1)];
+        }
       }
-      return prev;
+
+      return [
+        ...tc,
+        { player, timestamp: now, team: newTeam, previousTeam: currentTeam, newTeam, type: 'swap' },
+      ];
     });
+
+    // Update assignment
+    setPlayerTeams(prev => ({ ...prev, [playerId]: newTeam }));
+  };
+
+  const handleLeaveTeam = (playerId: string) => {
+    if (!isAdmin) return;
+    setLeftPlayers(prev => ({ ...prev, [playerId]: true }));
+    const player = allPlayers.find(p => p.id === playerId);
+    const team = playerTeams[playerId];
+    if (player && team) {
+      setTeamChanges(prev => [
+        ...prev,
+        { player, timestamp: new Date(), team, type: 'leave' },
+      ]);
+    }
+  };
+
+  const handleReturnToTeam = (playerId: string) => {
+    if (!isAdmin) return;
+    setLeftPlayers(prev => {
+      const next = { ...prev };
+      delete next[playerId];
+      return next;
+    });
+    // Remove any leave entries for this player
+    setTeamChanges(prev => prev.filter(entry => entry.player.id !== playerId));
   };
 
   const handleAddGuest = async (team: 'color' | 'white') => {
@@ -291,6 +355,44 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   const handleCancelDeleteGoal = () => {
     setGoalToDelete(null);
+  };
+
+  // Team change editing
+  const handleEditTeamChangeTime = (index: number) => {
+    const entry = teamChanges[index];
+    if (!entry) return;
+
+    const current = new Date(entry.timestamp);
+    const currentTimeStr = current.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const input = window.prompt('Set new time (HH:MM, 24h or 12h OK)', currentTimeStr);
+    if (!input) return;
+
+    const [hoursStr, minutesStr] = input.split(':');
+    const hours = Number(hoursStr);
+    const minutes = Number(minutesStr);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return;
+
+    const updated = new Date(entry.timestamp);
+    updated.setHours(hours);
+    updated.setMinutes(minutes);
+    updated.setSeconds(0);
+    updated.setMilliseconds(0);
+
+    setTeamChanges(prev => prev.map((tc, i) => i === index ? { ...tc, timestamp: updated } : tc));
+  };
+
+  const handleDeleteTeamChange = (index: number) => {
+    setTeamChangeToDelete(index);
+  };
+
+  const handleConfirmDeleteTeamChange = () => {
+    if (teamChangeToDelete === null) return;
+    setTeamChanges(prev => prev.filter((_, i) => i !== teamChangeToDelete));
+    setTeamChangeToDelete(null);
+  };
+
+  const handleCancelDeleteTeamChange = () => {
+    setTeamChangeToDelete(null);
   };
 
   // Get team players for the goal scorer
@@ -431,78 +533,204 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           </Accordion>
         </div>
 
-        {/* Goal Summary Section */}
+        {/* Game Summary Section */}
         {!loading && !error && (
           <div className="mb-6 flex-shrink-0">
-            <h3 className="text-lg font-semibold text-gray-100 mb-4">Goal Summary</h3>
-            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 max-h-[200px] overflow-y-auto">
-              {goals.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">No goals scored yet - choose a goal scorer in the teams section</p>
-              ) : (
-                <div className="space-y-2">
-                  {goals.map((goal, index) => (
-                    <div key={index} className="flex items-center justify-between text-base text-gray-100">
-                      <span className="pr-3 flex-1">
-                        {goal.assister 
-                          ? `${goal.scorer.name} scored a goal! Assisted by ${goal.assister.name}`
-                          : `${goal.scorer.name} scored a goal!`
-                        }
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-400 whitespace-nowrap">
-                          {new Date(goal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        {isAdmin && (
-                          <>
-                            <button
-                              onClick={() => handleEditGoal(index)}
-                              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors flex-shrink-0"
-                              aria-label="Edit goal"
-                              data-tooltip="Edit"
-                            >
-                              <svg
-                                className="w-4 h-4 text-gray-300"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteGoal(index)}
-                              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-900/30 active:bg-red-900/50 transition-colors flex-shrink-0"
-                              aria-label="Delete goal"
-                              data-tooltip="Delete"
-                            >
-                              <svg
-                                className="w-4 h-4 text-red-400"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                />
-                              </svg>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-100">Game Summary</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowGoals(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    showGoals ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                  }`}
+                  data-tooltip="Toggle Goals"
+                >
+                  Goals
+                </button>
+                <button
+                  onClick={() => setShowTeamChanges(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    showTeamChanges ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                  }`}
+                  data-tooltip="Toggle Team Changes"
+                >
+                  Team Changes
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 max-h-[200px] overflow-y-auto space-y-3">
+              {(() => {
+                const combined = [
+                  ...goals.map((goal, index) => ({
+                    type: 'goal' as const,
+                    timestamp: goal.timestamp,
+                    goal,
+                    goalIndex: index,
+                  })),
+                  ...teamChanges.map((change, index) => ({
+                    type: 'teamChange' as const,
+                    timestamp: change.timestamp,
+                    change,
+                    changeIndex: index,
+                  })),
+                ]
+                  .filter(item =>
+                    (item.type === 'goal' && showGoals) ||
+                    (item.type === 'teamChange' && showTeamChanges)
+                  )
+                  .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+                if (combined.length === 0) {
+                  return (
+                    <p className="text-gray-400 text-sm text-center py-2">
+                      No events yet - adjust filters or record an event.
+                    </p>
+                  );
+                }
+
+                return (
+                  <div>
+                    {combined.map((item, idx) => {
+                      if (item.type === 'goal') {
+                        const { goal, goalIndex } = item;
+                        return (
+                          <div
+                            key={`goal-${goalIndex}-${goal.timestamp.getTime()}-${idx}`}
+                            className="flex items-center justify-between text-base text-gray-100 mb-2 last:mb-0"
+                          >
+                          <span className="pr-3 flex-1">
+                              {(() => {
+                                const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
+                                return goal.assister 
+                                  ? `(${teamLabel}) ${goal.scorer.name} scored! Assisted by ${goal.assister.name}`
+                                  : `(${teamLabel}) ${goal.scorer.name} scored!`;
+                              })()}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-400 whitespace-nowrap">
+                                {new Date(goal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {isAdmin && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditGoal(goalIndex)}
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors flex-shrink-0"
+                                    aria-label="Edit goal"
+                                    data-tooltip="Edit"
+                                  >
+                                    <svg
+                                      className="w-4 h-4 text-gray-300"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                      />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteGoal(goalIndex)}
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-900/30 active:bg-red-900/50 transition-colors flex-shrink-0"
+                                    aria-label="Delete goal"
+                                    data-tooltip="Delete"
+                                  >
+                                    <svg
+                                      className="w-4 h-4 text-red-400"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                      />
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        const { change, changeIndex } = item;
+                        return (
+                          <div
+                            key={`change-${changeIndex}-${change.timestamp.getTime()}-${idx}`}
+                            className="flex items-center justify-between text-sm text-gray-200 italic mb-1 last:mb-0"
+                          >
+                            <span className="pr-3 flex-1 pl-3">
+                              {change.type === 'leave'
+                                ? `${change.player.name} left the game (${change.team === 'color' ? 'Color' : 'White'})`
+                                : `${change.player.name} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500 whitespace-nowrap">
+                                {new Date(change.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {isAdmin && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditTeamChangeTime(changeIndex)}
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors flex-shrink-0"
+                                    aria-label="Edit team change time"
+                                    data-tooltip="Edit"
+                                  >
+                                    <svg
+                                      className="w-4 h-4 text-gray-300"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                      />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTeamChange(changeIndex)}
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-900/30 active:bg-red-900/50 transition-colors flex-shrink-0"
+                                    aria-label="Delete team change"
+                                    data-tooltip="Delete"
+                                  >
+                                    <svg
+                                      className="w-4 h-4 text-red-400"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                      />
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -513,11 +741,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             <ActivePlayersSection
               players={allPlayers}
               playerTeams={playerTeams}
+              leftPlayers={leftPlayers}
               onTeamSelect={handleTeamSelect}
               onAddGuest={handleAddGuest}
               onRemoveFromTeam={handleRemoveFromTeam}
               onSwapTeam={handleSwapTeam}
               onGoalClick={handleGoalClick}
+              onLeaveTeam={handleLeaveTeam}
+              onReturnToTeam={handleReturnToTeam}
             />
           </div>
         )}
@@ -562,6 +793,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           onConfirm={handleConfirmDeleteGoal}
           onCancel={handleCancelDeleteGoal}
           message="Are you sure you want to delete this goal?"
+        />
+      )}
+
+      {teamChangeToDelete !== null && (
+        <DeleteConfirmationModal
+          onConfirm={handleConfirmDeleteTeamChange}
+          onCancel={handleCancelDeleteTeamChange}
+          message="Are you sure you want to delete this team change entry?"
         />
       )}
     </div>

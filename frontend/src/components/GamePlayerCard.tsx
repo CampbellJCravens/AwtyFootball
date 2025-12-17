@@ -33,28 +33,28 @@ export default function GamePlayerCard({ player, onTeamSelect, selectedTeam }: G
         <h3 className="text-base font-medium text-gray-100 truncate">{player.name}</h3>
       </div>
 
-      {/* Team Buttons */}
-      <div className="flex gap-2 flex-shrink-0">
+      {/* Team Buttons - circular color swatches */}
+      <div className="flex gap-3 flex-shrink-0">
         <button
           onClick={() => onTeamSelect(player.id, 'color')}
-          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+          className={`w-9 h-9 rounded-full border-2 transition-all ${
             selectedTeam === 'color'
-              ? 'bg-black text-white shadow-md'
-              : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+              ? 'bg-black border-blue-400 shadow-lg shadow-blue-500/40'
+              : 'bg-black border-gray-500 hover:border-blue-300'
           }`}
-        >
-          Color Team
-        </button>
+          aria-label="Select Color Team"
+          data-tooltip="Color Team"
+        />
         <button
           onClick={() => onTeamSelect(player.id, 'white')}
-          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+          className={`w-9 h-9 rounded-full border-2 transition-all ${
             selectedTeam === 'white'
-              ? 'bg-gray-100 text-gray-900 border-2 border-gray-500 shadow-md'
-              : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+              ? 'bg-gray-300 border-blue-400 shadow-lg shadow-blue-500/40'
+              : 'bg-gray-500 border-gray-400 hover:border-blue-300'
           }`}
-        >
-          White Team
-        </button>
+          aria-label="Select White Team"
+          data-tooltip="White Team"
+        />
       </div>
     </div>
   );
