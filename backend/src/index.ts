@@ -41,6 +41,9 @@ import authRouter from './routes/auth';
 
 const app = express();
 
+// Behind a proxy/load balancer (Render); needed so secure cookies work
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors({
   origin: env.FRONTEND_URL,
