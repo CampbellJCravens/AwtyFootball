@@ -45,8 +45,13 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Middleware
+const allowedOrigins = [
+  env.FRONTEND_URL,
+  process.env.FRONTEND_URL_ALT || 'https://www.awtyfootballclub.com',
+].filter(Boolean);
+
 app.use(cors({
-  origin: env.FRONTEND_URL,
+  origin: allowedOrigins,
   credentials: true,
 }));
 // Increase body size limit to 10MB for image uploads
