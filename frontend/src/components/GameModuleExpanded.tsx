@@ -562,7 +562,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               </div>
             </div>
 
-            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 max-h-[200px] overflow-y-auto space-y-3">
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 max-h-[400px] overflow-y-auto space-y-3">
               {(() => {
                 const combined = [
                   ...goals.map((goal, index) => ({
