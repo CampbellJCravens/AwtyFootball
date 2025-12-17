@@ -3,6 +3,18 @@ import prisma from '../prisma';
 import { updateGameSchema, UpdateGameInput } from '../schemas/game';
 import { requireAdmin, requireRegularOrAdmin, AuthenticatedRequest } from '../middleware/auth';
 
+// Safely parse JSON fields that might be null/empty/invalid
+const safeParseJSON = <T>(value: string | null | undefined, fallback: T): T => {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed ?? fallback;
+  } catch (err) {
+    console.error('Failed to parse JSON field, returning fallback:', err);
+    return fallback;
+  }
+};
+
 const router = Router();
 
 // POST /api/games - Create a new game (admin only)
@@ -30,8 +42,8 @@ router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Re
     // Parse JSON fields for all games
     const parsedGames = games.map(game => ({
       ...game,
-      teamAssignments: game.teamAssignments ? JSON.parse(game.teamAssignments) : {},
-      goals: game.goals ? JSON.parse(game.goals) : [],
+      teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
+      goals: safeParseJSON(game.goals, [] as any[]),
     }));
     
     res.json(parsedGames);
@@ -56,8 +68,8 @@ router.get('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res:
     // Parse JSON fields
     const parsedGame = {
       ...game,
-      teamAssignments: game.teamAssignments ? JSON.parse(game.teamAssignments) : {},
-      goals: game.goals ? JSON.parse(game.goals) : [],
+      teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
+      goals: safeParseJSON(game.goals, [] as any[]),
     };
 
     res.json(parsedGame);
@@ -106,8 +118,8 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
     // Parse JSON fields for response
     const parsedGame = {
       ...game,
-      teamAssignments: game.teamAssignments ? JSON.parse(game.teamAssignments) : {},
-      goals: game.goals ? JSON.parse(game.goals) : [],
+      teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
+      goals: safeParseJSON(game.goals, [] as any[]),
     };
 
     res.json(parsedGame);
