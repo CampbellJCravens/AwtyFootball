@@ -242,13 +242,15 @@ export default function ActivePlayersSection({
           <>
             <div className="flex items-center justify-between mb-3 flex-shrink-0 relative z-10">
               <h4 className="text-gray-100 font-medium text-center flex-1">White Team ({whiteActive.length})</h4>
-              <button
-                onClick={() => onAddGuest('white')}
-                className="px-3 py-1.5 bg-gray-600 hover:bg-gray-300 text-gray-100 text-xs font-medium rounded-lg transition-colors flex-shrink-0"
-                data-tooltip="Add Guest"
-              >
-                Add Guest
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => onAddGuest('white')}
+                  className="px-3 py-1.5 bg-gray-600 hover:bg-gray-300 text-gray-100 text-xs font-medium rounded-lg transition-colors flex-shrink-0"
+                  data-tooltip="Add Guest"
+                >
+                  Add Guest
+                </button>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto space-y-2 relative z-0">
               {whiteActive.length === 0 ? (

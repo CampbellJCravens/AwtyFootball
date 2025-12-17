@@ -751,6 +751,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               onGoalClick={handleGoalClick}
               onLeaveTeam={handleLeaveTeam}
               onReturnToTeam={handleReturnToTeam}
+              isAdmin={isAdmin}
             />
           </div>
         )}
