@@ -18,7 +18,7 @@ interface GameModuleExpandedProps {
   isAdmin?: boolean; // Whether user is admin (can modify games)
 }
 
-export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded, isAdmin = true }: GameModuleExpandedProps) {
+export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded, isAdmin = false }: GameModuleExpandedProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -479,59 +479,61 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           </div>
         </div>
 
-        {/* Choose Teams Accordion */}
-        <div className="mb-6 flex-shrink-0" style={{ maxHeight: '40vh' }}>
-          <Accordion 
-            title="Choose Teams" 
-            defaultOpen={false}
-            hint={{
-              collapsed: "Expand to choose teams",
-              expanded: "Collapse to hide"
-            }}
-          >
-            {loading ? (
-              <div className="text-center py-8">
-                <p className="text-gray-400">Loading players...</p>
-              </div>
-            ) : error ? (
-              <div className="p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-400">
-                <p className="text-sm">{error}</p>
-              </div>
-            ) : (
-              <div className="overflow-y-auto" style={{ maxHeight: '35vh' }}>
-                {/* Search Bar */}
-                <div className="mb-4">
-                  <input
-                    type="text"
-                    placeholder="Search players..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-800 text-gray-100 placeholder-gray-500"
-                  />
+        {/* Choose Teams Accordion (admins only) */}
+        {isAdmin && (
+          <div className="mb-6 flex-shrink-0" style={{ maxHeight: '40vh' }}>
+            <Accordion 
+              title="Choose Teams" 
+              defaultOpen={false}
+              hint={{
+                collapsed: "Expand to choose teams",
+                expanded: "Collapse to hide"
+              }}
+            >
+              {loading ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400">Loading players...</p>
                 </div>
-
-                {filteredAndSortedPlayers.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-400">
-                      {players.length === 0
-                        ? 'No players available. Add players in the "All Players" tab.'
-                        : `No players found matching "${searchQuery}"`}
-                    </p>
-                  </div>
-                ) : (
-                  filteredAndSortedPlayers.map((player) => (
-                    <GamePlayerCard
-                      key={player.id}
-                      player={player}
-                      onTeamSelect={handleTeamSelect}
-                      selectedTeam={playerTeams[player.id]}
+              ) : error ? (
+                <div className="p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-400">
+                  <p className="text-sm">{error}</p>
+                </div>
+              ) : (
+                <div className="overflow-y-auto" style={{ maxHeight: '35vh' }}>
+                  {/* Search Bar */}
+                  <div className="mb-4">
+                    <input
+                      type="text"
+                      placeholder="Search players..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-800 text-gray-100 placeholder-gray-500"
                     />
-                  ))
-                )}
-              </div>
-            )}
-          </Accordion>
-        </div>
+                  </div>
+
+                  {filteredAndSortedPlayers.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-gray-400">
+                        {players.length === 0
+                          ? 'No players available. Add players in the "All Players" tab.'
+                          : `No players found matching "${searchQuery}"`}
+                      </p>
+                    </div>
+                  ) : (
+                    filteredAndSortedPlayers.map((player) => (
+                      <GamePlayerCard
+                        key={player.id}
+                        player={player}
+                        onTeamSelect={handleTeamSelect}
+                        selectedTeam={playerTeams[player.id]}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
+            </Accordion>
+          </div>
+        )}
 
         {/* Game Summary Section */}
         {!loading && !error && (
