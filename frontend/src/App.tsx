@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Player, fetchPlayers, deletePlayer } from './api/players';
 import { Game, fetchGames, createGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
-import Papa from 'papaparse';
 import { useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import PlayerForm from './components/PlayerForm';

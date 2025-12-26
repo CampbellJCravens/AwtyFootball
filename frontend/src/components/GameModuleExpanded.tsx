@@ -9,7 +9,7 @@ import GoalAssistModal from './GoalAssistModal';
 import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TimePickerModal from './TimePickerModal';
-import Papa from 'papaparse';
+import Papa, { ParseResult } from 'papaparse';
 
 interface GameModuleExpandedProps {
   gameId: string;
@@ -45,11 +45,11 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
   const [teamChangeToDelete, setTeamChangeToDelete] = useState<number | null>(null);
   const [editingTeamChangeIndex, setEditingTeamChangeIndex] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [_saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [_exportError, setExportError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [availableGames, setAvailableGames] = useState<string[]>([]);
   const [selectedGameForImport, setSelectedGameForImport] = useState<string>('');
@@ -256,7 +256,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       Papa.parse(gameSummaryText, {
         header: true,
         skipEmptyLines: true,
-        complete: (results) => {
+        complete: (results: ParseResult<any>) => {
           const teamSwaps: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
           
           results.data.forEach((row: any) => {

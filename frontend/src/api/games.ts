@@ -1,4 +1,6 @@
 // API configuration
+import Papa, { ParseResult } from 'papaparse';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
 export interface Goal {
@@ -121,16 +123,14 @@ export async function exportGameToSheets(
   return response.json();
 }
 
-import Papa from 'papaparse';
-
 // Parse CSV and extract available games
 export function parseAvailableGames(playersCsv: string, gameSummaryCsv: string): string[] {
-  const playersParseResult = Papa.parse(playersCsv, {
+  const playersParseResult: ParseResult<any> = Papa.parse(playersCsv, {
     header: true,
     skipEmptyLines: true,
   });
 
-  const gameSummaryParseResult = Papa.parse(gameSummaryCsv, {
+  const gameSummaryParseResult: ParseResult<any> = Papa.parse(gameSummaryCsv, {
     header: true,
     skipEmptyLines: true,
   });
