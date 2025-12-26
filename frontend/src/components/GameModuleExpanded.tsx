@@ -381,7 +381,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, loading, saveGameData]);
+  }, [playerTeams, goals, teamChanges, loading, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -856,7 +856,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                     (item.type === 'goal' && showGoals) ||
                     (item.type === 'teamChange' && showTeamChanges)
                   )
-                  .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()); // Sort chronologically (oldest first)
+                  .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()); // Sort by most recent first
 
                 if (combined.length === 0) {
                   return (
