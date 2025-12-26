@@ -424,7 +424,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     if (!currentTeam) return;
 
     const newTeam = currentTeam === 'color' ? 'white' : 'color';
-    const now = new Date();
+    // Use game date, not today's date, so timestamps are on the correct date
+    const gameDateObj = new Date(gameDate);
+    const now = new Date(gameDateObj);
+    now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
 
     // If the player is switching back and no goals happened in between,
     // remove the previous swap entry instead of adding another.
@@ -466,9 +469,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     const player = allPlayers.find(p => p.id === playerId);
     const team = playerTeams[playerId];
     if (player && team) {
+      // Use game date, not today's date, so timestamps are on the correct date
+      const gameDateObj = new Date(gameDate);
+      const now = new Date(gameDateObj);
+      now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
       setTeamChanges(prev => [
         ...prev,
-        { player, timestamp: new Date(), team, type: 'leave' },
+        { player, timestamp: now, team, type: 'leave' },
       ]);
     }
   };
@@ -612,8 +619,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   const handleTeamChangeTimeChange = (newTime: Date) => {
     if (editingTeamChangeIndex !== null) {
+      // Ensure the date matches the game date, only update the time
+      const gameDateObj = new Date(gameDate);
+      const correctedTime = new Date(gameDateObj);
+      correctedTime.setHours(newTime.getHours(), newTime.getMinutes(), newTime.getSeconds(), newTime.getMilliseconds());
+      
       setTeamChanges(prev => prev.map((tc, i) => 
-        i === editingTeamChangeIndex ? { ...tc, timestamp: newTime } : tc
+        i === editingTeamChangeIndex ? { ...tc, timestamp: correctedTime } : tc
       ));
       setEditingTeamChangeIndex(null);
     }
