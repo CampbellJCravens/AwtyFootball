@@ -12,7 +12,7 @@ export interface Goal {
 
 export interface Game {
   id: string;
-  gameNumber: number;
+  gameNumber: number | null; // Can be null for existing games before migration
   createdAt: string;
   updatedAt: string;
   teamAssignments?: Record<string, 'color' | 'white'>;
@@ -23,6 +23,7 @@ export interface UpdateGameData {
   teamAssignments?: Record<string, 'color' | 'white'>;
   goals?: Goal[];
   createdAt?: string; // ISO date string
+  gameNumber?: number; // Add game number
 }
 
 // Fetch all games

@@ -11,6 +11,7 @@ export const updateGameSchema = z.object({
   teamAssignments: z.record(z.enum(['color', 'white'])).optional(),
   goals: z.array(goalSchema).optional(),
   createdAt: z.string().datetime().optional(), // ISO date string
+  gameNumber: z.number().int().positive().optional(), // Add game number support
 });
 
 export type Goal = z.infer<typeof goalSchema>;

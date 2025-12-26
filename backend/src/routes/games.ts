@@ -172,6 +172,10 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       updateData.createdAt = new Date(data.createdAt);
     }
 
+    if (data.gameNumber !== undefined) {
+      updateData.gameNumber = data.gameNumber;
+    }
+
     const game = await prisma.game.update({
       where: { id },
       data: updateData,

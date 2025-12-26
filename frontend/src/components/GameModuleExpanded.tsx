@@ -9,11 +9,12 @@ import GoalAssistModal from './GoalAssistModal';
 import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TimePickerModal from './TimePickerModal';
+import EditGameModal from './EditGameModal';
 import Papa, { ParseResult } from 'papaparse';
 
 interface GameModuleExpandedProps {
   gameId: string;
-  gameNumber: number;
+  gameNumber: number | null;
   gameDate: string;
   onClose: () => void;
   onPlayerAdded?: () => void; // Callback to refresh players list
@@ -30,7 +31,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     });
   };
 
-  const gameTitle = `Game${gameNumber} - ${formatDate(gameDate)}`;
+  const gameTitle = `Game${gameNumber ?? '?'} - ${formatDate(gameDate)}`;
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,63 +55,64 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [availableGames, setAvailableGames] = useState<string[]>([]);
   const [selectedGameForImport, setSelectedGameForImport] = useState<string>('');
   const [csvFilesLoaded, setCsvFilesLoaded] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showGoals, setShowGoals] = useState<boolean>(true);
   const [showTeamChanges, setShowTeamChanges] = useState<boolean>(true); // active by default
   const playersFileInputRef = useRef<HTMLInputElement>(null);
   const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
 
   // Load game data and players
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Load players and game data in parallel
-        const [playersData, gameData] = await Promise.all([
-          fetchPlayers(),
-          fetchGame(gameId),
-        ]);
-        
-        setPlayers(playersData);
-        
-        // Restore game state
-        if (gameData.teamAssignments) {
-          setPlayerTeams(gameData.teamAssignments);
-        }
-        
-        // Restore goals - guests are now regular players, so just use playersData
-        if (gameData.goals && gameData.goals.length > 0) {
-          const allPlayersWithGuests = [...playersData];
-          
-          const restoredGoals = gameData.goals.map(goal => {
-            const scorer = allPlayersWithGuests.find(p => p.id === goal.scorerId);
-            const assister = goal.assisterId ? allPlayersWithGuests.find(p => p.id === goal.assisterId) || null : null;
-            
-            if (!scorer) {
-              // Skip goals with missing players (shouldn't happen, but handle gracefully)
-              return null;
-            }
-            
-            return {
-              scorer,
-              assister,
-              timestamp: new Date(goal.timestamp),
-              team: goal.team,
-            };
-          }).filter((g): g is { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null } => g !== null);
-          
-          setGoals(restoredGoals);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load game data');
-      } finally {
-        setLoading(false);
+  const loadGameData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Load players and game data in parallel
+      const [playersData, gameData] = await Promise.all([
+        fetchPlayers(),
+        fetchGame(gameId),
+      ]);
+      
+      setPlayers(playersData);
+      
+      // Restore game state
+      if (gameData.teamAssignments) {
+        setPlayerTeams(gameData.teamAssignments);
       }
-    };
-
-    loadData();
+      
+      // Restore goals - guests are now regular players, so just use playersData
+      if (gameData.goals && gameData.goals.length > 0) {
+        const allPlayersWithGuests = [...playersData];
+        
+        const restoredGoals = gameData.goals.map(goal => {
+          const scorer = allPlayersWithGuests.find(p => p.id === goal.scorerId);
+          const assister = goal.assisterId ? allPlayersWithGuests.find(p => p.id === goal.assisterId) || null : null;
+          
+          if (!scorer) {
+            // Skip goals with missing players (shouldn't happen, but handle gracefully)
+            return null;
+          }
+          
+          return {
+            scorer,
+            assister,
+            timestamp: new Date(goal.timestamp),
+            team: goal.team,
+          };
+        }).filter((g): g is { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null } => g !== null);
+        
+        setGoals(restoredGoals);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load game data');
+    } finally {
+      setLoading(false);
+    }
   }, [gameId]);
+
+  useEffect(() => {
+    loadGameData();
+  }, [gameId, loadGameData]);
 
   // Save game data to backend
   const saveGameData = useCallback(async () => {
@@ -313,6 +315,25 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     if (gameSummaryFileInputRef.current) gameSummaryFileInputRef.current.value = '';
   }, []);
 
+  // Handle editing game (date and game number)
+  const handleEditGame = useCallback(async (newDate: string, newGameNumber: number) => {
+    try {
+      await updateGame(gameId, { 
+        createdAt: newDate,
+        gameNumber: newGameNumber 
+      });
+      // Refresh game data
+      await loadGameData();
+      setShowEditModal(false);
+      alert('Game updated successfully! Note: The game list will refresh when you close this view.');
+      // Close the expanded view to force parent to refresh the games list
+      onClose();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update game';
+      alert(`Error updating game: ${errorMessage}. Make sure the game number is unique.`);
+    }
+  }, [gameId, loadGameData, onClose]);
+
   // Auto-save when game data changes (debounced)
   useEffect(() => {
     if (loading) return; // Don't save while loading
@@ -429,7 +450,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     try {
       // Get the next guest number from the server
       const guestNumber = await incrementGuestCount();
-      const guestName = `Guest${guestNumber} (Game${gameNumber})`;
+      const guestName = `Guest${guestNumber} (Game${gameNumber ?? '?'})`;
       
       // Create the guest as a real player in the database
       const newGuest = await createPlayer({
@@ -619,6 +640,28 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                       data-tooltip="Import from CSV"
                     >
                       Import
+                    </button>
+                    <button
+                      onClick={() => setShowEditModal(true)}
+                      disabled={loading}
+                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
+                      aria-label="Edit game"
+                      data-tooltip="Edit Game"
+                    >
+                      <svg
+                        className="w-5 h-5 text-gray-300"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
                     </button>
                   </>
                 )}
@@ -1096,6 +1139,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Game Modal */}
+      {showEditModal && (
+        <EditGameModal
+          currentDate={gameDate}
+          currentGameNumber={gameNumber}
+          onSelect={handleEditGame}
+          onClose={() => setShowEditModal(false)}
+        />
       )}
     </div>
   );

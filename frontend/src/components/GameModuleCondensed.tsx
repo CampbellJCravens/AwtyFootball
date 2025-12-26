@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import DatePickerModal from './DatePickerModal';
+import EditGameModal from './EditGameModal';
 import { updateGame } from '../api/games';
 
 interface GameModuleCondensedProps {
   gameId: string;
   date: string;
-  gameNumber: number;
+  gameNumber: number | null;
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
   onDateUpdated?: () => void; // Callback to refresh games list
@@ -14,7 +14,7 @@ interface GameModuleCondensedProps {
 }
 
 export default function GameModuleCondensed({ gameId, date, gameNumber, onClick, onDelete, onDateUpdated, showDelete = true, showEditDate = true }: GameModuleCondensedProps) {
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -25,15 +25,19 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, onClick,
     });
   };
 
-  const handleDateSelect = async (newDate: string) => {
+  const handleEdit = async (newDate: string, newGameNumber: number) => {
     try {
-      await updateGame(gameId, { createdAt: newDate });
+      await updateGame(gameId, { 
+        createdAt: newDate,
+        gameNumber: newGameNumber 
+      });
       if (onDateUpdated) {
         onDateUpdated();
       }
     } catch (err) {
-      console.error('Error updating game date:', err);
-      // Could show an error message to the user here
+      console.error('Error updating game:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update game';
+      alert(`Error updating game: ${errorMessage}. Make sure the game number is unique.`);
     }
   };
 
@@ -43,18 +47,18 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, onClick,
         onClick={onClick}
         className="bg-gray-800 rounded-lg shadow-md p-4 mb-4 flex items-center justify-between cursor-pointer hover:shadow-lg hover:bg-gray-800 active:bg-gray-700 transition-all border-2 border-transparent hover:border-blue-300"
       >
-        <p className="text-gray-300 flex-1 font-medium">Game{gameNumber} - {formatDate(date)}</p>
+        <p className="text-gray-300 flex-1 font-medium">Game{gameNumber ?? '?'} - {formatDate(date)}</p>
         {(showEditDate || showDelete) && (
           <div className="flex gap-2 flex-shrink-0">
             {showEditDate && (
               <button
                 onClick={(e) => {
                   e.stopPropagation(); // Prevent triggering the container's onClick
-                  setShowDatePicker(true);
+                  setShowEditModal(true);
                 }}
                 className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
-                aria-label="Edit date"
-                data-tooltip="Edit Date"
+                aria-label="Edit game"
+                data-tooltip="Edit Game"
               >
                 <svg
                   className="w-5 h-5 text-gray-300"
@@ -102,11 +106,12 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, onClick,
         )}
       </div>
 
-      {showDatePicker && (
-        <DatePickerModal
+      {showEditModal && (
+        <EditGameModal
           currentDate={date}
-          onSelect={handleDateSelect}
-          onClose={() => setShowDatePicker(false)}
+          currentGameNumber={gameNumber}
+          onSelect={handleEdit}
+          onClose={() => setShowEditModal(false)}
         />
       )}
     </>
