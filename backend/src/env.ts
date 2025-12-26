@@ -10,6 +10,9 @@ export const env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   SESSION_SECRET: process.env.SESSION_SECRET || 'change-this-to-a-strong-random-secret',
+  GOOGLE_SHEETS_SPREADSHEET_ID: process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '',
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
+  GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY || '',
 };
 
 // Validate required environment variables

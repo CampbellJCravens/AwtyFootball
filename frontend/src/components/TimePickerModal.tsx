@@ -53,7 +53,7 @@ export default function TimePickerModal({ currentTime, onSelect, onClose }: Time
 
         <div className="mb-6">
           <label htmlFor="time-input" className="block text-sm font-medium text-gray-300 mb-2">
-            Goal Time
+            Time
           </label>
           <input
             id="time-input"

@@ -63,10 +63,11 @@ app.use(session({
   secret: env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  rolling: true, // Reset expiration on every request, keeps session alive while active
   cookie: {
     secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
     httpOnly: true,
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days (increased from 30 days for better mobile persistence)
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' needed for cross-domain in production
     domain: process.env.NODE_ENV === 'production' ? '.awtyfootballclub.com' : undefined, // Set domain for production
   },

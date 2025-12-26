@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Player, fetchPlayers, deletePlayer } from './api/players';
-import { Game, fetchGames, createGame, deleteGame } from './api/games';
+import { Game, fetchGames, createGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
+import Papa from 'papaparse';
 import { useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import PlayerForm from './components/PlayerForm';
@@ -25,6 +26,14 @@ function App() {
   const [expandedGameId, setExpandedGameId] = useState<string | null>(null);
   const [gameToDelete, setGameToDelete] = useState<string | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<Player | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [availableGames, setAvailableGames] = useState<string[]>([]);
+  const [selectedGameForImport, setSelectedGameForImport] = useState<string>('');
+  const [csvFilesLoaded, setCsvFilesLoaded] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const playersFileInputRef = useRef<HTMLInputElement>(null);
+  const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadPlayers = async () => {
     try {
@@ -144,6 +153,94 @@ function App() {
     setGameToDelete(null);
   };
 
+  // Handle CSV file selection for import
+  const handleFileInputChange = useCallback(async () => {
+    const playersFile = playersFileInputRef.current?.files?.[0];
+    const gameSummaryFile = gameSummaryFileInputRef.current?.files?.[0];
+
+    if (playersFile && gameSummaryFile) {
+      try {
+        // Read files as text
+        const playersText = await playersFile.text();
+        const gameSummaryText = await gameSummaryFile.text();
+
+        // Parse and extract available games
+        const games = parseAvailableGames(playersText, gameSummaryText);
+        
+        if (games.length === 0) {
+          setImportError('No games found in the CSV files');
+          return;
+        }
+
+        setAvailableGames(games);
+        setSelectedGameForImport(games[0]); // Default to first game
+        setCsvFilesLoaded(true);
+        setImportError(null);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to parse CSV files';
+        setImportError(errorMessage);
+      }
+    }
+  }, []);
+
+  // Handle CSV file import into new game
+  const handleImportCsvNew = useCallback(async () => {
+    if (!selectedGameForImport) {
+      setImportError('Please select a game to import');
+      return;
+    }
+
+    const playersFile = playersFileInputRef.current?.files?.[0];
+    const gameSummaryFile = gameSummaryFileInputRef.current?.files?.[0];
+
+    if (!playersFile || !gameSummaryFile) {
+      setImportError('Please select both CSV files');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      setImportError(null);
+
+      // Read files as text
+      const playersText = await playersFile.text();
+      const gameSummaryText = await gameSummaryFile.text();
+
+      // Import data for selected game into a new game
+      const result = await importGameFromCsvNew(playersText, gameSummaryText, selectedGameForImport);
+
+      // Reload games list
+      await loadGames();
+
+      alert(`Game imported successfully! ${result.playersCount} players, ${result.goalsCount} goals.`);
+      
+      // Reset import state
+      setShowImportModal(false);
+      setCsvFilesLoaded(false);
+      setAvailableGames([]);
+      setSelectedGameForImport('');
+      if (playersFileInputRef.current) playersFileInputRef.current.value = '';
+      if (gameSummaryFileInputRef.current) gameSummaryFileInputRef.current.value = '';
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to import game data';
+      setImportError(errorMessage);
+      alert(`Error importing: ${errorMessage}`);
+    } finally {
+      setImporting(false);
+    }
+  }, [selectedGameForImport]);
+
+  // Handle closing import modal
+  const handleCloseImportModal = useCallback(() => {
+    setShowImportModal(false);
+    setImportError(null);
+    setCsvFilesLoaded(false);
+    setAvailableGames([]);
+    setSelectedGameForImport('');
+    if (playersFileInputRef.current) playersFileInputRef.current.value = '';
+    if (gameSummaryFileInputRef.current) gameSummaryFileInputRef.current.value = '';
+  }, []);
+
   // Draft Tab Content
   const draftTabContent = (
     <div className="max-w-4xl mx-auto px-4 py-6">
@@ -184,16 +281,10 @@ function App() {
       const expandedGame = games.find(g => g.id === expandedGameId);
       if (!expandedGame) return null;
       
-      // Sort games by creation date (oldest first) to determine game numbers
-      const sortedGames = [...games].sort((a, b) => 
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
-      const gameNumber = sortedGames.findIndex(g => g.id === expandedGameId) + 1;
-      
       return (
         <GameModuleExpanded
           gameId={expandedGameId}
-          gameNumber={gameNumber}
+          gameNumber={expandedGame.gameNumber}
           gameDate={expandedGame.createdAt}
           onClose={handleCloseExpandedGame}
           onPlayerAdded={loadPlayers}
@@ -204,12 +295,20 @@ function App() {
   ) : (
     <div className="h-full flex flex-col max-w-4xl mx-auto px-4 py-6">
       {isAdmin && (
-        <button
-          onClick={handleAddNewGame}
-          className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-600 active:bg-blue-700 transition-colors text-base mb-6 flex-shrink-0"
-        >
-          Add New Game
-        </button>
+        <div className="flex items-center gap-2 mb-6 flex-shrink-0">
+          <button
+            onClick={handleAddNewGame}
+            className="flex-1 bg-blue-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-600 active:bg-blue-700 transition-colors text-base"
+          >
+            Add New Game
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-4 py-2 bg-gray-700 text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-600 active:bg-gray-500 transition-colors"
+          >
+            Import
+          </button>
+        </div>
       )}
       {gamesError && (
         <div className="mb-6 p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-400">
@@ -238,30 +337,20 @@ function App() {
             const displayGames = [...games].sort((a, b) => 
               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
             );
-            
-            // Sort games by creation date (oldest first) to determine game numbers
-            const sortedGamesForNumbering = [...games].sort((a, b) => 
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-            );
-            // Create a map of game ID to game number
-            const gameNumberMap = new Map<string, number>();
-            sortedGamesForNumbering.forEach((game, index) => {
-              gameNumberMap.set(game.id, index + 1);
-            });
 
-              return displayGames.map((game) => (
-                <GameModuleCondensed
-                  key={game.id}
-                  gameId={game.id}
-                  date={game.createdAt}
-                  gameNumber={gameNumberMap.get(game.id) || 1}
-                  onClick={() => handleEditGame(game.id)}
-                  onDelete={() => handleDeleteGame(game.id)}
-                  onDateUpdated={loadGames}
-                  showDelete={isAdmin}
-                  showEditDate={isAdmin}
-                />
-              ));
+            return displayGames.map((game) => (
+              <GameModuleCondensed
+                key={game.id}
+                gameId={game.id}
+                date={game.createdAt}
+                gameNumber={game.gameNumber}
+                onClick={() => handleEditGame(game.id)}
+                onDelete={() => handleDeleteGame(game.id)}
+                onDateUpdated={loadGames}
+                showDelete={isAdmin}
+                showEditDate={isAdmin}
+              />
+            ));
           })()
         )}
       </div>
@@ -353,6 +442,92 @@ function App() {
           onCancel={handleCancelDeletePlayer}
           itemType="player"
         />
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700">
+            <h3 className="text-xl font-semibold text-gray-100 mb-4">Import New Game from CSV</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Please select two CSV files: one for Players and one for GameSummary. Then choose which game to import as a new game.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Players CSV
+                </label>
+                <input
+                  ref={playersFileInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  onChange={handleFileInputChange}
+                  disabled={csvFilesLoaded}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  GameSummary CSV
+                </label>
+                <input
+                  ref={gameSummaryFileInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  onChange={handleFileInputChange}
+                  disabled={csvFilesLoaded}
+                />
+              </div>
+
+              {csvFilesLoaded && availableGames.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Select Game to Import
+                  </label>
+                  <select
+                    value={selectedGameForImport}
+                    onChange={(e) => setSelectedGameForImport(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-700 text-gray-100"
+                  >
+                    {availableGames.map((gameName) => (
+                      <option key={gameName} value={gameName}>
+                        {gameName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {importError && (
+              <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-sm">
+                {importError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={handleCloseImportModal}
+                disabled={importing}
+                className="px-4 py-2 bg-gray-700 text-gray-100 text-sm font-medium rounded-lg hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              >
+                Cancel
+              </button>
+              {csvFilesLoaded && availableGames.length > 0 && (
+                <button
+                  onClick={handleImportCsvNew}
+                  disabled={importing || !selectedGameForImport}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                >
+                  {importing ? 'Importing...' : 'Import'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </ProtectedRoute>

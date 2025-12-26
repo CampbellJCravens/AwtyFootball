@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal } from '../api/games';
+import { fetchGame, updateGame, Goal, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import { incrementGuestCount } from '../api/settings';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
@@ -8,6 +8,8 @@ import ActivePlayersSection from './ActivePlayersSection';
 import GoalAssistModal from './GoalAssistModal';
 import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import TimePickerModal from './TimePickerModal';
+import Papa from 'papaparse';
 
 interface GameModuleExpandedProps {
   gameId: string;
@@ -42,9 +44,20 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [editingScorer, setEditingScorer] = useState<Player | null>(null);
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
   const [teamChangeToDelete, setTeamChangeToDelete] = useState<number | null>(null);
+  const [editingTeamChangeIndex, setEditingTeamChangeIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [availableGames, setAvailableGames] = useState<string[]>([]);
+  const [selectedGameForImport, setSelectedGameForImport] = useState<string>('');
+  const [csvFilesLoaded, setCsvFilesLoaded] = useState(false);
   const [showGoals, setShowGoals] = useState<boolean>(true);
   const [showTeamChanges, setShowTeamChanges] = useState<boolean>(true); // active by default
+  const playersFileInputRef = useRef<HTMLInputElement>(null);
+  const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
 
   // Load game data and players
   useEffect(() => {
@@ -123,6 +136,182 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       setSaving(false);
     }
   }, [gameId, playerTeams, goals]);
+
+  // Export game data to Google Sheets
+  const handleExportToSheets = useCallback(async () => {
+    try {
+      setExporting(true);
+      setExportError(null);
+
+      // Prepare team swaps data for export (only swap type, not leave)
+      const teamSwaps = teamChanges
+        .filter(change => change.type === 'swap')
+        .map(change => ({
+          playerId: change.player.id,
+          timestamp: change.timestamp.toISOString(),
+          team: change.newTeam || change.team,
+        }));
+
+      await exportGameToSheets(gameId, teamSwaps);
+      
+      // Show success message
+      alert('Game data exported to Google Sheets successfully!');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to export game data';
+      setExportError(errorMessage);
+      alert(`Error exporting: ${errorMessage}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [gameId, teamChanges]);
+
+  // Handle CSV file selection for import
+  const handleFileInputChange = useCallback(async () => {
+    const playersFile = playersFileInputRef.current?.files?.[0];
+    const gameSummaryFile = gameSummaryFileInputRef.current?.files?.[0];
+
+    if (playersFile && gameSummaryFile) {
+      try {
+        // Read files as text
+        const playersText = await playersFile.text();
+        const gameSummaryText = await gameSummaryFile.text();
+
+        // Parse and extract available games
+        const games = parseAvailableGames(playersText, gameSummaryText);
+        
+        if (games.length === 0) {
+          setImportError('No games found in the CSV files');
+          return;
+        }
+
+        setAvailableGames(games);
+        setSelectedGameForImport(games[0]); // Default to first game
+        setCsvFilesLoaded(true);
+        setImportError(null);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to parse CSV files';
+        setImportError(errorMessage);
+      }
+    }
+  }, []);
+
+  // Handle CSV file import
+  const handleImportCsv = useCallback(async () => {
+    if (!selectedGameForImport) {
+      setImportError('Please select a game to import');
+      return;
+    }
+
+    const playersFile = playersFileInputRef.current?.files?.[0];
+    const gameSummaryFile = gameSummaryFileInputRef.current?.files?.[0];
+
+    if (!playersFile || !gameSummaryFile) {
+      setImportError('Please select both CSV files');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      setImportError(null);
+
+      // Read files as text
+      const playersText = await playersFile.text();
+      const gameSummaryText = await gameSummaryFile.text();
+
+      // Import data for selected game
+      const result = await importGameFromCsv(gameId, playersText, gameSummaryText, selectedGameForImport);
+
+      // Reload players and game data
+      const [updatedPlayers, gameData] = await Promise.all([
+        fetchPlayers(),
+        fetchGame(gameId),
+      ]);
+      
+      setPlayers(updatedPlayers);
+
+      if (gameData.teamAssignments) {
+        setPlayerTeams(gameData.teamAssignments);
+      }
+      if (gameData.goals && gameData.goals.length > 0) {
+        const restoredGoals = gameData.goals.map(goal => {
+          const scorer = updatedPlayers.find(p => p.id === goal.scorerId);
+          const assister = goal.assisterId ? updatedPlayers.find(p => p.id === goal.assisterId) || null : null;
+          
+          if (!scorer) {
+            return null;
+          }
+          
+          return {
+            scorer,
+            assister,
+            timestamp: new Date(goal.timestamp),
+            team: goal.team,
+          };
+        }).filter((g): g is { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null } => g !== null);
+        
+        setGoals(restoredGoals);
+      }
+
+      // Parse and restore team changes from game summary
+      Papa.parse(gameSummaryText, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const teamSwaps: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
+          
+          results.data.forEach((row: any) => {
+            if (row.EntryType?.toLowerCase() === 'team swap') {
+              const player = updatedPlayers.find(p => p.name === row.PlayerName);
+              if (player) {
+                const team = row.Team?.toLowerCase() === 'color' ? 'color' : 'white';
+                // Determine previous team based on current team assignments
+                const currentTeam = gameData.teamAssignments?.[player.id];
+                const previousTeam = currentTeam === team ? (team === 'color' ? 'white' : 'color') : currentTeam;
+                
+                teamSwaps.push({
+                  player,
+                  timestamp: new Date(row.Timestamp),
+                  team,
+                  type: 'swap',
+                  previousTeam: previousTeam as 'color' | 'white' | undefined,
+                  newTeam: team,
+                });
+              }
+            }
+          });
+
+          setTeamChanges(teamSwaps);
+        },
+      });
+
+      alert(`Game data imported successfully! ${result.playersCount} players, ${result.goalsCount} goals, ${result.teamSwapsCount} team swaps.`);
+      
+      // Reset import state
+      setShowImportModal(false);
+      setCsvFilesLoaded(false);
+      setAvailableGames([]);
+      setSelectedGameForImport('');
+      if (playersFileInputRef.current) playersFileInputRef.current.value = '';
+      if (gameSummaryFileInputRef.current) gameSummaryFileInputRef.current.value = '';
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to import game data';
+      setImportError(errorMessage);
+      alert(`Error importing: ${errorMessage}`);
+    } finally {
+      setImporting(false);
+    }
+  }, [gameId, selectedGameForImport]);
+
+  // Handle closing import modal
+  const handleCloseImportModal = useCallback(() => {
+    setShowImportModal(false);
+    setImportError(null);
+    setCsvFilesLoaded(false);
+    setAvailableGames([]);
+    setSelectedGameForImport('');
+    if (playersFileInputRef.current) playersFileInputRef.current.value = '';
+    if (gameSummaryFileInputRef.current) gameSummaryFileInputRef.current.value = '';
+  }, []);
 
   // Auto-save when game data changes (debounced)
   useEffect(() => {
@@ -359,26 +548,20 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   // Team change editing
   const handleEditTeamChangeTime = (index: number) => {
-    const entry = teamChanges[index];
-    if (!entry) return;
+    setEditingTeamChangeIndex(index);
+  };
 
-    const current = new Date(entry.timestamp);
-    const currentTimeStr = current.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const input = window.prompt('Set new time (HH:MM, 24h or 12h OK)', currentTimeStr);
-    if (!input) return;
+  const handleTeamChangeTimeChange = (newTime: Date) => {
+    if (editingTeamChangeIndex !== null) {
+      setTeamChanges(prev => prev.map((tc, i) => 
+        i === editingTeamChangeIndex ? { ...tc, timestamp: newTime } : tc
+      ));
+      setEditingTeamChangeIndex(null);
+    }
+  };
 
-    const [hoursStr, minutesStr] = input.split(':');
-    const hours = Number(hoursStr);
-    const minutes = Number(minutesStr);
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return;
-
-    const updated = new Date(entry.timestamp);
-    updated.setHours(hours);
-    updated.setMinutes(minutes);
-    updated.setSeconds(0);
-    updated.setMilliseconds(0);
-
-    setTeamChanges(prev => prev.map((tc, i) => i === index ? { ...tc, timestamp: updated } : tc));
+  const handleCloseTeamChangeTimePicker = () => {
+    setEditingTeamChangeIndex(null);
   };
 
   const handleDeleteTeamChange = (index: number) => {
@@ -420,14 +603,24 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               <h2 className="text-xl font-semibold text-gray-100">{gameTitle}</h2>
               <div className="flex items-center gap-2">
                 {isAdmin && (
-                  <button
-                    onClick={saveGameData}
-                    disabled={saving || loading}
-                    className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
-                    data-tooltip="Report Stats"
-                  >
-                    {saving ? 'Reporting...' : 'Report Stats'}
-                  </button>
+                  <>
+                    <button
+                      onClick={handleExportToSheets}
+                      disabled={exporting || loading}
+                      className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                      data-tooltip="Export to Google Sheets"
+                    >
+                      {exporting ? 'Exporting...' : 'Report Stats'}
+                    </button>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      disabled={importing || loading}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                      data-tooltip="Import from CSV"
+                    >
+                      Import
+                    </button>
+                  </>
                 )}
           <button
             onClick={onClose}
@@ -805,6 +998,104 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           onCancel={handleCancelDeleteTeamChange}
           message="Are you sure you want to delete this team change entry?"
         />
+      )}
+
+      {/* Time Picker Modal for Team Changes */}
+      {editingTeamChangeIndex !== null && teamChanges[editingTeamChangeIndex] && (
+        <TimePickerModal
+          currentTime={teamChanges[editingTeamChangeIndex].timestamp}
+          onSelect={handleTeamChangeTimeChange}
+          onClose={handleCloseTeamChangeTimePicker}
+        />
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700">
+            <h3 className="text-xl font-semibold text-gray-100 mb-4">Import Game Data</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Please select two CSV files: one for Players and one for GameSummary. Then choose which game to import.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Players CSV
+                </label>
+                <input
+                  ref={playersFileInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  onChange={handleFileInputChange}
+                  disabled={csvFilesLoaded}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  GameSummary CSV
+                </label>
+                <input
+                  ref={gameSummaryFileInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  onChange={handleFileInputChange}
+                  disabled={csvFilesLoaded}
+                />
+              </div>
+
+              {csvFilesLoaded && availableGames.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Select Game to Import
+                  </label>
+                  <select
+                    value={selectedGameForImport}
+                    onChange={(e) => setSelectedGameForImport(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-700 text-gray-100"
+                  >
+                    {availableGames.map((gameName) => (
+                      <option key={gameName} value={gameName}>
+                        {gameName}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Current game: {gameTitle}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {importError && (
+              <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-sm">
+                {importError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={handleCloseImportModal}
+                disabled={importing}
+                className="px-4 py-2 bg-gray-700 text-gray-100 text-sm font-medium rounded-lg hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              >
+                Cancel
+              </button>
+              {csvFilesLoaded && availableGames.length > 0 && (
+                <button
+                  onClick={handleImportCsv}
+                  disabled={importing || !selectedGameForImport}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                >
+                  {importing ? 'Importing...' : 'Import'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

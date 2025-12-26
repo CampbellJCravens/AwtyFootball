@@ -74,7 +74,7 @@ export default function ActivePlayersSection({
       </div>
 
       {/* Content */}
-      <div className="bg-gray-900 rounded-lg p-4 min-h-[200px] max-h-[400px] flex flex-col relative border border-gray-700">
+      <div className="bg-gray-900 rounded-lg p-4 min-h-[200px] max-h-[900px] flex flex-col relative border border-gray-700">
         {activeTab === 'color' ? (
           <>
             <div className="flex items-center justify-between mb-3 flex-shrink-0 relative z-10">

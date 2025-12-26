@@ -10,6 +10,7 @@ export interface Goal {
 
 export interface Game {
   id: string;
+  gameNumber: number;
   createdAt: string;
   updatedAt: string;
   teamAssignments?: Record<string, 'color' | 'white'>;
@@ -98,5 +99,101 @@ export async function deleteGame(id: string): Promise<void> {
     }
     throw new Error('Failed to delete game');
   }
+}
+
+// Export game data to Google Sheets
+export async function exportGameToSheets(
+  id: string,
+  teamSwaps: Array<{ playerId: string; timestamp: string; team: 'color' | 'white' }>
+): Promise<{ message: string; playersCount: number; gameSummaryCount: number }> {
+  const response = await fetch(`${API_BASE_URL}/games/${id}/export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ teamSwaps }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to export game' }));
+    throw new Error(error.error || 'Failed to export game');
+  }
+  return response.json();
+}
+
+import Papa from 'papaparse';
+
+// Parse CSV and extract available games
+export function parseAvailableGames(playersCsv: string, gameSummaryCsv: string): string[] {
+  const playersParseResult = Papa.parse(playersCsv, {
+    header: true,
+    skipEmptyLines: true,
+  });
+
+  const gameSummaryParseResult = Papa.parse(gameSummaryCsv, {
+    header: true,
+    skipEmptyLines: true,
+  });
+
+  const gamesSet = new Set<string>();
+
+  // Extract games from players CSV
+  playersParseResult.data.forEach((row: any) => {
+    if (row.Game) {
+      gamesSet.add(row.Game);
+    }
+  });
+
+  // Extract games from game summary CSV
+  gameSummaryParseResult.data.forEach((row: any) => {
+    if (row.Game) {
+      gamesSet.add(row.Game);
+    }
+  });
+
+  return Array.from(gamesSet).sort();
+}
+
+// Import game data from CSV
+export async function importGameFromCsv(
+  id: string,
+  playersCsv: string,
+  gameSummaryCsv: string,
+  selectedGameName: string
+): Promise<{ message: string; playersCount: number; goalsCount: number; teamSwapsCount: number }> {
+  const response = await fetch(`${API_BASE_URL}/games/${id}/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ playersCsv, gameSummaryCsv, selectedGameName }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to import game' }));
+    throw new Error(error.error || 'Failed to import game');
+  }
+  return response.json();
+}
+
+// Import game data from CSV into a new game
+export async function importGameFromCsvNew(
+  playersCsv: string,
+  gameSummaryCsv: string,
+  selectedGameName: string
+): Promise<{ game: Game; message: string; playersCount: number; goalsCount: number }> {
+  const response = await fetch(`${API_BASE_URL}/games/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ playersCsv, gameSummaryCsv, selectedGameName }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to import game' }));
+    throw new Error(error.error || 'Failed to import game');
+  }
+  return response.json();
 }
 
