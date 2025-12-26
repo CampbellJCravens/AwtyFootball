@@ -21,7 +21,7 @@ model Player {
 
 model Game {
   id        String   @id @default(uuid())
-  gameNumber Int      @unique // Persistent game number that doesn't change
+  gameNumber Int?     @unique // Persistent game number that doesn't change (nullable temporarily for migration)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   

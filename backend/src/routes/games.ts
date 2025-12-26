@@ -254,7 +254,8 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
 
     // Create game name with game number (from database)
     const gameDate = new Date(game.createdAt);
-    const gameName = `Game${game.gameNumber} - ${gameDate.toLocaleDateString('en-US', {
+    const gameNumber = game.gameNumber || 0; // Fallback to 0 if null (shouldn't happen after migration)
+    const gameName = `Game${gameNumber} - ${gameDate.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -556,10 +557,13 @@ router.post('/import', requireAdmin, async (req: AuthenticatedRequest, res: Resp
       select: { gameNumber: true },
     });
 
+    // Filter out any games with null gameNumber (from before migration)
+    const gamesWithNumbers = allGames.filter(g => g.gameNumber != null);
+
     let nextGameNumber = 1;
-    if (allGames.length > 0) {
-      const highestGameNumber = Math.max(...allGames.map(g => g.gameNumber));
-      if (highestGameNumber > allGames.length) {
+    if (gamesWithNumbers.length > 0) {
+      const highestGameNumber = Math.max(...gamesWithNumbers.map(g => g.gameNumber!));
+      if (highestGameNumber > gamesWithNumbers.length) {
         nextGameNumber = highestGameNumber;
       } else {
         nextGameNumber = highestGameNumber + 1;
