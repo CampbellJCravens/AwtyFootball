@@ -106,6 +106,7 @@ router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Re
       ...game,
       teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
       goals: safeParseJSON(game.goals, [] as any[]),
+      teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
     }));
     
     res.json(parsedGames);
@@ -132,6 +133,7 @@ router.get('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res:
       ...game,
       teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
       goals: safeParseJSON(game.goals, [] as any[]),
+      teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
     };
 
     res.json(parsedGame);
@@ -168,6 +170,10 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       updateData.goals = JSON.stringify(data.goals);
     }
     
+    if (data.teamChanges !== undefined) {
+      updateData.teamChanges = JSON.stringify(data.teamChanges);
+    }
+    
     if (data.createdAt !== undefined) {
       updateData.createdAt = new Date(data.createdAt);
     }
@@ -186,6 +192,7 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       ...game,
       teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
       goals: safeParseJSON(game.goals, [] as any[]),
+      teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
     };
 
     res.json(parsedGame);

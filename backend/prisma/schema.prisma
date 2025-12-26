@@ -31,6 +31,9 @@ model Game {
   
   // Goals: Array of { scorerId, assisterId?, timestamp, team }
   goals String? // JSON string of goal array
+  
+  // Team changes: Array of { playerId, timestamp, team, type, previousTeam?, newTeam? }
+  teamChanges String? // JSON string of team change array
 }
 
 model AppSettings {

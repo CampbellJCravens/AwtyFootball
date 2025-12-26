@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { fetchGame, updateGame, Goal, TeamChange, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import { incrementGuestCount } from '../api/settings';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
@@ -103,6 +103,27 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         
         setGoals(restoredGoals);
       }
+      
+      // Restore team changes from database
+      if (gameData.teamChanges && gameData.teamChanges.length > 0) {
+        const restoredTeamChanges = gameData.teamChanges.map(change => {
+          const player = playersData.find(p => p.id === change.playerId);
+          if (!player) {
+            return null;
+          }
+          
+          return {
+            player,
+            timestamp: new Date(change.timestamp),
+            team: change.team,
+            type: change.type,
+            previousTeam: change.previousTeam,
+            newTeam: change.newTeam,
+          };
+        }).filter((tc): tc is { player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' } => tc !== null);
+        
+        setTeamChanges(restoredTeamChanges);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load game data');
     } finally {
@@ -127,9 +148,20 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         team: goal.team,
       }));
       
+      // Convert team changes to API format
+      const teamChangesData: TeamChange[] = teamChanges.map(change => ({
+        playerId: change.player.id,
+        timestamp: change.timestamp.toISOString(),
+        team: change.team,
+        type: change.type,
+        previousTeam: change.previousTeam,
+        newTeam: change.newTeam,
+      }));
+      
       await updateGame(gameId, {
         teamAssignments: playerTeams,
         goals: goalsData,
+        teamChanges: teamChangesData,
       });
     } catch (err) {
       console.error('Error saving game data:', err);
@@ -137,7 +169,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSaving(false);
     }
-  }, [gameId, playerTeams, goals]);
+  }, [gameId, playerTeams, goals, teamChanges]);
 
   // Export game data to Google Sheets
   const handleExportToSheets = useCallback(async () => {
