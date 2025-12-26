@@ -330,7 +330,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       onClose();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update game';
-      alert(`Error updating game: ${errorMessage}. Make sure the game number is unique.`);
+      if (errorMessage === 'Authentication required') {
+        alert('Error: You must be logged in as an admin to edit games.');
+      } else if (errorMessage.includes('already exists') || errorMessage.includes('unique')) {
+        alert(`Error updating game: ${errorMessage}`);
+      } else {
+        alert(`Error updating game: ${errorMessage}. Make sure the game number is unique.`);
+      }
     }
   }, [gameId, loadGameData, onClose]);
 

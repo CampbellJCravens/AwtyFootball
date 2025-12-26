@@ -81,6 +81,9 @@ export async function updateGame(id: string, data: UpdateGameData): Promise<Game
     body: JSON.stringify(data),
   });
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Authentication required');
+    }
     if (response.status === 404) {
       throw new Error('Game not found');
     }
