@@ -856,7 +856,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                     (item.type === 'goal' && showGoals) ||
                     (item.type === 'teamChange' && showTeamChanges)
                   )
-                  .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+                  .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()); // Sort chronologically (oldest first)
 
                 if (combined.length === 0) {
                   return (
