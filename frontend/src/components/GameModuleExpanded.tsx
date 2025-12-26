@@ -529,7 +529,11 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const handleAssisterSelected = (assister: Player | null) => {
     if (goalScorer) {
       const scorerTeam = playerTeams[goalScorer.id] || null;
-      setGoals(prev => [...prev, { scorer: goalScorer, assister, timestamp: new Date(), team: scorerTeam }]);
+      // Use game date, not today's date, so timestamps are on the correct date
+      const gameDateObj = new Date(gameDate);
+      const now = new Date(gameDateObj);
+      now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
+      setGoals(prev => [...prev, { scorer: goalScorer, assister, timestamp: now, team: scorerTeam }]);
       setGoalScorer(null);
     }
   };
@@ -546,11 +550,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   const handleGoalTimeChange = (newTime: Date) => {
     if (editingGoalIndex !== null) {
+      // Ensure the date matches the game date, only update the time
+      const gameDateObj = new Date(gameDate);
+      const correctedTime = new Date(gameDateObj);
+      correctedTime.setHours(newTime.getHours(), newTime.getMinutes(), newTime.getSeconds(), newTime.getMilliseconds());
+      
       setGoals(prev => {
         const newGoals = [...prev];
         newGoals[editingGoalIndex] = {
           ...newGoals[editingGoalIndex],
-          timestamp: newTime,
+          timestamp: correctedTime,
         };
         return newGoals;
       });
