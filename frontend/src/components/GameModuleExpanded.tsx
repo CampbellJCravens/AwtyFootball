@@ -106,23 +106,21 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       
       // Restore team changes from database
       if (gameData.teamChanges && gameData.teamChanges.length > 0) {
-        const restoredTeamChanges = gameData.teamChanges
-          .map(change => {
-            const player = playersData.find(p => p.id === change.playerId);
-            if (!player) {
-              return null;
-            }
-            
-            return {
+        const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
+        
+        gameData.teamChanges.forEach(change => {
+          const player = playersData.find(p => p.id === change.playerId);
+          if (player) {
+            restoredTeamChanges.push({
               player,
               timestamp: new Date(change.timestamp),
               team: change.team,
               type: change.type,
               previousTeam: change.previousTeam,
               newTeam: change.newTeam,
-            };
-          })
-          .filter((tc): tc is { player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white' | undefined; newTeam?: 'color' | 'white' | undefined } => tc !== null);
+            });
+          }
+        });
         
         setTeamChanges(restoredTeamChanges);
       }
