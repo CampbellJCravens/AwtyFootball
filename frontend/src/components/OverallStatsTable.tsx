@@ -7,7 +7,10 @@ interface PlayerStats {
   gamesPlayed: number;
   wins: number;
   losses: number;
-  winPercentage: number; // 0-100
+  ties: number;
+  points: number; // 3 pts per win, 1 pt per tie, 0 pts per loss
+  pointsPerGame: number; // points / gamesPlayed
+  goalInvolvements: number; // goals + assists
   goals: number;
   assists: number;
   score: number;
@@ -18,11 +21,11 @@ interface OverallStatsTableProps {
   games: Game[];
 }
 
-type SortColumn = 'wins' | 'winPercentage' | 'gamesPlayed' | 'goals' | 'assists';
+type SortColumn = 'points' | 'gamesPlayed' | 'pointsPerGame' | 'goalInvolvements' | 'goals' | 'assists';
 type SortDirection = 'asc' | 'desc';
 
 export default function OverallStatsTable({ players, games }: OverallStatsTableProps) {
-  const [sortColumn, setSortColumn] = useState<SortColumn>('wins');
+  const [sortColumn, setSortColumn] = useState<SortColumn>('points');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   // Calculate stats for each player
@@ -36,7 +39,10 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
         gamesPlayed: 0,
         wins: 0,
         losses: 0,
-        winPercentage: 0,
+        ties: 0,
+        points: 0,
+        pointsPerGame: 0,
+        goalInvolvements: 0,
         goals: 0,
         assists: 0,
         score: 0,
@@ -54,9 +60,10 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
       const colorGoals = goals.filter(g => g.team === 'color').length;
       const whiteGoals = goals.filter(g => g.team === 'white').length;
 
-      // Determine winner
+      // Determine winner or tie
       const colorWon = colorGoals > whiteGoals;
       const whiteWon = whiteGoals > colorGoals;
+      const isTie = colorGoals === whiteGoals;
 
       // Track which players participated in this game
       const playersInGame = new Set<string>();
@@ -72,8 +79,10 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
         stats.gamesPlayed++;
         playersInGame.add(playerId);
 
-        // Count wins/losses
-        if (team === 'color' && colorWon) {
+        // Count wins/losses/ties
+        if (isTie) {
+          stats.ties++;
+        } else if (team === 'color' && colorWon) {
           stats.wins++;
         } else if (team === 'color' && whiteWon) {
           stats.losses++;
@@ -120,15 +129,22 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
       });
     });
 
-    // Calculate scores and win percentages
+    // Calculate points, PPG, goal involvements, and scores
     statsMap.forEach(stats => {
-      stats.score = stats.wins + stats.gamesPlayed + stats.goals + stats.assists;
-      // Calculate win percentage: (wins / gamesPlayed) * 100, rounded to 1 decimal
+      // Calculate points: 3 pts per win, 1 pt per tie, 0 pts per loss
+      stats.points = (stats.wins * 3) + (stats.ties * 1);
+      
+      // Calculate points per game
       if (stats.gamesPlayed > 0) {
-        stats.winPercentage = Math.round((stats.wins / stats.gamesPlayed) * 1000) / 10;
+        stats.pointsPerGame = Math.round((stats.points / stats.gamesPlayed) * 100) / 100; // Round to 2 decimal places
       } else {
-        stats.winPercentage = 0;
+        stats.pointsPerGame = 0;
       }
+      
+      // Calculate goal involvements (goals + assists)
+      stats.goalInvolvements = stats.goals + stats.assists;
+      
+      stats.score = stats.points + stats.gamesPlayed + stats.goals + stats.assists;
     });
 
     return Array.from(statsMap.values()).filter(stats => stats.gamesPlayed > 0);
@@ -140,51 +156,67 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
       let comparison = 0;
       
       switch (sortColumn) {
-        case 'wins':
-          comparison = a.wins - b.wins;
-          // Tie-breaker: goals, then assists, then games played
+        case 'points':
+          comparison = a.points - b.points;
+          // Tie-breaker: PPG, then goal involvements, then goals
           if (comparison === 0) {
-            comparison = a.goals - b.goals;
+            comparison = a.pointsPerGame - b.pointsPerGame;
             if (comparison === 0) {
-              comparison = a.assists - b.assists;
+              comparison = a.goalInvolvements - b.goalInvolvements;
               if (comparison === 0) {
-                comparison = a.gamesPlayed - b.gamesPlayed;
+                comparison = a.goals - b.goals;
               }
             }
           }
           break;
-        case 'winPercentage':
-          comparison = a.winPercentage - b.winPercentage;
-          // Tie-breaker: goals, then assists
+        case 'pointsPerGame':
+          comparison = a.pointsPerGame - b.pointsPerGame;
+          // Tie-breaker: goal involvements, then goals
           if (comparison === 0) {
-            comparison = a.goals - b.goals;
+            comparison = a.goalInvolvements - b.goalInvolvements;
             if (comparison === 0) {
-              comparison = a.assists - b.assists;
+              comparison = a.goals - b.goals;
             }
           }
           break;
         case 'gamesPlayed':
           comparison = a.gamesPlayed - b.gamesPlayed;
-          // Tie-breaker: goals, then assists
+          // Tie-breaker: points, then goal involvements
+          if (comparison === 0) {
+            comparison = a.points - b.points;
+            if (comparison === 0) {
+              comparison = a.goalInvolvements - b.goalInvolvements;
+            }
+          }
+          break;
+        case 'goalInvolvements':
+          comparison = a.goalInvolvements - b.goalInvolvements;
+          // Tie-breaker: goals, then points
           if (comparison === 0) {
             comparison = a.goals - b.goals;
             if (comparison === 0) {
-              comparison = a.assists - b.assists;
+              comparison = a.points - b.points;
             }
           }
           break;
         case 'goals':
           comparison = a.goals - b.goals;
-          // Tie-breaker: wins
+          // Tie-breaker: assists, then points
           if (comparison === 0) {
-            comparison = a.wins - b.wins;
+            comparison = a.assists - b.assists;
+            if (comparison === 0) {
+              comparison = a.points - b.points;
+            }
           }
           break;
         case 'assists':
           comparison = a.assists - b.assists;
-          // Tie-breaker: wins
+          // Tie-breaker: goals, then points
           if (comparison === 0) {
-            comparison = a.wins - b.wins;
+            comparison = a.goals - b.goals;
+            if (comparison === 0) {
+              comparison = a.points - b.points;
+            }
           }
           break;
       }
@@ -226,15 +258,9 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
             <th className="text-left py-3 px-4 font-semibold text-gray-300">Player</th>
             <th 
               className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
-              onClick={() => handleSort('wins')}
+              onClick={() => handleSort('points')}
             >
-              Wins <SortIcon column="wins" />
-            </th>
-            <th 
-              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
-              onClick={() => handleSort('winPercentage')}
-            >
-              Win% <SortIcon column="winPercentage" />
+              Pts <SortIcon column="points" />
             </th>
             <th 
               className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
@@ -244,22 +270,34 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
             </th>
             <th 
               className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={() => handleSort('pointsPerGame')}
+            >
+              PPG <SortIcon column="pointsPerGame" />
+            </th>
+            <th 
+              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={() => handleSort('goalInvolvements')}
+            >
+              GI <SortIcon column="goalInvolvements" />
+            </th>
+            <th 
+              className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
               onClick={() => handleSort('goals')}
             >
-              Goals <SortIcon column="goals" />
+              G <SortIcon column="goals" />
             </th>
             <th 
               className="text-left py-3 px-4 font-semibold text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors"
               onClick={() => handleSort('assists')}
             >
-              Assists <SortIcon column="assists" />
+              A <SortIcon column="assists" />
             </th>
           </tr>
         </thead>
         <tbody>
           {sortedStats.length === 0 ? (
             <tr>
-              <td colSpan={7} className="text-center py-8 text-gray-400">
+              <td colSpan={8} className="text-center py-8 text-gray-400">
                 No stats available. Play some games first!
               </td>
             </tr>
@@ -283,9 +321,10 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
                     <span className="font-medium text-gray-100">{stats.player.name}</span>
                   </div>
                 </td>
-                <td className="py-3 px-4 text-gray-300">{stats.wins}</td>
-                <td className="py-3 px-4 text-gray-300">{stats.winPercentage.toFixed(1)}%</td>
+                <td className="py-3 px-4 text-gray-300">{stats.points}</td>
                 <td className="py-3 px-4 text-gray-300">{stats.gamesPlayed}</td>
+                <td className="py-3 px-4 text-gray-300">{stats.pointsPerGame.toFixed(2)}</td>
+                <td className="py-3 px-4 text-gray-300">{stats.goalInvolvements}</td>
                 <td className="py-3 px-4 text-gray-300">{stats.goals}</td>
                 <td className="py-3 px-4 text-gray-300">{stats.assists}</td>
               </tr>
