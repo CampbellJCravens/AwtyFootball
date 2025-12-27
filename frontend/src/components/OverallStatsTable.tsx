@@ -14,6 +14,7 @@ interface PlayerStats {
   goals: number;
   assists: number;
   score: number;
+  form: ('W' | 'L' | 'T')[]; // Last 5 game results (oldest to newest, left to right)
 }
 
 interface OverallStatsTableProps {
@@ -46,6 +47,7 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
         goals: 0,
         assists: 0,
         score: 0,
+        form: [],
       });
     });
 
@@ -145,6 +147,57 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
       stats.goalInvolvements = stats.goals + stats.assists;
       
       stats.score = stats.points + stats.gamesPlayed + stats.goals + stats.assists;
+    });
+
+    // Calculate form (last 5 games) for each player
+    // Sort games by createdAt (newest first, so we can get the last 5 most recent)
+    const sortedGames = [...games].sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateB - dateA; // Newest first
+    });
+
+    // For each player, collect their last 5 game results (most recent 5)
+    statsMap.forEach((stats, playerId) => {
+      const playerForm: ('W' | 'L' | 'T')[] = [];
+      
+      // Iterate through games from newest to oldest, collecting results
+      for (const game of sortedGames) {
+        if (!game.teamAssignments || !game.goals) continue;
+
+        const teamAssignments = game.teamAssignments;
+        const goals = game.goals;
+
+        // Check if player participated in this game
+        const playerTeam = teamAssignments[playerId];
+        if (!playerTeam) continue;
+
+        // Count goals by team
+        const colorGoals = goals.filter(g => g.team === 'color').length;
+        const whiteGoals = goals.filter(g => g.team === 'white').length;
+
+        // Determine result for this player
+        const isTie = colorGoals === whiteGoals;
+        if (isTie) {
+          playerForm.push('T');
+        } else if (playerTeam === 'color' && colorGoals > whiteGoals) {
+          playerForm.push('W');
+        } else if (playerTeam === 'color' && whiteGoals > colorGoals) {
+          playerForm.push('L');
+        } else if (playerTeam === 'white' && whiteGoals > colorGoals) {
+          playerForm.push('W');
+        } else if (playerTeam === 'white' && colorGoals > whiteGoals) {
+          playerForm.push('L');
+        }
+
+        // Only keep last 5
+        if (playerForm.length >= 5) {
+          break;
+        }
+      }
+
+      // Reverse to show oldest to newest (left to right in display)
+      stats.form = playerForm.reverse();
     });
 
     return Array.from(statsMap.values()).filter(stats => stats.gamesPlayed > 0);
@@ -292,12 +345,13 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
             >
               A <SortIcon column="assists" />
             </th>
+            <th className="text-left py-3 px-4 font-semibold text-gray-300">Form</th>
           </tr>
         </thead>
         <tbody>
           {sortedStats.length === 0 ? (
             <tr>
-              <td colSpan={8} className="text-center py-8 text-gray-400">
+              <td colSpan={9} className="text-center py-8 text-gray-400">
                 No stats available. Play some games first!
               </td>
             </tr>
@@ -327,6 +381,29 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
                 <td className="py-3 px-4 text-gray-300">{stats.goalInvolvements}</td>
                 <td className="py-3 px-4 text-gray-300">{stats.goals}</td>
                 <td className="py-3 px-4 text-gray-300">{stats.assists}</td>
+                <td className="py-3 px-4">
+                  <div className="flex items-center gap-1.5">
+                    {[0, 1, 2, 3, 4].map((i) => {
+                      const result = stats.form[i];
+                      return (
+                        <div
+                          key={i}
+                          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                            result === 'W'
+                              ? 'bg-green-600 border-green-500 text-white'
+                              : result === 'L'
+                              ? 'bg-red-600 border-red-500 text-white'
+                              : result === 'T'
+                              ? 'bg-gray-500 border-gray-400 text-white'
+                              : 'bg-transparent border-gray-600 text-gray-600'
+                          }`}
+                        >
+                          {result || ''}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </td>
               </tr>
             ))
           )}
