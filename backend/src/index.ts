@@ -30,6 +30,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import session from 'express-session';
+import pgSession from 'connect-pg-simple';
 import passport from 'passport';
 import { ZodError } from 'zod';
 import { env } from './env';
@@ -38,6 +39,8 @@ import playersRouter from './routes/players';
 import gamesRouter from './routes/games';
 import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
+
+const PgSession = pgSession(session);
 
 const app = express();
 
@@ -58,12 +61,17 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Session configuration
+// Session configuration with PostgreSQL store for persistence across server restarts
 app.use(session({
   secret: env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   rolling: true, // Reset expiration on every request, keeps session alive while active
+  store: new PgSession({
+    conString: env.DATABASE_URL, // Use Neon PostgreSQL database
+    tableName: 'user_sessions', // Custom table name for sessions
+    createTableIfMissing: true, // Automatically create the sessions table
+  }),
   cookie: {
     secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
     httpOnly: true,
