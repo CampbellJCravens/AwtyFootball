@@ -38,7 +38,6 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
   const headerOverlayRef = useRef<HTMLDivElement>(null);
   const headerHeightRef = useRef<HTMLTableElement>(null);
   const headerRef = useRef<HTMLTableCellElement>(null);
-  const tableRef = useRef<HTMLTableElement>(null);
   
   // Header height for padding-top calculation
   const [headerHeight, setHeaderHeight] = useState(0);
