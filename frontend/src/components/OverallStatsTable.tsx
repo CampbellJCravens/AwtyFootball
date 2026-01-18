@@ -256,7 +256,9 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
       stats.formWins = wins - losses;
     });
 
-    return Array.from(statsMap.values()).filter(stats => stats.gamesPlayed > 0);
+    return Array.from(statsMap.values()).filter(stats => 
+      stats.gamesPlayed > 0 && !stats.player.name.includes('Guest')
+    );
   }, [players, games]);
 
   // Sort stats
