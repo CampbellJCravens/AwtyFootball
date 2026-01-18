@@ -389,15 +389,15 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
   };
 
   const columns = [
-    { key: 'rank', label: 'Rk', width: 'w-8', widthPx: 32, sticky: true, left: '0' },
-    { key: 'player', label: 'Player', width: 'w-40', widthPx: 160, sticky: true, left: '2rem' },
-    { key: 'points', label: 'Pts', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'points' },
-    { key: 'gamesPlayed', label: 'GP', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'gamesPlayed' },
-    { key: 'pointsPerGame', label: 'PPG', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'pointsPerGame' },
-    { key: 'goalInvolvements', label: 'G+A', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'goalInvolvements' },
-    { key: 'goals', label: 'G', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'goals' },
-    { key: 'assists', label: 'A', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'assists' },
-    { key: 'form', label: 'Form', width: 'w-32', widthPx: 128, sortable: true, sortKey: 'formWins' },
+    { key: 'rank', label: 'Rk', tooltip: 'Rank', width: 'w-8', widthPx: 32, sticky: true, left: '0' },
+    { key: 'player', label: 'Player', tooltip: 'Player', width: 'w-40', widthPx: 160, sticky: true, left: '2rem' },
+    { key: 'points', label: 'Pts', tooltip: 'Points', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'points' },
+    { key: 'gamesPlayed', label: 'GP', tooltip: 'Games Played', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'gamesPlayed' },
+    { key: 'pointsPerGame', label: 'PPG', tooltip: 'Points Per Game', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'pointsPerGame' },
+    { key: 'goalInvolvements', label: 'G+A', tooltip: 'Goals + Assists', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'goalInvolvements' },
+    { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'goals' },
+    { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'assists' },
+    { key: 'form', label: 'Form', tooltip: 'Form', width: 'w-32', widthPx: 128, sortable: true, sortKey: 'formWins' },
   ];
 
   // Manual sticky header overlay: Uses absolute positioning + transform instead of CSS sticky
@@ -424,6 +424,7 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
                     <th
                       key={col.key}
                       ref={idx === 0 ? headerRef : undefined}
+                      title={col.tooltip}
                       className={[
                         'py-2 px-2 font-semibold text-gray-300 bg-gray-900 border-b-2 border-gray-600 text-left',
                         col.sortable ? 'cursor-pointer hover:bg-gray-700 transition-colors' : '',

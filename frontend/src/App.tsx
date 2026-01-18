@@ -18,7 +18,11 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
-  const [activeTab, setActiveTab] = useState('draft');
+  // Initialize activeTab based on admin status - default to 'game' for non-admins
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    // This will be set properly after isAdmin is available
+    return 'game';
+  });
   const [games, setGames] = useState<Game[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);
   const [gamesError, setGamesError] = useState<string | null>(null);
@@ -361,23 +365,31 @@ function App() {
     <Stats players={players} games={games} />
   );
 
-  const tabs = [
-    {
-      id: 'draft',
+  // Build tabs array - only include "All Players" for admins
+  const allTabs = [
+    ...(isAdmin ? [{
+      id: 'draft' as const,
       label: 'All Players',
       content: draftTabContent,
-    },
+    }] : []),
     {
-      id: 'game',
+      id: 'game' as const,
       label: 'Games',
       content: gameTabContent,
     },
     {
-      id: 'stats',
+      id: 'stats' as const,
       label: 'Stats',
       content: statsTabContent,
     },
   ];
+  
+  // If user is on 'draft' tab but not admin, switch to 'game' tab
+  useEffect(() => {
+    if (activeTab === 'draft' && !isAdmin) {
+      setActiveTab('game');
+    }
+  }, [activeTab, isAdmin]);
 
   return (
     <ProtectedRoute>
@@ -413,7 +425,7 @@ function App() {
 
       <div className="flex-1 overflow-hidden">
         <Tabs
-          tabs={tabs}
+          tabs={allTabs}
           activeTab={activeTab}
           onTabChange={setActiveTab}
         />
