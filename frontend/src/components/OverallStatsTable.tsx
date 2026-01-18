@@ -280,12 +280,9 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
           break;
         case 'pointsPerGame':
           comparison = a.pointsPerGame - b.pointsPerGame;
-          // Tie-breaker: goal involvements, then goals
+          // Tie-breaker: total points
           if (comparison === 0) {
-            comparison = a.goalInvolvements - b.goalInvolvements;
-            if (comparison === 0) {
-              comparison = a.goals - b.goals;
-            }
+            comparison = a.points - b.points;
           }
           break;
         case 'gamesPlayed':
