@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { fetchPlayerStats, PlayerStatsResponse, fetchPlayerAwards, PlayerAward, fetchPlayerAchievements, Achievement } from '../api/stats';
 import { updatePlayer } from '../api/players';
 import GroupDetailModal from './GroupDetailModal';
+import ImageLightbox from './ImageLightbox';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -24,6 +25,7 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [expandedAward, setExpandedAward] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<{ players: { id: string; name: string; pictureUrl: string | null }[]; stats: { label: string; value: string }[] } | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -169,7 +171,7 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
       <div className="flex items-center gap-4 mb-6">
         <div className="relative flex-shrink-0">
           {player.pictureUrl ? (
-            <img src={player.pictureUrl} alt={player.name} className="w-20 h-20 rounded-full object-cover border-4 border-gold" />
+            <img src={player.pictureUrl} alt={player.name} className="w-20 h-20 rounded-full object-cover border-4 border-gold cursor-pointer" onClick={() => setLightboxImage(player.pictureUrl)} />
           ) : (
             <div className="w-20 h-20 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-3xl font-bold border-4 border-gold">
               {getInitial(player.name)}
@@ -521,6 +523,10 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           onPlayerClick={onPlayerClick}
           onClose={() => setSelectedGroup(null)}
         />
+      )}
+
+      {lightboxImage && (
+        <ImageLightbox src={lightboxImage} alt={player.name} onClose={() => setLightboxImage(null)} />
       )}
     </div>
   );

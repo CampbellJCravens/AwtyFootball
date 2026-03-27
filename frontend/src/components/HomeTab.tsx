@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward } from '../api/stats';
+import ImageLightbox from './ImageLightbox';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -7,11 +8,12 @@ interface HomeTabProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick }: {
+function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick, onImageClick }: {
   award: MonthlyAward;
   statLabel: string;
   showDetailedStats?: boolean;
   onPlayerClick?: (playerId: string) => void;
+  onImageClick?: (src: string) => void;
 }) {
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
   const nameParts = award.player.name.split(' ');
@@ -47,7 +49,12 @@ function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick }: {
       </div>
       <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
         {award.player.pictureUrl ? (
-          <img src={award.player.pictureUrl} alt={award.player.name} className="w-28 h-28 rounded-full object-cover border-4 border-gold/30" />
+          <img
+            src={award.player.pictureUrl}
+            alt={award.player.name}
+            className="w-28 h-28 rounded-full object-cover border-4 border-gold/30 cursor-pointer"
+            onClick={onImageClick ? () => onImageClick(award.player.pictureUrl!) : undefined}
+          />
         ) : (
           <div className="w-28 h-28 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-4xl font-black border-4 border-gold/30">
             {getInitial(award.player.name)}
@@ -58,7 +65,7 @@ function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick }: {
   );
 }
 
-function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetailedStats, onPlayerClick }: {
+function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetailedStats, onPlayerClick, onImageClick }: {
   title: string;
   titlePlural?: string;
   emoji?: string;
@@ -66,6 +73,7 @@ function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetail
   awards: MonthlyAward[] | null;
   showDetailedStats?: boolean;
   onPlayerClick?: (playerId: string) => void;
+  onImageClick?: (src: string) => void;
 }) {
   if (!awards || awards.length === 0) return null;
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
@@ -77,7 +85,7 @@ function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetail
     <div className="mb-6">
       <h3 className="text-lg font-bold text-text-primary mb-2">{emoji && <span className="mr-1.5">{emoji}</span>}{displayTitle}</h3>
       {!isTied ? (
-        <AwardCard award={awards[0]} statLabel={statLabel} showDetailedStats={showDetailedStats} onPlayerClick={onPlayerClick} />
+        <AwardCard award={awards[0]} statLabel={statLabel} showDetailedStats={showDetailedStats} onPlayerClick={onPlayerClick} onImageClick={onImageClick} />
       ) : (
         <div className="bg-surface rounded-2xl border border-border overflow-hidden p-5">
           {/* Overlapping avatars */}
@@ -90,7 +98,7 @@ function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetail
                   alt={award.player.name}
                   className="w-16 h-16 rounded-full object-cover border-4 border-surface cursor-pointer hover:scale-105 transition-transform"
                   style={{ zIndex: awards.length - i }}
-                  onClick={onPlayerClick ? () => onPlayerClick(award.player.id) : undefined}
+                  onClick={onImageClick ? () => onImageClick(award.player.pictureUrl!) : undefined}
                 />
               ) : (
                 <div
@@ -138,6 +146,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
   const [year, setYear] = useState(now.getFullYear());
   const [data, setData] = useState<MonthlyStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -239,6 +248,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               awards={data.awards.playerOfTheMonth}
               showDetailedStats
               onPlayerClick={onPlayerClick}
+              onImageClick={setLightboxImage}
             />
             <AwardSection
               title="Top Goal Contributor"
@@ -247,6 +257,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               statLabel={`${data.awards.topGoalContributor?.[0]?.value ?? 0} Goals and Assists`}
               awards={data.awards.topGoalContributor}
               onPlayerClick={onPlayerClick}
+              onImageClick={setLightboxImage}
             />
             <AwardSection
               title="Top Scorer"
@@ -255,6 +266,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               statLabel={`${data.awards.topScorer?.[0]?.value ?? 0} Goals`}
               awards={data.awards.topScorer}
               onPlayerClick={onPlayerClick}
+              onImageClick={setLightboxImage}
             />
             <AwardSection
               title="Top Assister"
@@ -263,8 +275,13 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               statLabel={`${data.awards.topAssister?.[0]?.value ?? 0} Assists`}
               awards={data.awards.topAssister}
               onPlayerClick={onPlayerClick}
+              onImageClick={setLightboxImage}
             />
           </div>
+        )}
+
+        {lightboxImage && (
+          <ImageLightbox src={lightboxImage} alt="Player" onClose={() => setLightboxImage(null)} />
         )}
       </div>
     </div>
