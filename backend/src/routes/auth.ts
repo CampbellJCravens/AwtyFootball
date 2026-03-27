@@ -238,5 +238,26 @@ router.post('/setup-profile', requireAuth, async (req: AuthenticatedRequest, res
   }
 });
 
+/**
+ * POST /api/auth/unlink-player
+ * Unlink the current player from the user account so they can link to a different one
+ */
+router.post('/unlink-player', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { playerId: null },
+      select: { id: true, email: true, name: true, picture: true, role: true, playerId: true },
+    });
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Error unlinking player:', error);
+    res.status(500).json({ error: 'Failed to unlink player' });
+  }
+});
+
 export default router;
 

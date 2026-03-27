@@ -378,7 +378,20 @@ function App() {
             playerId={user.playerId}
             onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('profile'); setActiveTab('players'); }}
           />
-          <div className="max-w-lg mx-auto px-4 pb-8">
+          <div className="max-w-lg mx-auto px-4 pb-8 mt-6 space-y-3">
+            <button
+              onClick={async () => {
+                const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+                await fetch(`${API_BASE_URL}/auth/unlink-player`, {
+                  method: 'POST',
+                  credentials: 'include',
+                });
+                refreshUser();
+              }}
+              className="w-full px-4 py-3 border-2 border-white/30 text-white/70 rounded-xl font-medium hover:bg-white/10 transition-colors"
+            >
+              Link to Different Player
+            </button>
             <button
               onClick={logout}
               className="w-full px-4 py-3 border-2 border-gold text-gold rounded-xl font-medium hover:bg-gold/10 transition-colors"
