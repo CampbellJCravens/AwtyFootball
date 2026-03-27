@@ -169,7 +169,7 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
         ].map(stat => (
           <div key={stat.label} className="bg-surface rounded-xl border border-border p-3 text-center">
             <p className="text-[10px] text-text-tertiary font-semibold tracking-wider">{stat.label}</p>
-            <p className={`text-xl font-bold ${stat.highlight ? 'text-gold' : 'text-text-primary'}`}>
+            <p className="text-xl font-bold text-text-primary">
               {stat.value}
               {stat.rank && <span className={`ml-1 ${stat.rank <= 3 ? 'text-sm' : 'text-[10px] text-text-tertiary font-medium'}`}>{stat.rank <= 3 ? rankDisplay(stat.rank) : `(${rankDisplay(stat.rank)})`}</span>}
             </p>
@@ -179,6 +179,12 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
 
       {/* Awards */}
       {awards.length > 0 && (() => {
+        const awardEmojis: Record<string, string> = {
+          'Player of the Month': '👑',
+          'Top Goal Contributor': '🎯',
+          'Top Scorer': '⚽',
+          'Top Assister': '🤝',
+        };
         const grouped = awards.reduce<Record<string, typeof awards>>((acc, a) => {
           if (!acc[a.award]) acc[a.award] = [];
           acc[a.award].push(a);
@@ -197,7 +203,7 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
                       className="w-full bg-surface rounded-xl border border-border p-3 flex items-center gap-3 hover:bg-surface-hover transition-colors"
                     >
                       <div className="w-9 h-9 rounded-full bg-gold/20 flex items-center justify-center flex-shrink-0">
-                        <span className="text-base">🏆</span>
+                        <span className="text-base">{awardEmojis[name] || '🏆'}</span>
                       </div>
                       <div className="flex-1 min-w-0 text-left">
                         <p className="text-sm font-medium text-text-primary">

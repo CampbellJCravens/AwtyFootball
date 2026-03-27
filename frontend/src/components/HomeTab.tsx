@@ -58,9 +58,10 @@ function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick }: {
   );
 }
 
-function AwardSection({ title, titlePlural, statLabel, awards, showDetailedStats, onPlayerClick }: {
+function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetailedStats, onPlayerClick }: {
   title: string;
   titlePlural?: string;
+  emoji?: string;
   statLabel: string;
   awards: MonthlyAward[] | null;
   showDetailedStats?: boolean;
@@ -74,7 +75,7 @@ function AwardSection({ title, titlePlural, statLabel, awards, showDetailedStats
 
   return (
     <div className="mb-6">
-      <h3 className="text-lg font-bold text-text-primary mb-2">{displayTitle}</h3>
+      <h3 className="text-lg font-bold text-text-primary mb-2">{emoji && <span className="mr-1.5">{emoji}</span>}{displayTitle}</h3>
       {!isTied ? (
         <AwardCard award={awards[0]} statLabel={statLabel} showDetailedStats={showDetailedStats} onPlayerClick={onPlayerClick} />
       ) : (
@@ -228,6 +229,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
             <AwardSection
               title="Player of the Month"
               titlePlural="Players of the Month"
+              emoji="👑"
               statLabel={`${data.awards.playerOfTheMonth?.[0]?.value ?? 0} Points`}
               awards={data.awards.playerOfTheMonth}
               showDetailedStats
@@ -236,6 +238,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
             <AwardSection
               title="Top Goal Contributor"
               titlePlural="Top Goal Contributors"
+              emoji="🎯"
               statLabel={`${data.awards.topGoalContributor?.[0]?.value ?? 0} Goals and Assists`}
               awards={data.awards.topGoalContributor}
               onPlayerClick={onPlayerClick}
@@ -243,6 +246,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
             <AwardSection
               title="Top Scorer"
               titlePlural="Top Scorers"
+              emoji="⚽"
               statLabel={`${data.awards.topScorer?.[0]?.value ?? 0} Goals`}
               awards={data.awards.topScorer}
               onPlayerClick={onPlayerClick}
@@ -250,6 +254,7 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
             <AwardSection
               title="Top Assister"
               titlePlural="Top Assisters"
+              emoji="🤝"
               statLabel={`${data.awards.topAssister?.[0]?.value ?? 0} Assists`}
               awards={data.awards.topAssister}
               onPlayerClick={onPlayerClick}
