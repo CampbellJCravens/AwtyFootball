@@ -12,10 +12,10 @@ export default function ProtectedRoute({ children, requireAdmin = false }: Prote
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-base flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-          <p className="text-gray-400 mt-4">Loading...</p>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+          <p className="text-text-tertiary mt-4">Loading...</p>
         </div>
       </div>
     );
@@ -27,10 +27,10 @@ export default function ProtectedRoute({ children, requireAdmin = false }: Prote
 
   if (requireAdmin && !isAdmin) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-        <div className="bg-gray-800 rounded-lg shadow-xl p-8 max-w-md w-full border border-gray-700 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Access Denied</h2>
-          <p className="text-gray-400">
+      <div className="min-h-screen bg-base flex items-center justify-center p-4">
+        <div className="bg-surface rounded-xl shadow-modal p-8 max-w-md w-full border border-border text-center">
+          <h2 className="text-2xl font-bold text-text-primary mb-4">Access Denied</h2>
+          <p className="text-text-tertiary">
             You need admin privileges to access this page.
           </p>
         </div>
@@ -40,4 +40,3 @@ export default function ProtectedRoute({ children, requireAdmin = false }: Prote
 
   return <>{children}</>;
 }
-

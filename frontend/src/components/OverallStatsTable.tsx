@@ -22,13 +22,14 @@ interface PlayerStats {
 interface OverallStatsTableProps {
   players: Player[];
   games: Game[];
+  onPlayerClick?: (playerId: string) => void;
 }
 
 type SortColumn = 'points' | 'gamesPlayed' | 'pointsPerGame' | 'goalInvolvements' | 'goals' | 'assists' | 'formWins';
 type SortDirection = 'asc' | 'desc';
 
 
-export default function OverallStatsTable({ players, games }: OverallStatsTableProps) {
+export default function OverallStatsTable({ players, games, onPlayerClick }: OverallStatsTableProps) {
   const [sortColumn, setSortColumn] = useState<SortColumn>('points');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   
@@ -410,7 +411,7 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
           className="absolute top-0 left-0 right-0 z-[999] pointer-events-none"
           style={{ transform: 'translate(0, 0)' }}
         >
-          <div className="pointer-events-auto bg-gray-900">
+          <div className="pointer-events-auto bg-base">
             <table ref={headerHeightRef} className="min-w-max w-full table-fixed border-separate border-spacing-0 text-sm">
               <colgroup>
                 {columns.map(col => (
@@ -418,15 +419,15 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
                 ))}
               </colgroup>
               <thead>
-                <tr className="border-b-2 border-gray-600">
+                <tr className="border-b-2 border-gold">
                   {columns.map((col, idx) => (
                     <th
                       key={col.key}
                       ref={idx === 0 ? headerRef : undefined}
                       title={col.tooltip}
                       className={[
-                        'py-2 px-2 font-semibold text-gray-300 bg-gray-900 border-b-2 border-gray-600 text-left',
-                        col.sortable ? 'cursor-pointer hover:bg-gray-700 transition-colors' : '',
+                        'py-2 px-2 font-semibold text-text-secondary bg-base border-b-2 border-gold text-left',
+                        col.sortable ? 'cursor-pointer hover:text-accent hover:bg-surface-hover transition-colors' : '',
                         idx === 0 ? 'sticky left-0 z-70' : '',
                         idx === 1 ? 'sticky z-70' : '',
                         idx >= 2 ? 'z-60' : '',
@@ -459,21 +460,21 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
             <tbody>
               {sortedStats.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="text-center py-8 text-gray-400">
+                  <td colSpan={columns.length} className="text-center py-8 text-text-tertiary">
                     No stats available. Play some games first!
                   </td>
                 </tr>
               ) : (
                 sortedStats.map((stats, index) => (
-                  <tr key={stats.player.id} className="border-b border-gray-700 hover:bg-gray-800">
+                  <tr key={stats.player.id} className="border-b border-border hover:bg-surface-hover even:bg-surface-hover/50">
                     {/* Rank - Sticky */}
-                    <td className="py-2 px-1 text-gray-300 font-medium bg-gray-800 sticky left-0 z-20">
-                      {index + 1}
+                    <td className="py-2 px-1 text-text-secondary font-medium bg-base sticky left-0 z-20">
+                      {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
                     </td>
                     
                     {/* Player - Sticky */}
                     <td 
-                      className="py-2 px-3 bg-gray-800 sticky z-20"
+                      className="py-2 px-3 bg-base sticky z-20"
                       style={{ left: `${columns[0].widthPx}px` }}
                     >
                       <div className="flex items-center gap-2">
@@ -481,24 +482,29 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
                           <img
                             src={stats.player.pictureUrl}
                             alt={stats.player.name}
-                            className="w-8 h-8 rounded-full object-cover border-2 border-gray-600 flex-shrink-0"
+                            className="w-8 h-8 rounded-full object-cover border-2 border-border-emphasis flex-shrink-0"
                           />
                         ) : (
-                          <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
                             {getInitial(stats.player.name)}
                           </div>
                         )}
-                        <span className="font-medium text-gray-100 truncate">{stats.player.name}</span>
+                        <span
+                          className={`font-medium truncate ${onPlayerClick ? 'text-gold cursor-pointer hover:underline' : 'text-text-primary'}`}
+                          onClick={onPlayerClick ? (e) => { e.stopPropagation(); onPlayerClick(stats.player.id); } : undefined}
+                        >
+                          {stats.player.name}
+                        </span>
                       </div>
                     </td>
                     
                     {/* Rest of columns - Scrollable */}
-                    <td className="py-2 px-3 text-gray-300">{stats.points}</td>
-                    <td className="py-2 px-3 text-gray-300">{stats.gamesPlayed}</td>
-                    <td className="py-2 px-3 text-gray-300">{stats.pointsPerGame.toFixed(2)}</td>
-                    <td className="py-2 px-3 text-gray-300">{stats.goalInvolvements}</td>
-                    <td className="py-2 px-3 text-gray-300">{stats.goals}</td>
-                    <td className="py-2 px-3 text-gray-300">{stats.assists}</td>
+                    <td className="py-2 px-3 text-text-secondary">{stats.points}</td>
+                    <td className="py-2 px-3 text-text-secondary">{stats.gamesPlayed}</td>
+                    <td className="py-2 px-3 text-text-secondary">{stats.pointsPerGame.toFixed(2)}</td>
+                    <td className="py-2 px-3 text-text-secondary">{stats.goalInvolvements}</td>
+                    <td className="py-2 px-3 text-text-secondary">{stats.goals}</td>
+                    <td className="py-2 px-3 text-text-secondary">{stats.assists}</td>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-1">
                         {[0, 1, 2, 3, 4].map((i) => {
@@ -508,12 +514,12 @@ export default function OverallStatsTable({ players, games }: OverallStatsTableP
                               key={i}
                               className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
                                 result === 'W'
-                                  ? 'bg-green-600 border-green-500 text-white'
+                                  ? 'bg-green-700 border-green-600 text-white'
                                   : result === 'L'
                                   ? 'bg-red-600 border-red-500 text-white'
                                   : result === 'T'
-                                  ? 'bg-gray-500 border-gray-400 text-white'
-                                  : 'bg-transparent border-gray-600 text-gray-600'
+                                  ? 'bg-gray-600 border-gray-500 text-white'
+                                  : 'bg-transparent border-border-emphasis text-text-muted'
                               }`}
                             >
                               {result || ''}

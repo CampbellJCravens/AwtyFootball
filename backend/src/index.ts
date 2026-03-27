@@ -39,6 +39,7 @@ import playersRouter from './routes/players';
 import gamesRouter from './routes/games';
 import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
+import statsRouter from './routes/stats';
 
 const PgSession = pgSession(session);
 
@@ -90,6 +91,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/players', playersRouter);
 app.use('/api/games', gamesRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/stats', statsRouter);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

@@ -76,6 +76,7 @@ passport.deserializeUser(async (id: string, done) => {
         name: true,
         picture: true,
         role: true,
+        playerId: true,
       },
     });
 
@@ -89,6 +90,7 @@ passport.deserializeUser(async (id: string, done) => {
       name: user.name || undefined,
       picture: user.picture || undefined,
       role: user.role,
+      playerId: user.playerId || undefined,
     });
   } catch (error) {
     console.error('Deserialize user error:', error);

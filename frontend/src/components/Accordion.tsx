@@ -14,21 +14,21 @@ export default function Accordion({ title, children, defaultOpen = false, hint }
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className="border border-gray-700 rounded-lg overflow-hidden flex flex-col h-full">
+    <div className="border border-border rounded-xl overflow-hidden flex flex-col h-full">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-4 py-3 bg-gray-800 hover:bg-gray-700 flex items-center justify-between transition-colors flex-shrink-0"
+        className="w-full px-4 py-3 bg-surface hover:bg-surface-hover flex items-center justify-between transition-colors flex-shrink-0"
       >
         <div className="flex items-center gap-2 flex-1">
-          <span className="font-medium text-gray-100">{title}</span>
+          <span className="font-medium text-text-primary">{title}</span>
           {hint && (
-            <span className="text-sm text-gray-400 italic">
+            <span className="text-sm text-text-tertiary italic">
               {isOpen ? hint.expanded : hint.collapsed}
             </span>
           )}
         </div>
         <svg
-          className={`w-5 h-5 text-gray-300 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-5 h-5 text-text-secondary transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -42,11 +42,10 @@ export default function Accordion({ title, children, defaultOpen = false, hint }
         </svg>
       </button>
       {isOpen && (
-        <div className="p-4 bg-gray-800 flex-1 overflow-hidden flex flex-col">
+        <div className="p-4 bg-surface flex-1 overflow-hidden flex flex-col">
           {children}
         </div>
       )}
     </div>
   );
 }
-

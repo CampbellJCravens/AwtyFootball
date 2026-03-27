@@ -9,6 +9,7 @@ declare global {
       name?: string;
       picture?: string;
       role: string;
+      playerId?: string;
     }
   }
 }

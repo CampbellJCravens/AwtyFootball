@@ -48,6 +48,7 @@ model User {
   name      String?
   picture   String?
   role      String   @default("regular") // "admin" or "regular"
+  playerId  String?  @unique // Link to a Player record
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -58,4 +59,5 @@ model AllowedEmail {
   role      String   @default("regular") // "admin" or "regular"
   createdAt DateTime @default(now())
 }
+
 

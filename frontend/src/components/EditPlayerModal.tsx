@@ -48,36 +48,24 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        // Use a reasonable size for the output (e.g., 400x400 for good quality)
         const outputSize = 400;
         canvas.width = outputSize;
         canvas.height = outputSize;
         const ctx = canvas.getContext('2d');
-        
+
         if (!ctx) {
           reject(new Error('Could not get canvas context'));
           return;
         }
 
-        // Calculate the crop area
-        // We want to crop a square from the image based on the position
         const minDimension = Math.min(img.width, img.height);
-        
-        // Position is in percentage (0-100), where 50 is center
-        // Convert to offset from center
-        const offsetPercentX = (x - 50) / 50; // -1 to 1
-        const offsetPercentY = (y - 50) / 50; // -1 to 1
-        
-        // Calculate source coordinates
-        // Center the crop, then offset based on position
+        const offsetPercentX = (x - 50) / 50;
+        const offsetPercentY = (y - 50) / 50;
         const sourceSize = minDimension;
         const maxOffsetX = Math.max(0, (img.width - sourceSize) / 2);
         const maxOffsetY = Math.max(0, (img.height - sourceSize) / 2);
-        
         const sx = (img.width - sourceSize) / 2 + (offsetPercentX * maxOffsetX);
         const sy = (img.height - sourceSize) / 2 + (offsetPercentY * maxOffsetY);
-        
-        // Ensure we don't go out of bounds
         const clampedSx = Math.max(0, Math.min(img.width - sourceSize, sx));
         const clampedSy = Math.max(0, Math.min(img.height - sourceSize, sy));
 
@@ -86,7 +74,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
           clampedSx, clampedSy, sourceSize, sourceSize,
           0, 0, outputSize, outputSize
         );
-        
+
         canvas.toBlob((blob) => {
           if (!blob) {
             reject(new Error('Failed to create blob'));
@@ -121,14 +109,12 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
         name: name.trim(),
       };
 
-      // Convert image to base64 if a new file was selected, with positioning applied
       if (pictureFile) {
         const base64 = await applyImagePosition(pictureFile, imagePosition.x, imagePosition.y);
         data.pictureUrl = base64;
       } else if (picturePreview && picturePreview !== player.pictureUrl) {
         // If preview changed but no new file (positioning existing image)
         // For now, we only apply positioning to new files
-        // If you want to reposition existing images, we'd need to load and reprocess them
       }
 
       await updatePlayer(player.id, data);
@@ -144,19 +130,19 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
   if (!player) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 border border-gray-700">
-        <h2 className="text-2xl font-semibold text-gray-100 mb-4">Edit Player</h2>
-        
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-xl shadow-modal max-w-md w-full p-6 border border-border">
+        <h2 className="text-2xl font-semibold text-text-primary mb-4">Edit Player</h2>
+
         {error && (
-          <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded text-red-400 text-sm">
+          <div className="mb-4 p-3 bg-error-bg border border-error-border rounded-xl text-error text-sm">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="edit-name" className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="edit-name" className="block text-sm font-medium text-text-secondary mb-2">
               Name
             </label>
             <input
@@ -164,14 +150,14 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-800 text-gray-100 placeholder-gray-500"
+              className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary placeholder-text-muted"
               placeholder="Enter player name"
               disabled={isSubmitting}
             />
           </div>
 
           <div className="mb-6">
-            <label htmlFor="edit-picture-input" className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="edit-picture-input" className="block text-sm font-medium text-text-secondary mb-2">
               Picture
             </label>
             <input
@@ -179,7 +165,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
               type="file"
               accept="image/*"
               onChange={handleFileChange}
-              className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-800 text-gray-100 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-900/30 file:text-blue-300 hover:file:bg-blue-900/50"
+              className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-accent-muted file:text-accent hover:file:bg-accent-subtle"
               disabled={isSubmitting}
             />
             {picturePreview && (
@@ -198,14 +184,14 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="flex-1 px-4 py-2 border border-gray-600 text-gray-300 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 px-4 py-2 border border-border-emphasis text-text-secondary rounded-xl font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 bg-blue-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 bg-accent text-text-on-accent px-4 py-2 rounded-xl font-medium hover:bg-accent-hover active:bg-accent-active disabled:bg-surface-active disabled:cursor-not-allowed transition-colors"
             >
               {isSubmitting ? 'Saving...' : 'Save Changes'}
             </button>
@@ -215,4 +201,3 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
     </div>
   );
 }
-

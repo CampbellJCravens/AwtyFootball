@@ -1,10 +1,10 @@
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="bg-gray-800 rounded-lg shadow-xl p-8 max-w-md w-full border border-gray-700">
+    <div className="min-h-screen bg-base flex items-center justify-center p-4">
+      <div className="bg-surface rounded-xl shadow-modal p-8 max-w-md w-full border border-border">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Awty Football</h1>
-          <p className="text-gray-400">Sign in to access the app</p>
+          <h1 className="text-3xl font-bold text-gold mb-2">Awty Football</h1>
+          <p className="text-text-tertiary">Sign in to access the app</p>
         </div>
 
         <button
@@ -12,7 +12,7 @@ export default function LoginPage() {
             const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
             window.location.href = `${API_BASE_URL}/auth/google`;
           }}
-          className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-100 text-gray-900 font-medium py-3 px-4 rounded-lg transition-colors"
+          className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-100 text-gray-900 font-medium py-3 px-4 rounded-xl transition-colors"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -35,11 +35,10 @@ export default function LoginPage() {
           Sign in with Google
         </button>
 
-        <p className="text-sm text-gray-500 text-center mt-6">
+        <p className="text-sm text-text-muted text-center mt-6">
           Only authorized users can access this app. Contact an admin if you need access.
         </p>
       </div>
     </div>
   );
 }
-

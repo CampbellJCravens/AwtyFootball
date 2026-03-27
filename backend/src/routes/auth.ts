@@ -45,6 +45,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         name: true,
         picture: true,
         role: true,
+        playerId: true,
       },
     });
 
@@ -161,6 +162,79 @@ router.delete('/allowed-emails/:id', requireAuth, async (req: AuthenticatedReque
     }
     console.error('Error deleting allowed email:', error);
     res.status(500).json({ error: 'Failed to delete allowed email' });
+  }
+});
+
+/**
+ * POST /api/auth/link-player
+ * Link an existing player to the current user account
+ */
+router.post('/link-player', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const { playerId } = req.body;
+    if (!playerId || typeof playerId !== 'string') {
+      return res.status(400).json({ error: 'playerId is required' });
+    }
+
+    // Check player exists
+    const player = await prisma.player.findUnique({ where: { id: playerId } });
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+
+    // Check no other user is already linked to this player
+    const existingLink = await prisma.user.findFirst({ where: { playerId, NOT: { id: req.user.id } } });
+    if (existingLink) return res.status(409).json({ error: 'This player is already linked to another account' });
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { playerId },
+      select: { id: true, email: true, name: true, picture: true, role: true, playerId: true },
+    });
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Error linking player:', error);
+    res.status(500).json({ error: 'Failed to link player' });
+  }
+});
+
+/**
+ * POST /api/auth/setup-profile
+ * Create a new player and link to the current user (for new users)
+ */
+router.post('/setup-profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const { name, pictureUrl } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+
+    // Check user doesn't already have a linked player
+    const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (currentUser?.playerId) {
+      return res.status(400).json({ error: 'You already have a linked player profile' });
+    }
+
+    // Create player and link in a transaction
+    const [player, updatedUser] = await prisma.$transaction(async (tx) => {
+      const newPlayer = await tx.player.create({
+        data: { name: name.trim(), pictureUrl: pictureUrl || null },
+      });
+      const user = await tx.user.update({
+        where: { id: req.user!.id },
+        data: { playerId: newPlayer.id },
+        select: { id: true, email: true, name: true, picture: true, role: true, playerId: true },
+      });
+      return [newPlayer, user];
+    });
+
+    res.status(201).json({ user: updatedUser, player });
+  } catch (error) {
+    console.error('Error setting up profile:', error);
+    res.status(500).json({ error: 'Failed to set up profile' });
   }
 });
 

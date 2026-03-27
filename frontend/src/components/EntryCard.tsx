@@ -24,12 +24,11 @@ export default function EntryCard({ entry, onClick }: EntryCardProps) {
   return (
     <div
       onClick={onClick}
-      className="bg-gray-800 rounded-lg shadow-md p-4 mb-4 cursor-pointer hover:shadow-lg transition-shadow active:scale-[0.98]"
+      className="bg-surface rounded-xl shadow-card p-4 mb-4 cursor-pointer hover:shadow-card-hover transition-shadow active:scale-[0.98]"
     >
-      <h3 className="text-lg font-semibold text-gray-100 mb-2">{entry.title}</h3>
-      <p className="text-gray-300 text-sm mb-3 line-clamp-2">{truncatedContent}</p>
-      <p className="text-xs text-gray-400">{formatDate(entry.createdAt)}</p>
+      <h3 className="text-lg font-semibold text-text-primary mb-2">{entry.title}</h3>
+      <p className="text-text-secondary text-sm mb-3 line-clamp-2">{truncatedContent}</p>
+      <p className="text-xs text-text-tertiary">{formatDate(entry.createdAt)}</p>
     </div>
   );
 }
-

@@ -24,7 +24,7 @@ export default function ImagePositioner({ imageSrc, size = 200, onPositionChange
     const rect = containerRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    setDragStart({ 
+    setDragStart({
       x: e.clientX - centerX,
       y: e.clientY - centerY,
       startPosition: { ...position }
@@ -50,7 +50,7 @@ export default function ImagePositioner({ imageSrc, size = 200, onPositionChange
     const rect = containerRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    setDragStart({ 
+    setDragStart({
       x: touch.clientX - centerX,
       y: touch.clientY - centerY,
       startPosition: { ...position }
@@ -74,15 +74,15 @@ export default function ImagePositioner({ imageSrc, size = 200, onPositionChange
     const rect = containerRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    
+
     const deltaX = clientX - centerX - dragStart.x;
     const deltaY = clientY - centerY - dragStart.y;
-    
+
     // Convert pixel movement to percentage (limit to reasonable range)
     const radius = rect.width / 2;
     const percentX = Math.max(0, Math.min(100, dragStart.startPosition.x + (deltaX / radius) * 50));
     const percentY = Math.max(0, Math.min(100, dragStart.startPosition.y + (deltaY / radius) * 50));
-    
+
     const newPosition = { x: percentX, y: percentY };
     setPosition(newPosition);
     if (onPositionChange) {
@@ -98,14 +98,14 @@ export default function ImagePositioner({ imageSrc, size = 200, onPositionChange
         const rect = containerRef.current.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
-        
+
         const deltaX = e.clientX - centerX - dragStart.x;
         const deltaY = e.clientY - centerY - dragStart.y;
-        
+
         const radius = rect.width / 2;
         const percentX = Math.max(0, Math.min(100, dragStart.startPosition.x + (deltaX / radius) * 50));
         const percentY = Math.max(0, Math.min(100, dragStart.startPosition.y + (deltaY / radius) * 50));
-        
+
         const newPosition = { x: percentX, y: percentY };
         setPosition(newPosition);
         if (onPositionChange) {
@@ -125,14 +125,14 @@ export default function ImagePositioner({ imageSrc, size = 200, onPositionChange
         const rect = containerRef.current.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
-        
+
         const deltaX = touch.clientX - centerX - dragStart.x;
         const deltaY = touch.clientY - centerY - dragStart.y;
-        
+
         const radius = rect.width / 2;
         const percentX = Math.max(0, Math.min(100, dragStart.startPosition.x + (deltaX / radius) * 50));
         const percentY = Math.max(0, Math.min(100, dragStart.startPosition.y + (deltaY / radius) * 50));
-        
+
         const newPosition = { x: percentX, y: percentY };
         setPosition(newPosition);
         if (onPositionChange) {
@@ -163,7 +163,7 @@ export default function ImagePositioner({ imageSrc, size = 200, onPositionChange
     <div className="flex flex-col items-center">
       <div
         ref={containerRef}
-        className="relative rounded-full overflow-hidden border-2 border-gray-600 cursor-move touch-none"
+        className="relative rounded-full overflow-hidden border-2 border-border-emphasis cursor-move touch-none"
         style={{ width: size, height: size }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -183,11 +183,10 @@ export default function ImagePositioner({ imageSrc, size = 200, onPositionChange
           draggable={false}
         />
         {isDragging && (
-          <div className="absolute inset-0 border-2 border-blue-500 border-dashed rounded-full pointer-events-none" />
+          <div className="absolute inset-0 border-2 border-accent border-dashed rounded-full pointer-events-none" />
         )}
       </div>
-      <p className="text-xs text-gray-400 mt-2">Drag to reposition image</p>
+      <p className="text-xs text-text-tertiary mt-2">Drag to reposition image</p>
     </div>
   );
 }
-

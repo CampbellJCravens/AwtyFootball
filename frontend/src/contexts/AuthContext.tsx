@@ -6,6 +6,7 @@ export interface User {
   name?: string;
   picture?: string;
   role: 'admin' | 'regular';
+  playerId?: string | null;
 }
 
 interface AuthContextType {
@@ -13,6 +14,7 @@ interface AuthContextType {
   loading: boolean;
   login: () => void;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   isAdmin: boolean;
   isAuthenticated: boolean;
 }
@@ -25,14 +27,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if user is authenticated on mount
   useEffect(() => {
     checkAuth();
-    
-    // Check for auth success query param
+
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('auth') === 'success') {
-      // Remove query param from URL
       window.history.replaceState({}, document.title, window.location.pathname);
       checkAuth();
     }
@@ -41,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
-        credentials: 'include', // Important for cookies
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -59,7 +58,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = () => {
-    // Redirect to backend OAuth endpoint
     window.location.href = `${API_BASE_URL}/auth/google`;
   };
 
@@ -72,16 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
     } catch (error) {
       console.error('Logout failed:', error);
-      // Still clear user state even if request fails
       setUser(null);
     }
+  };
+
+  const refreshUser = async () => {
+    await checkAuth();
   };
 
   const isAdmin = user?.role === 'admin';
   const isAuthenticated = !!user;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isAuthenticated }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser, isAdmin, isAuthenticated }}>
       {children}
     </AuthContext.Provider>
   );
@@ -94,4 +95,3 @@ export function useAuth() {
   }
   return context;
 }
-

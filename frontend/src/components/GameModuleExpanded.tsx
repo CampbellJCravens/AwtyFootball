@@ -677,17 +677,17 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   }, [allPlayers, searchQuery]);
 
   return (
-    <div className="h-full flex flex-col bg-gray-800">
+    <div className="h-full flex flex-col bg-surface">
       {/* Header with Save and Close Buttons */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
-              <h2 className="text-xl font-semibold text-gray-100">{gameTitle}</h2>
+            <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
+              <h2 className="text-xl font-semibold text-text-primary">{gameTitle}</h2>
               <div className="flex items-center gap-2">
                 {isAdmin && (
                   <>
                     <button
                       onClick={handleExportToSheets}
                       disabled={exporting || loading}
-                      className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                      className="px-4 py-2 bg-gold text-text-on-accent text-sm font-medium rounded-xl hover:bg-gold-hover active:bg-gold-active disabled:bg-surface-active disabled:cursor-not-allowed transition-colors"
                       data-tooltip="Export to Google Sheets"
                     >
                       {exporting ? 'Exporting...' : 'Report Stats'}
@@ -695,7 +695,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                     <button
                       onClick={() => setShowImportModal(true)}
                       disabled={importing || loading}
-                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                      className="px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover active:bg-accent-active disabled:bg-surface-active disabled:cursor-not-allowed transition-colors"
                       data-tooltip="Import from CSV"
                     >
                       Import
@@ -703,12 +703,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                     <button
                       onClick={() => setShowEditModal(true)}
                       disabled={loading}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
+                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                       aria-label="Edit game"
                       data-tooltip="Edit Game"
                     >
                       <svg
-                        className="w-5 h-5 text-gray-300"
+                        className="w-5 h-5 text-text-secondary"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -726,12 +726,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 )}
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
             aria-label="Close"
             data-tooltip="Close"
           >
             <svg
-              className="w-6 h-6 text-gray-300"
+              className="w-6 h-6 text-text-secondary"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -752,22 +752,22 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
         {/* Score Module */}
         <div className="mb-6 flex-shrink-0">
-          <div className="bg-gray-800 rounded-lg border border-gray-700 relative h-20 overflow-hidden">
+          <div className="bg-surface rounded-xl border border-border relative h-20 overflow-hidden">
             {/* Color Team Side - rounded left corners only */}
-            <div className="absolute left-0 top-0 bottom-0 w-1/2 bg-gray-900 flex items-center justify-center rounded-tl-lg rounded-bl-lg">
+            <div className="absolute left-0 top-0 bottom-0 w-1/2 bg-base flex items-center justify-center rounded-tl-lg rounded-bl-lg">
               <span className="text-white font-semibold text-lg">
                 Color ({allPlayers.filter(p => playerTeams[p.id] === 'color').length})
               </span>
             </div>
             {/* White Team Side - rounded right corners only */}
-            <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-gray-800 border-l-2 border-gray-600 flex items-center justify-center rounded-tr-lg rounded-br-lg">
-              <span className="text-gray-100 font-semibold text-lg">
+            <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-surface border-l-2 border-border-emphasis flex items-center justify-center rounded-tr-lg rounded-br-lg">
+              <span className="text-text-primary font-semibold text-lg">
                 White ({allPlayers.filter(p => playerTeams[p.id] === 'white').length})
               </span>
             </div>
             {/* Score Box (centered, overlapping) */}
-            <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gray-600 rounded-lg px-4 py-2 border-2 border-gray-600 shadow-md z-10">
-              <span className="text-gray-100 font-bold text-xl">
+            <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gold rounded-xl px-4 py-2 border-2 border-gold shadow-glow-gold z-10">
+              <span className="text-text-on-accent font-bold text-xl">
                 {goals.filter(g => g.team === 'color').length} - {goals.filter(g => g.team === 'white').length}
               </span>
             </div>
@@ -787,10 +787,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             >
               {loading ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-400">Loading players...</p>
+                  <p className="text-text-tertiary">Loading players...</p>
                 </div>
               ) : error ? (
-                <div className="p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-400">
+                <div className="p-4 bg-error-bg border border-error-border rounded-xl text-error">
                   <p className="text-sm">{error}</p>
                 </div>
               ) : (
@@ -802,13 +802,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                       placeholder="Search players..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-800 text-gray-100 placeholder-gray-500"
+                      className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface text-text-primary placeholder-text-muted"
                     />
                   </div>
 
                   {filteredAndSortedPlayers.length === 0 ? (
                     <div className="text-center py-8">
-                      <p className="text-gray-400">
+                      <p className="text-text-tertiary">
                         {players.length === 0
                           ? 'No players available. Add players in the "All Players" tab.'
                           : `No players found matching "${searchQuery}"`}
@@ -834,12 +834,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         {!loading && !error && (
           <div className="mb-6 flex-shrink-0">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-100">Game Summary</h3>
+              <h3 className="text-lg font-semibold text-text-primary">Game Summary</h3>
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowGoals(prev => !prev)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    showGoals ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                    showGoals ? 'bg-accent text-text-on-accent' : 'bg-surface-raised text-text-primary hover:bg-surface-active'
                   }`}
                   data-tooltip="Toggle Goals"
                 >
@@ -848,7 +848,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 <button
                   onClick={() => setShowTeamChanges(prev => !prev)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    showTeamChanges ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                    showTeamChanges ? 'bg-accent text-text-on-accent' : 'bg-surface-raised text-text-primary hover:bg-surface-active'
                   }`}
                   data-tooltip="Toggle Team Changes"
                 >
@@ -857,7 +857,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               </div>
             </div>
 
-            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 max-h-[400px] overflow-y-auto space-y-3">
+            <div className="bg-surface rounded-xl p-4 border border-border max-h-[400px] overflow-y-auto space-y-3">
               {(() => {
                 const combined = [
                   ...goals.map((goal, index) => ({
@@ -881,7 +881,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
                 if (combined.length === 0) {
                   return (
-                    <p className="text-gray-400 text-sm text-center py-2">
+                    <p className="text-text-tertiary text-sm text-center py-2">
                       No events yet - adjust filters or record an event.
                     </p>
                   );
@@ -895,7 +895,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                         return (
                           <div
                             key={`goal-${goalIndex}-${goal.timestamp.getTime()}-${idx}`}
-                            className="flex items-center justify-between text-base text-gray-100 mb-2 last:mb-0"
+                            className="flex items-center justify-between text-base text-text-primary mb-2 last:mb-0"
                           >
                           <span className="pr-3 flex-1">
                               {(() => {
@@ -906,19 +906,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                               })()}
                             </span>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-400 whitespace-nowrap">
+                              <span className="text-sm text-text-tertiary whitespace-nowrap">
                                 {new Date(goal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                               {isAdmin && (
                                 <>
                                   <button
                                     onClick={() => handleEditGoal(goalIndex)}
-                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors flex-shrink-0"
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-surface-raised active:bg-surface-active transition-colors flex-shrink-0"
                                     aria-label="Edit goal"
                                     data-tooltip="Edit"
                                   >
                                     <svg
-                                      className="w-4 h-4 text-gray-300"
+                                      className="w-4 h-4 text-text-secondary"
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
@@ -934,12 +934,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                                   </button>
                                   <button
                                     onClick={() => handleDeleteGoal(goalIndex)}
-                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-900/30 active:bg-red-900/50 transition-colors flex-shrink-0"
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-error-bg active:bg-error-bg transition-colors flex-shrink-0"
                                     aria-label="Delete goal"
                                     data-tooltip="Delete"
                                   >
                                     <svg
-                                      className="w-4 h-4 text-red-400"
+                                      className="w-4 h-4 text-error"
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
@@ -963,7 +963,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                         return (
                           <div
                             key={`change-${changeIndex}-${change.timestamp.getTime()}-${idx}`}
-                            className="flex items-center justify-between text-sm text-gray-200 italic mb-1 last:mb-0"
+                            className="flex items-center justify-between text-sm text-text-primary italic mb-1 last:mb-0"
                           >
                             <span className="pr-3 flex-1 pl-3">
                               {change.type === 'leave'
@@ -971,19 +971,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                                 : `${change.player.name} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
                             </span>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-500 whitespace-nowrap">
+                              <span className="text-xs text-text-muted whitespace-nowrap">
                                 {new Date(change.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                               {isAdmin && (
                                 <>
                                   <button
                                     onClick={() => handleEditTeamChangeTime(changeIndex)}
-                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors flex-shrink-0"
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-surface-raised active:bg-surface-active transition-colors flex-shrink-0"
                                     aria-label="Edit team change time"
                                     data-tooltip="Edit"
                                   >
                                     <svg
-                                      className="w-4 h-4 text-gray-300"
+                                      className="w-4 h-4 text-text-secondary"
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
@@ -999,12 +999,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                                   </button>
                                   <button
                                     onClick={() => handleDeleteTeamChange(changeIndex)}
-                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-900/30 active:bg-red-900/50 transition-colors flex-shrink-0"
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-error-bg active:bg-error-bg transition-colors flex-shrink-0"
                                     aria-label="Delete team change"
                                     data-tooltip="Delete"
                                   >
                                     <svg
-                                      className="w-4 h-4 text-red-400"
+                                      className="w-4 h-4 text-error"
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
@@ -1114,36 +1114,36 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       {/* Import CSV Modal */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700">
-            <h3 className="text-xl font-semibold text-gray-100 mb-4">Import Game Data</h3>
-            <p className="text-sm text-gray-400 mb-4">
+          <div className="bg-surface rounded-xl p-6 max-w-md w-full mx-4 border border-border">
+            <h3 className="text-xl font-semibold text-text-primary mb-4">Import Game Data</h3>
+            <p className="text-sm text-text-tertiary mb-4">
               Please select two CSV files: one for Players and one for GameSummary. Then choose which game to import.
             </p>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Players CSV
                 </label>
                 <input
                   ref={playersFileInputRef}
                   type="file"
                   accept=".csv"
-                  className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  className="block w-full text-sm text-text-tertiary file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-accent file:text-text-on-accent hover:file:bg-accent-hover"
                   onChange={handleFileInputChange}
                   disabled={csvFilesLoaded}
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   GameSummary CSV
                 </label>
                 <input
                   ref={gameSummaryFileInputRef}
                   type="file"
                   accept=".csv"
-                  className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  className="block w-full text-sm text-text-tertiary file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-accent file:text-text-on-accent hover:file:bg-accent-hover"
                   onChange={handleFileInputChange}
                   disabled={csvFilesLoaded}
                 />
@@ -1151,13 +1151,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
               {csvFilesLoaded && availableGames.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Select Game to Import
                   </label>
                   <select
                     value={selectedGameForImport}
                     onChange={(e) => setSelectedGameForImport(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-700 text-gray-100"
+                    className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
                   >
                     {availableGames.map((gameName) => (
                       <option key={gameName} value={gameName}>
@@ -1165,7 +1165,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-text-tertiary mt-1">
                     Current game: {gameTitle}
                   </p>
                 </div>
@@ -1173,7 +1173,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             </div>
 
             {importError && (
-              <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-sm">
+              <div className="mt-4 p-3 bg-error-bg border border-error-border rounded-xl text-error text-sm">
                 {importError}
               </div>
             )}
@@ -1182,7 +1182,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               <button
                 onClick={handleCloseImportModal}
                 disabled={importing}
-                className="px-4 py-2 bg-gray-700 text-gray-100 text-sm font-medium rounded-lg hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 bg-surface-raised text-text-primary text-sm font-medium rounded-xl hover:bg-surface-active disabled:bg-surface-active disabled:cursor-not-allowed transition-colors"
               >
                 Cancel
               </button>
@@ -1190,7 +1190,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 <button
                   onClick={handleImportCsv}
                   disabled={importing || !selectedGameForImport}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover disabled:bg-surface-active disabled:cursor-not-allowed transition-colors"
                 >
                   {importing ? 'Importing...' : 'Import'}
                 </button>

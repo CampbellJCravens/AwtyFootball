@@ -24,18 +24,18 @@ export default function TimePickerModal({ currentTime, onSelect, onClose }: Time
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 border border-gray-700">
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-xl shadow-modal max-w-md w-full p-6 border border-border">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-semibold text-gray-100">Select Time</h2>
+          <h2 className="text-2xl font-semibold text-text-primary">Select Time</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 active:bg-gray-600 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
             aria-label="Close"
             data-tooltip="Close"
           >
             <svg
-              className="w-6 h-6 text-gray-300"
+              className="w-6 h-6 text-text-secondary"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -52,7 +52,7 @@ export default function TimePickerModal({ currentTime, onSelect, onClose }: Time
         </div>
 
         <div className="mb-6">
-          <label htmlFor="time-input" className="block text-sm font-medium text-gray-300 mb-2">
+          <label htmlFor="time-input" className="block text-sm font-medium text-text-secondary mb-2">
             Time
           </label>
           <input
@@ -60,20 +60,20 @@ export default function TimePickerModal({ currentTime, onSelect, onClose }: Time
             type="time"
             value={selectedTime}
             onChange={(e) => setSelectedTime(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-base bg-gray-800 text-gray-100"
+            className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
           />
         </div>
 
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 border border-gray-600 text-gray-300 rounded-lg font-medium hover:bg-gray-800 transition-colors"
+            className="flex-1 px-4 py-2 border border-border-emphasis text-text-secondary rounded-xl font-medium hover:bg-surface-hover transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 bg-blue-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600 active:bg-blue-700 transition-colors"
+            className="flex-1 bg-accent text-text-on-accent px-4 py-2 rounded-xl font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
           >
             Save
           </button>
@@ -82,4 +82,3 @@ export default function TimePickerModal({ currentTime, onSelect, onClose }: Time
     </div>
   );
 }
-
