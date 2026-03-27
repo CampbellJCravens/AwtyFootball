@@ -105,6 +105,9 @@ export async function fetchChemistry(
 export interface MonthlyAward {
   player: PlayerStatsPlayer;
   value: number;
+  games?: number;
+  goals?: number;
+  assists?: number;
 }
 
 export interface MonthlyStatsResponse {
@@ -113,11 +116,10 @@ export interface MonthlyStatsResponse {
   gamesPlayed: number;
   availableMonths: { month: number; year: number }[];
   awards: {
-    playerOfTheMonth: MonthlyAward | null;
-    topGoalContributor: MonthlyAward | null;
-    topScorer: MonthlyAward | null;
-    topAssister: MonthlyAward | null;
-    topAttendance: MonthlyAward | null;
+    playerOfTheMonth: MonthlyAward[] | null;
+    topGoalContributor: MonthlyAward[] | null;
+    topScorer: MonthlyAward[] | null;
+    topAssister: MonthlyAward[] | null;
   };
 }
 
@@ -128,6 +130,24 @@ export async function fetchMonthlyStats(month: number, year: number): Promise<Mo
   });
   if (!response.ok) {
     throw new Error('Failed to fetch monthly stats');
+  }
+  return response.json();
+}
+
+export interface PlayerAward {
+  month: number;
+  year: number;
+  award: string;
+  value: number;
+  unit: string;
+}
+
+export async function fetchPlayerAwards(playerId: string): Promise<PlayerAward[]> {
+  const response = await fetch(`${API_BASE_URL}/stats/player/${playerId}/awards`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch player awards');
   }
   return response.json();
 }

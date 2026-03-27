@@ -376,6 +376,7 @@ function App() {
         <div className="h-full overflow-y-auto">
           <PlayerProfile
             playerId={user.playerId}
+            isOwnProfile
             onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('profile'); setActiveTab('players'); }}
           />
           <div className="max-w-lg mx-auto px-4 pb-8 mt-6 space-y-3">

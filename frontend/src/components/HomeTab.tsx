@@ -7,69 +7,126 @@ interface HomeTabProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-function AwardSection({ title, statLabel, award, onPlayerClick }: {
-  title: string;
+function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick }: {
+  award: MonthlyAward;
   statLabel: string;
-  award: MonthlyAward | null;
+  showDetailedStats?: boolean;
   onPlayerClick?: (playerId: string) => void;
 }) {
-  if (!award) return null;
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
-
-  // Split name into first and last for the stacked bold display
   const nameParts = award.player.name.split(' ');
   const firstName = nameParts[0];
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
 
   return (
-    <div className="mb-6">
-      {/* Title outside the card */}
-      <h3 className="text-lg font-bold text-text-primary mb-2">{title}</h3>
-
-      {/* Card */}
-      <div className="bg-surface rounded-2xl border border-border overflow-hidden relative min-h-[140px]">
-        {/* Content - left side */}
-        <div className="relative z-10 p-5 pr-28">
-          {/* Player name in gold, bold italic */}
-          <p
-            className={`text-2xl font-black italic text-gold leading-tight ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
-            onClick={onPlayerClick ? () => onPlayerClick(award.player.id) : undefined}
-          >
-            {firstName.toUpperCase()}
-            {lastName && <><br />{lastName.toUpperCase()}</>}
+    <div className="bg-surface rounded-2xl border border-border overflow-hidden relative min-h-[140px]">
+      <div className="relative z-10 p-5 pr-28">
+        <p
+          className={`text-2xl font-black italic text-gold leading-tight ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
+          onClick={onPlayerClick ? () => onPlayerClick(award.player.id) : undefined}
+        >
+          {firstName.toUpperCase()}
+          {lastName && <><br />{lastName.toUpperCase()}</>}
+        </p>
+        <p className="text-xs text-text-tertiary font-semibold tracking-wider uppercase mt-1">
+          {statLabel}
+        </p>
+        {showDetailedStats && (
+          <p className="text-[10px] text-text-tertiary font-medium tracking-wider uppercase mt-0.5">
+            {[award.games != null && `${award.games} Games`, award.goals != null && `${award.goals} Goals`, award.assists != null && `${award.assists} Assists`].filter(Boolean).join(' · ')}
           </p>
+        )}
+        {onPlayerClick && (
+          <button
+            onClick={() => onPlayerClick(award.player.id)}
+            className="mt-2 px-4 py-1.5 bg-gold text-text-on-accent text-xs font-bold rounded-lg hover:bg-gold-hover active:bg-gold-active transition-colors uppercase tracking-wider"
+          >
+            View Profile
+          </button>
+        )}
+      </div>
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
+        {award.player.pictureUrl ? (
+          <img src={award.player.pictureUrl} alt={award.player.name} className="w-28 h-28 rounded-full object-cover border-4 border-gold/30" />
+        ) : (
+          <div className="w-28 h-28 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-4xl font-black border-4 border-gold/30">
+            {getInitial(award.player.name)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-          {/* Stat line */}
-          <p className="text-xs text-text-tertiary font-semibold tracking-wider uppercase mt-1">
+function AwardSection({ title, titlePlural, statLabel, awards, showDetailedStats, onPlayerClick }: {
+  title: string;
+  titlePlural?: string;
+  statLabel: string;
+  awards: MonthlyAward[] | null;
+  showDetailedStats?: boolean;
+  onPlayerClick?: (playerId: string) => void;
+}) {
+  if (!awards || awards.length === 0) return null;
+  const getInitial = (name: string) => name.charAt(0).toUpperCase();
+
+  const isTied = awards.length > 1;
+  const displayTitle = isTied && titlePlural ? titlePlural : title;
+
+  return (
+    <div className="mb-6">
+      <h3 className="text-lg font-bold text-text-primary mb-2">{displayTitle}</h3>
+      {!isTied ? (
+        <AwardCard award={awards[0]} statLabel={statLabel} showDetailedStats={showDetailedStats} onPlayerClick={onPlayerClick} />
+      ) : (
+        <div className="bg-surface rounded-2xl border border-border overflow-hidden p-5">
+          {/* Overlapping avatars */}
+          <div className="flex -space-x-4 mb-3">
+            {awards.map((award, i) => (
+              award.player.pictureUrl ? (
+                <img
+                  key={award.player.id}
+                  src={award.player.pictureUrl}
+                  alt={award.player.name}
+                  className="w-16 h-16 rounded-full object-cover border-4 border-surface cursor-pointer hover:scale-105 transition-transform"
+                  style={{ zIndex: awards.length - i }}
+                  onClick={onPlayerClick ? () => onPlayerClick(award.player.id) : undefined}
+                />
+              ) : (
+                <div
+                  key={award.player.id}
+                  className="w-16 h-16 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xl font-black border-4 border-surface cursor-pointer hover:scale-105 transition-transform"
+                  style={{ zIndex: awards.length - i }}
+                  onClick={onPlayerClick ? () => onPlayerClick(award.player.id) : undefined}
+                >
+                  {getInitial(award.player.name)}
+                </div>
+              )
+            ))}
+          </div>
+          {/* Names */}
+          <div className="flex flex-wrap gap-x-1 mb-1">
+            {awards.map((award, i) => (
+              <span key={award.player.id}>
+                <span
+                  className={`text-lg font-black italic text-gold leading-tight ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
+                  onClick={onPlayerClick ? () => onPlayerClick(award.player.id) : undefined}
+                >
+                  {award.player.name.split(' ')[0].toUpperCase()}
+                </span>
+                {i < awards.length - 1 && <span className="text-text-tertiary font-medium">{i === awards.length - 2 ? ' &' : ','}</span>}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-text-tertiary font-semibold tracking-wider uppercase">
             {statLabel}
           </p>
-
-          {/* View Profile button */}
-          {onPlayerClick && (
-            <button
-              onClick={() => onPlayerClick(award.player.id)}
-              className="mt-3 px-4 py-1.5 bg-gold text-text-on-accent text-xs font-bold rounded-lg hover:bg-gold-hover active:bg-gold-active transition-colors uppercase tracking-wider"
-            >
-              View Profile
-            </button>
+          {showDetailedStats && (
+            <p className="text-[10px] text-text-tertiary font-medium tracking-wider uppercase mt-0.5">
+              Tied
+            </p>
           )}
         </div>
-
-        {/* Avatar - right side, vertically centered */}
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
-          {award.player.pictureUrl ? (
-            <img
-              src={award.player.pictureUrl}
-              alt={award.player.name}
-              className="w-28 h-28 rounded-full object-cover border-4 border-gold/30"
-            />
-          ) : (
-            <div className="w-28 h-28 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-4xl font-black border-4 border-gold/30">
-              {getInitial(award.player.name)}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -170,32 +227,31 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
 
             <AwardSection
               title="Player of the Month"
-              statLabel={`${data.awards.playerOfTheMonth?.value ?? 0} Points`}
-              award={data.awards.playerOfTheMonth}
+              titlePlural="Players of the Month"
+              statLabel={`${data.awards.playerOfTheMonth?.[0]?.value ?? 0} Points`}
+              awards={data.awards.playerOfTheMonth}
+              showDetailedStats
               onPlayerClick={onPlayerClick}
             />
             <AwardSection
               title="Top Goal Contributor"
-              statLabel={`${data.awards.topGoalContributor?.value ?? 0} Goals and Assists`}
-              award={data.awards.topGoalContributor}
+              titlePlural="Top Goal Contributors"
+              statLabel={`${data.awards.topGoalContributor?.[0]?.value ?? 0} Goals and Assists`}
+              awards={data.awards.topGoalContributor}
               onPlayerClick={onPlayerClick}
             />
             <AwardSection
               title="Top Scorer"
-              statLabel={`${data.awards.topScorer?.value ?? 0} Goals`}
-              award={data.awards.topScorer}
+              titlePlural="Top Scorers"
+              statLabel={`${data.awards.topScorer?.[0]?.value ?? 0} Goals`}
+              awards={data.awards.topScorer}
               onPlayerClick={onPlayerClick}
             />
             <AwardSection
               title="Top Assister"
-              statLabel={`${data.awards.topAssister?.value ?? 0} Assists`}
-              award={data.awards.topAssister}
-              onPlayerClick={onPlayerClick}
-            />
-            <AwardSection
-              title="Top Attendance"
-              statLabel={`${data.awards.topAttendance?.value ?? 0} Games`}
-              award={data.awards.topAttendance}
+              titlePlural="Top Assisters"
+              statLabel={`${data.awards.topAssister?.[0]?.value ?? 0} Assists`}
+              awards={data.awards.topAssister}
               onPlayerClick={onPlayerClick}
             />
           </div>

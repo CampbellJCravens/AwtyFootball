@@ -394,22 +394,43 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
       }
     }
 
-    const getTop = (metric: (s: { points: number; goals: number; assists: number; games: number; goalInvolvements: number }) => number) => {
-      let topId: string | null = null;
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number };
+
+    const getTop = (metric: (s: PlayerStat) => number, tiebreakers?: ((s: PlayerStat) => number)[]) => {
+      let topIds: string[] = [];
       let topVal = -1;
       for (const [pid, s] of stats) {
         const val = metric(s);
-        if (val > topVal) { topVal = val; topId = pid; }
+        if (val > topVal) { topVal = val; topIds = [pid]; }
+        else if (val === topVal && val > 0) { topIds.push(pid); }
       }
-      if (!topId || topVal === 0) return null;
-      return { player: playerMap.get(topId)!, value: topVal };
+      if (topIds.length === 0 || topVal === 0) return null;
+
+      // Apply tiebreakers if there are ties
+      if (topIds.length > 1 && tiebreakers) {
+        for (const tb of tiebreakers) {
+          let bestVal = -1;
+          let bestIds: string[] = [];
+          for (const pid of topIds) {
+            const val = tb(stats.get(pid)!);
+            if (val > bestVal) { bestVal = val; bestIds = [pid]; }
+            else if (val === bestVal) { bestIds.push(pid); }
+          }
+          topIds = bestIds;
+          if (topIds.length === 1) break;
+        }
+      }
+
+      return topIds.map(id => {
+        const s = stats.get(id)!;
+        return { player: playerMap.get(id)!, value: topVal, games: s.games, goals: s.goals, assists: s.assists };
+      });
     };
 
     const playerOfTheMonth = getTop(s => s.points);
     const topGoalContributor = getTop(s => s.goalInvolvements);
     const topScorer = getTop(s => s.goals);
     const topAssister = getTop(s => s.assists);
-    const topAttendance = getTop(s => s.games);
 
     // Figure out which months have games
     const allMonths: { month: number; year: number }[] = [];
@@ -432,12 +453,113 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
         topGoalContributor,
         topScorer,
         topAssister,
-        topAttendance,
       },
     });
   } catch (error) {
     console.error('Error fetching monthly stats:', error);
     res.status(500).json({ error: 'Failed to fetch monthly stats' });
+  }
+});
+
+// ── GET /api/stats/player/:id/awards ──
+router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const playerId = req.params.id;
+    const allGames = await loadAllGames();
+    const allPlayers = await prisma.player.findMany();
+    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+
+    if (!playerMap.has(playerId)) return res.status(404).json({ error: 'Player not found' });
+
+    // Group games by month
+    const gamesByMonth = new Map<string, ParsedGame[]>();
+    for (const g of allGames) {
+      const key = `${g.createdAt.getFullYear()}-${g.createdAt.getMonth() + 1}`;
+      if (!gamesByMonth.has(key)) gamesByMonth.set(key, []);
+      gamesByMonth.get(key)!.push(g);
+    }
+
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number };
+
+    const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number, tiebreakers?: ((s: PlayerStat) => number)[]): string[] => {
+      let topIds: string[] = [];
+      let topVal = -1;
+      for (const [pid, s] of stats) {
+        const val = metric(s);
+        if (val > topVal) { topVal = val; topIds = [pid]; }
+        else if (val === topVal && val > 0) { topIds.push(pid); }
+      }
+      if (topIds.length === 0 || topVal === 0) return [];
+      if (topIds.length > 1 && tiebreakers) {
+        for (const tb of tiebreakers) {
+          let bestVal = -1;
+          let bestIds: string[] = [];
+          for (const pid of topIds) {
+            const val = tb(stats.get(pid)!);
+            if (val > bestVal) { bestVal = val; bestIds = [pid]; }
+            else if (val === bestVal) { bestIds.push(pid); }
+          }
+          topIds = bestIds;
+          if (topIds.length === 1) break;
+        }
+      }
+      return topIds;
+    };
+
+    const awards: { month: number; year: number; award: string; value: number; unit: string }[] = [];
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    for (const [key, monthGames] of gamesByMonth) {
+      const [yearStr, monthStr] = key.split('-');
+      const year = parseInt(yearStr);
+      const month = parseInt(monthStr);
+
+      // Skip the current month since it's still in progress
+      if (year === currentYear && month === currentMonth) continue;
+
+      const stats = new Map<string, PlayerStat>();
+      for (const game of monthGames) {
+        const colorGoals = game.goals.filter(g => g.team === 'color').length;
+        const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+        for (const [pid, team] of Object.entries(game.teamAssignments)) {
+          if (!playerMap.has(pid)) continue;
+          if (playerMap.get(pid)!.name.includes('Guest')) continue;
+          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0 });
+          const s = stats.get(pid)!;
+          s.games++;
+          const isTie = colorGoals === whiteGoals;
+          const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
+          if (isWin) s.points += 3;
+          else if (isTie) s.points += 1;
+        }
+        for (const goal of game.goals) {
+          if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
+          if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
+        }
+      }
+
+      const awardDefs: { name: string; unit: string; metric: (s: PlayerStat) => number; tiebreakers?: ((s: PlayerStat) => number)[] }[] = [
+        { name: 'Player of the Month', unit: 'Points', metric: s => s.points },
+        { name: 'Top Goal Contributor', unit: 'Goals + Assists', metric: s => s.goalInvolvements },
+        { name: 'Top Scorer', unit: 'Goals', metric: s => s.goals },
+        { name: 'Top Assister', unit: 'Assists', metric: s => s.assists },
+      ];
+
+      for (const def of awardDefs) {
+        const winnerIds = getTopIds(stats, def.metric, def.tiebreakers);
+        if (winnerIds.includes(playerId)) {
+          awards.push({ month, year, award: def.name, value: def.metric(stats.get(playerId)!), unit: def.unit });
+        }
+      }
+    }
+
+    awards.sort((a, b) => b.year - a.year || b.month - a.month);
+    res.json(awards);
+  } catch (error) {
+    console.error('Error fetching player awards:', error);
+    res.status(500).json({ error: 'Failed to fetch player awards' });
   }
 });
 

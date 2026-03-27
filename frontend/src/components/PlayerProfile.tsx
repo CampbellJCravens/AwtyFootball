@@ -1,24 +1,40 @@
-import { useState, useEffect } from 'react';
-import { fetchPlayerStats, PlayerStatsResponse } from '../api/stats';
+import { useState, useEffect, useRef, ChangeEvent } from 'react';
+import { fetchPlayerStats, PlayerStatsResponse, fetchPlayerAwards, PlayerAward } from '../api/stats';
+import { updatePlayer } from '../api/players';
+
+const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 interface PlayerProfileProps {
   playerId: string;
+  isOwnProfile?: boolean;
   onBack?: () => void;
   onPlayerClick?: (playerId: string) => void;
 }
 
-export default function PlayerProfile({ playerId, onBack, onPlayerClick }: PlayerProfileProps) {
+export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick }: PlayerProfileProps) {
   const [stats, setStats] = useState<PlayerStatsResponse | null>(null);
+  const [awards, setAwards] = useState<PlayerAward[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showAllGroups, setShowAllGroups] = useState(false);
+  const [showAllMatches, setShowAllMatches] = useState(false);
+  const [expandedAward, setExpandedAward] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await fetchPlayerStats(playerId);
+        setShowAllGroups(false);
+        setShowAllMatches(false);
+        setExpandedAward(null);
+        const [data, playerAwards] = await Promise.all([
+          fetchPlayerStats(playerId),
+          fetchPlayerAwards(playerId),
+        ]);
         setStats(data);
+        setAwards(playerAwards);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load player stats');
       } finally {
@@ -27,6 +43,24 @@ export default function PlayerProfile({ playerId, onBack, onPlayerClick }: Playe
     };
     load();
   }, [playerId]);
+
+  const handlePictureChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !stats) return;
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    try {
+      await updatePlayer(playerId, { pictureUrl: dataUrl });
+      setStats({ ...stats, player: { ...stats.player, pictureUrl: dataUrl } });
+    } catch {
+      // silently fail
+    }
+    e.target.value = '';
+  };
 
   if (loading) {
     return (
@@ -79,13 +113,34 @@ export default function PlayerProfile({ playerId, onBack, onPlayerClick }: Playe
 
       {/* Hero */}
       <div className="flex items-center gap-4 mb-6">
-        {player.pictureUrl ? (
-          <img src={player.pictureUrl} alt={player.name} className="w-20 h-20 rounded-full object-cover border-4 border-gold" />
-        ) : (
-          <div className="w-20 h-20 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-3xl font-bold border-4 border-gold">
-            {getInitial(player.name)}
-          </div>
-        )}
+        <div className="relative flex-shrink-0">
+          {player.pictureUrl ? (
+            <img src={player.pictureUrl} alt={player.name} className="w-20 h-20 rounded-full object-cover border-4 border-gold" />
+          ) : (
+            <div className="w-20 h-20 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-3xl font-bold border-4 border-gold">
+              {getInitial(player.name)}
+            </div>
+          )}
+          {isOwnProfile && (
+            <>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-gold flex items-center justify-center shadow-lg hover:bg-gold/80 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5 text-surface" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePictureChange}
+              />
+            </>
+          )}
+        </div>
         <div>
           <h2 className="text-2xl font-bold text-text-primary">{player.name}</h2>
           {/* Form dots */}
@@ -107,7 +162,7 @@ export default function PlayerProfile({ playerId, onBack, onPlayerClick }: Playe
         {[
           { label: 'GAMES', value: aggregate.games, rank: ranks?.games },
           { label: 'POINTS', value: (aggregate.wins * 3) + (aggregate.ties * 1), rank: ranks?.points },
-          { label: 'PPG', value: aggregate.ppg.toFixed(2), highlight: true, rank: ranks?.ppg },
+          { label: 'PPG', value: aggregate.ppg.toFixed(2), rank: ranks?.ppg },
           { label: 'G+A', value: aggregate.goals + aggregate.assists, rank: ranks?.goalInvolvements },
           { label: 'GOALS', value: aggregate.goals, rank: ranks?.goals },
           { label: 'ASSISTS', value: aggregate.assists, rank: ranks?.assists },
@@ -121,6 +176,55 @@ export default function PlayerProfile({ playerId, onBack, onPlayerClick }: Playe
           </div>
         ))}
       </div>
+
+      {/* Awards */}
+      {awards.length > 0 && (() => {
+        const grouped = awards.reduce<Record<string, typeof awards>>((acc, a) => {
+          if (!acc[a.award]) acc[a.award] = [];
+          acc[a.award].push(a);
+          return acc;
+        }, {});
+        return (
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-gold uppercase tracking-wider mb-3">Awards</h3>
+            <div className="space-y-2">
+              {Object.entries(grouped).map(([name, items]) => {
+                const isExpanded = expandedAward === name;
+                return (
+                  <div key={name}>
+                    <button
+                      onClick={() => setExpandedAward(isExpanded ? null : name)}
+                      className="w-full bg-surface rounded-xl border border-border p-3 flex items-center gap-3 hover:bg-surface-hover transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-gold/20 flex items-center justify-center flex-shrink-0">
+                        <span className="text-base">🏆</span>
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-sm font-medium text-text-primary">
+                          {name}{items.length > 1 && <span className="text-gold ml-1">x{items.length}</span>}
+                        </p>
+                      </div>
+                      <svg className={`w-4 h-4 text-text-tertiary transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {isExpanded && (
+                      <div className="ml-6 mt-1 space-y-1">
+                        {items.map((a, i) => (
+                          <div key={i} className="bg-surface-hover/50 rounded-lg px-3 py-2 flex items-center justify-between">
+                            <span className="text-xs text-text-secondary">{MONTH_NAMES[a.month]} {a.year}</span>
+                            <span className="text-xs font-medium text-text-primary">{a.value} {a.unit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Best Partners by PPG */}
       {bestPartnersByPPG.length > 0 && (
@@ -155,8 +259,8 @@ export default function PlayerProfile({ playerId, onBack, onPlayerClick }: Playe
       {bestGroups.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-bold text-gold uppercase tracking-wider mb-3">Best Groups (PPG)</h3>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto">
-            {bestGroups.map((group, i) => (
+          <div className="space-y-2">
+            {(showAllGroups ? bestGroups : bestGroups.slice(0, 5)).map((group, i) => (
               <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3">
                 {/* Overlapping avatars */}
                 <div className="flex -space-x-2 flex-shrink-0">
@@ -192,6 +296,14 @@ export default function PlayerProfile({ playerId, onBack, onPlayerClick }: Playe
               </div>
             ))}
           </div>
+          {bestGroups.length > 5 && (
+            <button
+              onClick={() => setShowAllGroups(!showAllGroups)}
+              className="w-full mt-2 text-sm text-gold font-medium hover:text-gold/80 transition-colors py-2"
+            >
+              {showAllGroups ? 'Show Less' : `Show All (${bestGroups.length})`}
+            </button>
+          )}
         </div>
       )}
 
@@ -253,38 +365,48 @@ export default function PlayerProfile({ playerId, onBack, onPlayerClick }: Playe
         {matchHistory.length === 0 ? (
           <p className="text-text-tertiary text-sm">No games played yet.</p>
         ) : (
-          <div className="space-y-2">
-            {matchHistory.map((match, i) => {
-              const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              return (
-                <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3">
-                  {/* Result badge */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-                    match.result === 'W' ? 'bg-green-700 text-white'
-                    : match.result === 'L' ? 'bg-red-600 text-white'
-                    : 'bg-gray-600 text-white'
-                  }`}>
-                    {match.result}
-                  </div>
-
-                  {/* Game info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary">Game #{match.gameNumber ?? '?'}</p>
-                    <p className="text-xs text-text-tertiary">{formatDate(match.date)} · {match.team === 'color' ? 'Color' : 'White'}</p>
-                  </div>
-
-                  {/* Stats + Score */}
-                  <div className="text-right flex-shrink-0">
-                    <div className="flex gap-1 justify-end mb-0.5">
-                      {match.goalsScored > 0 && <span className="text-[10px] bg-surface-active text-text-primary px-1.5 py-0.5 rounded font-medium">{match.goalsScored}G</span>}
-                      {match.assists > 0 && <span className="text-[10px] bg-surface-active text-text-primary px-1.5 py-0.5 rounded font-medium">{match.assists}A</span>}
+          <>
+            <div className="space-y-2">
+              {(showAllMatches ? matchHistory : matchHistory.slice(0, 5)).map((match, i) => {
+                const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                return (
+                  <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3">
+                    {/* Result badge */}
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                      match.result === 'W' ? 'bg-green-700 text-white'
+                      : match.result === 'L' ? 'bg-red-600 text-white'
+                      : 'bg-gray-600 text-white'
+                    }`}>
+                      {match.result}
                     </div>
-                    <p className="text-sm font-bold text-text-primary">{match.colorScore} - {match.whiteScore}</p>
+
+                    {/* Game info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-text-primary">Game #{match.gameNumber ?? '?'}</p>
+                      <p className="text-xs text-text-tertiary">{formatDate(match.date)} · {match.team === 'color' ? 'Color' : 'White'}</p>
+                    </div>
+
+                    {/* Stats + Score */}
+                    <div className="text-right flex-shrink-0">
+                      <div className="flex gap-1 justify-end mb-0.5">
+                        {match.goalsScored > 0 && <span className="text-[10px] bg-surface-active text-text-primary px-1.5 py-0.5 rounded font-medium">{match.goalsScored}G</span>}
+                        {match.assists > 0 && <span className="text-[10px] bg-surface-active text-text-primary px-1.5 py-0.5 rounded font-medium">{match.assists}A</span>}
+                      </div>
+                      <p className="text-sm font-bold text-text-primary">{match.colorScore} - {match.whiteScore}</p>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            {matchHistory.length > 5 && (
+              <button
+                onClick={() => setShowAllMatches(!showAllMatches)}
+                className="w-full mt-2 text-sm text-gold font-medium hover:text-gold/80 transition-colors py-2"
+              >
+                {showAllMatches ? 'Show Less' : `Show All (${matchHistory.length})`}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
