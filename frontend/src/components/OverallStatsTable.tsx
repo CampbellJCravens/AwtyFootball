@@ -389,15 +389,15 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
   };
 
   const columns = [
-    { key: 'rank', label: 'Rk', tooltip: 'Rank', width: 'w-8', widthPx: 32, sticky: true, left: '0' },
-    { key: 'player', label: 'Player', tooltip: 'Player', width: 'w-40', widthPx: 160, sticky: true, left: '2rem' },
-    { key: 'points', label: 'Pts', tooltip: 'Points', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'points' },
-    { key: 'gamesPlayed', label: 'GP', tooltip: 'Games Played', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'gamesPlayed' },
-    { key: 'pointsPerGame', label: 'PPG', tooltip: 'Points Per Game', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'pointsPerGame' },
-    { key: 'goalInvolvements', label: 'G+A', tooltip: 'Goals + Assists', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'goalInvolvements' },
-    { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'goals' },
-    { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-16', widthPx: 64, sortable: true, sortKey: 'assists' },
-    { key: 'form', label: 'Form', tooltip: 'Form', width: 'w-32', widthPx: 128, sortable: true, sortKey: 'formWins' },
+    { key: 'rank', label: 'Rk', tooltip: 'Rank', width: 'w-6', widthPx: 24, sticky: true, left: '0' },
+    { key: 'player', label: 'Player', tooltip: 'Player', width: 'w-28', widthPx: 112, sticky: true, left: '1.5rem' },
+    { key: 'points', label: 'Pts', tooltip: 'Points', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'points' },
+    { key: 'gamesPlayed', label: 'GP', tooltip: 'Games Played', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'gamesPlayed' },
+    { key: 'pointsPerGame', label: 'PPG', tooltip: 'Points Per Game', width: 'w-12', widthPx: 48, sortable: true, sortKey: 'pointsPerGame' },
+    { key: 'goalInvolvements', label: 'G+A', tooltip: 'Goals + Assists', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'goalInvolvements' },
+    { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'goals' },
+    { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'assists' },
+    { key: 'form', label: 'Form', tooltip: 'Form', width: 'w-28', widthPx: 112, sortable: true, sortKey: 'formWins' },
   ];
 
   // Manual sticky header overlay: Uses absolute positioning + transform instead of CSS sticky
@@ -412,7 +412,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
           style={{ transform: 'translate(0, 0)' }}
         >
           <div className="pointer-events-auto bg-base">
-            <table ref={headerHeightRef} className="min-w-max w-full table-fixed border-separate border-spacing-0 text-sm">
+            <table ref={headerHeightRef} className="min-w-max w-full table-fixed border-separate border-spacing-0 text-xs">
               <colgroup>
                 {columns.map(col => (
                   <col key={col.key} style={{ width: `${col.widthPx}px` }} />
@@ -426,7 +426,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
                       ref={idx === 0 ? headerRef : undefined}
                       title={col.tooltip}
                       className={[
-                        'py-2 px-2 font-semibold text-text-secondary bg-base border-b-2 border-gold text-left',
+                        'py-1.5 px-1 font-semibold text-text-secondary bg-base border-b-2 border-gold text-left',
                         col.sortable ? 'cursor-pointer hover:text-accent hover:bg-surface-hover transition-colors' : '',
                         idx === 0 ? 'sticky left-0 z-70' : '',
                         idx === 1 ? 'sticky z-70' : '',
@@ -451,7 +451,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
           style={{ overflowY: 'visible', paddingTop: `${headerHeight}px` }}
         >
           {/* Body table - padding-top keeps content below header overlay */}
-          <table className="min-w-max w-full table-fixed border-separate border-spacing-0 text-sm">
+          <table className="min-w-max w-full table-fixed border-separate border-spacing-0 text-xs">
             <colgroup>
               {columns.map(col => (
                 <col key={col.key} style={{ width: `${col.widthPx}px` }} />
@@ -468,51 +468,51 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
                 sortedStats.map((stats, index) => (
                   <tr key={stats.player.id} className="border-b border-border hover:bg-surface-hover even:bg-surface-hover/50">
                     {/* Rank - Sticky */}
-                    <td className="py-2 px-1 text-text-secondary font-medium bg-base sticky left-0 z-20">
+                    <td className="py-1.5 px-1 text-text-secondary font-medium bg-base sticky left-0 z-20 text-[11px]">
                       {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
                     </td>
-                    
+
                     {/* Player - Sticky */}
-                    <td 
-                      className="py-2 px-3 bg-base sticky z-20"
+                    <td
+                      className="py-1.5 px-1 bg-base sticky z-20"
                       style={{ left: `${columns[0].widthPx}px` }}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         {stats.player.pictureUrl ? (
                           <img
                             src={stats.player.pictureUrl}
                             alt={stats.player.name}
-                            className="w-8 h-8 rounded-full object-cover border-2 border-border-emphasis flex-shrink-0"
+                            className="w-6 h-6 rounded-full object-cover border border-border-emphasis flex-shrink-0"
                           />
                         ) : (
-                          <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                          <div className="w-6 h-6 rounded-full bg-surface-active flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
                             {getInitial(stats.player.name)}
                           </div>
                         )}
                         <span
-                          className={`font-medium truncate text-text-primary ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
+                          className={`font-medium truncate text-text-primary text-[11px] ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
                           onClick={onPlayerClick ? (e) => { e.stopPropagation(); onPlayerClick(stats.player.id); } : undefined}
                         >
                           {stats.player.name}
                         </span>
                       </div>
                     </td>
-                    
+
                     {/* Rest of columns - Scrollable */}
-                    <td className="py-2 px-3 text-text-secondary">{stats.points}</td>
-                    <td className="py-2 px-3 text-text-secondary">{stats.gamesPlayed}</td>
-                    <td className="py-2 px-3 text-text-secondary">{stats.pointsPerGame.toFixed(2)}</td>
-                    <td className="py-2 px-3 text-text-secondary">{stats.goalInvolvements}</td>
-                    <td className="py-2 px-3 text-text-secondary">{stats.goals}</td>
-                    <td className="py-2 px-3 text-text-secondary">{stats.assists}</td>
-                    <td className="py-2 px-3">
-                      <div className="flex items-center gap-1">
+                    <td className="py-1.5 px-1 text-text-secondary">{stats.points}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{stats.gamesPlayed}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{stats.pointsPerGame.toFixed(2)}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{stats.goalInvolvements}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{stats.goals}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{stats.assists}</td>
+                    <td className="py-1.5 px-1">
+                      <div className="flex items-center gap-0.5">
                         {[0, 1, 2, 3, 4].map((i) => {
                           const result = stats.form[i];
                           return (
                             <div
                               key={i}
-                              className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                              className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold ${
                                 result === 'W'
                                   ? 'bg-green-700 border-green-600 text-white'
                                   : result === 'L'

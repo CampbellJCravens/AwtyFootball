@@ -281,7 +281,7 @@ router.get('/chemistry', requireAuth, async (req: AuthenticatedRequest, res: Res
 
     // Duos, Trios, Squads
     const groupSize = type === 'duos' ? 2 : type === 'trios' ? 3 : 4;
-    const comboTracker = new Map<string, { playerIds: string[]; games: number; wins: number }>();
+    const comboTracker = new Map<string, { playerIds: string[]; games: number; wins: number; ties: number }>();
 
     for (const game of allGames) {
       const assignments = game.teamAssignments;
@@ -289,6 +289,7 @@ router.get('/chemistry', requireAuth, async (req: AuthenticatedRequest, res: Res
 
       const colorGoals = game.goals.filter(g => g.team === 'color').length;
       const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const isTie = colorGoals === whiteGoals;
 
       for (const team of ['color', 'white'] as const) {
         const teamPlayers = Object.entries(assignments)
@@ -304,23 +305,28 @@ router.get('/chemistry', requireAuth, async (req: AuthenticatedRequest, res: Res
         const combos = getCombinations(teamPlayers, groupSize);
         for (const combo of combos) {
           const key = combo.join('|');
-          if (!comboTracker.has(key)) comboTracker.set(key, { playerIds: combo, games: 0, wins: 0 });
+          if (!comboTracker.has(key)) comboTracker.set(key, { playerIds: combo, games: 0, wins: 0, ties: 0 });
           const entry = comboTracker.get(key)!;
           entry.games++;
           if (isWin) entry.wins++;
+          else if (isTie) entry.ties++;
         }
       }
     }
 
     const results = Array.from(comboTracker.values())
       .filter(c => c.games >= minGames)
-      .map(c => ({
-        players: c.playerIds.map(id => playerMap.get(id) || { id, name: 'Unknown', pictureUrl: null }),
-        gamesPlayed: c.games,
-        wins: c.wins,
-        winRate: Math.round((c.wins / c.games) * 100),
-      }))
-      .sort((a, b) => b.winRate - a.winRate || b.gamesPlayed - a.gamesPlayed)
+      .map(c => {
+        const points = (c.wins * 3) + (c.ties * 1);
+        const ppg = Math.round((points / c.games) * 100) / 100;
+        return {
+          players: c.playerIds.map(id => playerMap.get(id) || { id, name: 'Unknown', pictureUrl: null }),
+          gamesPlayed: c.games,
+          wins: c.wins,
+          ppg,
+        };
+      })
+      .sort((a, b) => b.ppg - a.ppg || b.gamesPlayed - a.gamesPlayed)
       .slice(0, limit);
 
     res.json({ type, results });
@@ -560,6 +566,152 @@ router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, 
   } catch (error) {
     console.error('Error fetching player awards:', error);
     res.status(500).json({ error: 'Failed to fetch player awards' });
+  }
+});
+
+// ── GET /api/stats/player/:id/achievements ──
+router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const playerId = req.params.id;
+    const allGames = await loadAllGames();
+    const allPlayers = await prisma.player.findMany();
+    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+
+    if (!playerMap.has(playerId)) return res.status(404).json({ error: 'Player not found' });
+
+    // Basic stats
+    let wins = 0, ties = 0, goals = 0, assists = 0, gamesPlayed = 0;
+    const matchResults: ('W' | 'L' | 'T')[] = []; // chronological order
+
+    // Sort games chronologically for streak tracking
+    const sortedGames = [...allGames].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    for (const game of sortedGames) {
+      const playerTeam = game.teamAssignments[playerId];
+      if (!playerTeam) continue;
+
+      gamesPlayed++;
+      const result = getGameResult(game, playerTeam);
+      matchResults.push(result);
+      if (result === 'W') wins++;
+      else if (result === 'T') ties++;
+
+      goals += game.goals.filter(g => g.scorerId === playerId).length;
+      assists += game.goals.filter(g => g.assisterId === playerId).length;
+    }
+
+    // Win streak (max consecutive wins)
+    let maxWinStreak = 0, currentStreak = 0;
+    for (const r of matchResults) {
+      if (r === 'W') { currentStreak++; maxWinStreak = Math.max(maxWinStreak, currentStreak); }
+      else currentStreak = 0;
+    }
+
+    // Awards count (reuse logic from player awards endpoint, only concluded months)
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    const gamesByMonth = new Map<string, ParsedGame[]>();
+    for (const g of allGames) {
+      const key = `${g.createdAt.getFullYear()}-${g.createdAt.getMonth() + 1}`;
+      if (!gamesByMonth.has(key)) gamesByMonth.set(key, []);
+      gamesByMonth.get(key)!.push(g);
+    }
+
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number };
+
+    const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number): string[] => {
+      let topIds: string[] = [];
+      let topVal = -1;
+      for (const [pid, s] of stats) {
+        const val = metric(s);
+        if (val > topVal) { topVal = val; topIds = [pid]; }
+        else if (val === topVal && val > 0) { topIds.push(pid); }
+      }
+      if (topIds.length === 0 || topVal === 0) return [];
+      return topIds;
+    };
+
+    let awardsCount = 0;
+    let playedAllGamesInMonth = false;
+    let undefeatedInMonth = false;
+
+    for (const [key, monthGames] of gamesByMonth) {
+      const [yearStr, monthStr] = key.split('-');
+      const year = parseInt(yearStr);
+      const month = parseInt(monthStr);
+      if (year === currentYear && month === currentMonth) continue;
+
+      const stats = new Map<string, PlayerStat>();
+      for (const game of monthGames) {
+        const colorGoals = game.goals.filter(g => g.team === 'color').length;
+        const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+        for (const [pid, team] of Object.entries(game.teamAssignments)) {
+          if (!playerMap.has(pid)) continue;
+          if (playerMap.get(pid)!.name.includes('Guest')) continue;
+          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0 });
+          const s = stats.get(pid)!;
+          s.games++;
+          const isTie = colorGoals === whiteGoals;
+          const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
+          if (isWin) s.points += 3;
+          else if (isTie) s.points += 1;
+        }
+        for (const goal of game.goals) {
+          if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
+          if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
+        }
+      }
+
+      const awardDefs = [
+        { metric: (s: PlayerStat) => s.points },
+        { metric: (s: PlayerStat) => s.goalInvolvements },
+        { metric: (s: PlayerStat) => s.goals },
+        { metric: (s: PlayerStat) => s.assists },
+      ];
+      for (const def of awardDefs) {
+        const winnerIds = getTopIds(stats, def.metric);
+        if (winnerIds.includes(playerId)) awardsCount++;
+      }
+
+      // Check attendance and undefeated for this month
+      const playerGamesInMonth = monthGames.filter(g => g.teamAssignments[playerId]);
+      if (playerGamesInMonth.length === monthGames.length && monthGames.length > 0) {
+        playedAllGamesInMonth = true;
+
+        // Check if undefeated (all wins or ties)
+        const allUndefeated = playerGamesInMonth.every(g => {
+          const team = g.teamAssignments[playerId];
+          const result = getGameResult(g, team);
+          return result === 'W' || result === 'T';
+        });
+        if (allUndefeated) undefeatedInMonth = true;
+      }
+    }
+
+    const totalPoints = (wins * 3) + (ties * 1);
+
+    const achievements = [
+      { id: 'first_goal', name: 'My First Goal!', description: 'Score your first goal', current: Math.min(goals, 1), target: 1 },
+      { id: 'goals_10', name: 'R9? Or Manny Suarez?', description: 'Score 10 goals', current: Math.min(goals, 10), target: 10 },
+      { id: 'first_assist', name: 'My First Assist!', description: 'Record your first assist', current: Math.min(assists, 1), target: 1 },
+      { id: 'assists_10', name: 'The Playmaker', description: 'Record 10 assists', current: Math.min(assists, 10), target: 10 },
+      { id: 'first_win', name: 'My First Win!', description: 'Win your first game', current: Math.min(wins, 1), target: 1 },
+      { id: 'wins_10', name: 'Victory Lap', description: 'Win 10 games', current: Math.min(wins, 10), target: 10 },
+      { id: 'games_10', name: 'Regular', description: 'Play 10 games', current: Math.min(gamesPlayed, 10), target: 10 },
+      { id: 'games_100', name: 'Iron Man', description: 'Play 100 games', current: Math.min(gamesPlayed, 100), target: 100 },
+      { id: 'points_100', name: 'Centurion', description: 'Earn 100 points', current: Math.min(totalPoints, 100), target: 100 },
+      { id: 'awards_3', name: 'Trophy Collector', description: 'Win 3 awards', current: Math.min(awardsCount, 3), target: 3 },
+      { id: 'win_streak_3', name: 'Hat Trick of Wins', description: 'Win 3 games in a row', current: Math.min(maxWinStreak, 3), target: 3 },
+      { id: 'mr_consistent', name: 'Mr. Consistent', description: 'Play every game in a month', current: playedAllGamesInMonth ? 1 : 0, target: 1 },
+      { id: 'invincible', name: 'Invincible', description: 'Go undefeated in a month (play all games, only wins or ties)', current: undefeatedInMonth ? 1 : 0, target: 1 },
+    ];
+
+    res.json(achievements);
+  } catch (error) {
+    console.error('Error fetching player achievements:', error);
+    res.status(500).json({ error: 'Failed to fetch player achievements' });
   }
 });
 

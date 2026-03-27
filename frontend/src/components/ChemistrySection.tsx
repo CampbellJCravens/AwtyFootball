@@ -1,8 +1,24 @@
 import { useState, useEffect } from 'react';
 import { fetchChemistry, ChemistryEntry } from '../api/stats';
 
-export default function ChemistrySection() {
-  const [activeType, setActiveType] = useState<'duos' | 'trios' | 'squads' | 'goalPartners'>('duos');
+type ChemistryType = 'duos' | 'trios' | 'squads' | 'goalPartners';
+
+interface ChemistrySectionProps {
+  defaultType?: ChemistryType;
+  showTypes?: ChemistryType[];
+  onPlayerClick?: (playerId: string) => void;
+}
+
+const ALL_TABS: { id: ChemistryType; label: string }[] = [
+  { id: 'duos', label: 'DUOS' },
+  { id: 'trios', label: 'TRIOS' },
+  { id: 'squads', label: 'SQUADS' },
+  { id: 'goalPartners', label: 'GOAL PART.' },
+];
+
+export default function ChemistrySection({ defaultType = 'duos', showTypes, onPlayerClick }: ChemistrySectionProps) {
+  const tabs = showTypes ? ALL_TABS.filter(t => showTypes.includes(t.id)) : ALL_TABS;
+  const [activeType, setActiveType] = useState<ChemistryType>(defaultType);
   const [results, setResults] = useState<ChemistryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,37 +39,29 @@ export default function ChemistrySection() {
     load();
   }, [activeType]);
 
-  const tabs = [
-    { id: 'duos' as const, label: 'DUOS' },
-    { id: 'trios' as const, label: 'TRIOS' },
-    { id: 'squads' as const, label: 'SQUADS' },
-    { id: 'goalPartners' as const, label: 'GOAL PART.' },
-  ];
-
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
   const isGoalPartners = activeType === 'goalPartners';
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-text-primary italic mb-1">CHEMISTRY</h2>
-      <p className="text-text-tertiary text-sm mb-4">Player combination analytics</p>
-
       {/* Type tabs */}
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveType(tab.id)}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-              activeType === tab.id
-                ? 'bg-accent text-text-on-accent'
-                : 'bg-surface-raised text-text-secondary hover:bg-surface-active'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {tabs.length > 1 && (
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveType(tab.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                activeType === tab.id
+                  ? 'bg-accent text-text-on-accent'
+                  : 'bg-surface-raised text-text-secondary hover:bg-surface-active'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -69,11 +77,11 @@ export default function ChemistrySection() {
           <p className="text-text-tertiary text-sm">Not enough data yet. Need at least 3 games together.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {results.map((entry, i) => (
-            <div key={i} className="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
+            <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3">
               {/* Rank */}
-              <span className="text-gold font-bold text-lg w-6 text-center flex-shrink-0">{i + 1}</span>
+              <span className="text-gold font-bold text-sm w-5 text-center flex-shrink-0">{i + 1}</span>
 
               {/* Overlapping avatars */}
               <div className="flex -space-x-2 flex-shrink-0">
@@ -83,13 +91,13 @@ export default function ChemistrySection() {
                       key={player.id}
                       src={player.pictureUrl}
                       alt={player.name}
-                      className="w-8 h-8 rounded-full object-cover border-2 border-surface"
+                      className="w-7 h-7 rounded-full object-cover border-2 border-surface"
                       style={{ zIndex: 4 - j }}
                     />
                   ) : (
                     <div
                       key={player.id}
-                      className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold border-2 border-surface"
+                      className="w-7 h-7 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-[10px] font-semibold border-2 border-surface"
                       style={{ zIndex: 4 - j }}
                     >
                       {getInitial(player.name)}
@@ -97,7 +105,7 @@ export default function ChemistrySection() {
                   )
                 ))}
                 {entry.players.length > 4 && (
-                  <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-tertiary text-xs font-semibold border-2 border-surface">
+                  <div className="w-7 h-7 rounded-full bg-surface-active flex items-center justify-center text-text-tertiary text-[10px] font-semibold border-2 border-surface">
                     +{entry.players.length - 4}
                   </div>
                 )}
@@ -105,8 +113,19 @@ export default function ChemistrySection() {
 
               {/* Names */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text-primary truncate">
-                  {entry.players.map(p => p.name.split(' ')[0]).join(' & ')}
+                <p className="text-xs font-medium text-text-primary truncate">
+                  {entry.players.map((p, j) => (
+                    <span key={p.id}>
+                      {j > 0 && ' & '}
+                      {onPlayerClick ? (
+                        <span className="cursor-pointer hover:underline" onClick={(e) => { e.stopPropagation(); onPlayerClick(p.id); }}>
+                          {p.name.split(' ')[0]}
+                        </span>
+                      ) : (
+                        p.name.split(' ')[0]
+                      )}
+                    </span>
+                  ))}
                 </p>
                 <p className="text-[10px] text-text-tertiary">
                   {isGoalPartners
@@ -119,9 +138,9 @@ export default function ChemistrySection() {
               {/* Key stat */}
               <div className="text-right flex-shrink-0">
                 {isGoalPartners ? (
-                  <span className="text-xl font-bold text-gold">{entry.totalContributions} <span className="text-xs text-text-tertiary">G+A</span></span>
+                  <span className="text-lg font-bold text-gold">{entry.totalContributions} <span className="text-[10px] text-text-tertiary">G+A</span></span>
                 ) : (
-                  <span className="text-xl font-bold text-gold">{entry.winRate}%</span>
+                  <span className="text-lg font-bold text-gold">{entry.ppg?.toFixed(2)} <span className="text-[10px] text-text-tertiary">PPG</span></span>
                 )}
               </div>
             </div>

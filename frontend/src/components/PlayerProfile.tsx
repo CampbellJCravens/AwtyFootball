@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { fetchPlayerStats, PlayerStatsResponse, fetchPlayerAwards, PlayerAward } from '../api/stats';
+import { fetchPlayerStats, PlayerStatsResponse, fetchPlayerAwards, PlayerAward, fetchPlayerAchievements, Achievement } from '../api/stats';
 import { updatePlayer } from '../api/players';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -14,6 +14,8 @@ interface PlayerProfileProps {
 export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick }: PlayerProfileProps) {
   const [stats, setStats] = useState<PlayerStatsResponse | null>(null);
   const [awards, setAwards] = useState<PlayerAward[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [showAchievements, setShowAchievements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -29,12 +31,15 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
         setShowAllGroups(false);
         setShowAllMatches(false);
         setExpandedAward(null);
-        const [data, playerAwards] = await Promise.all([
+        setShowAchievements(false);
+        const [data, playerAwards, playerAchievements] = await Promise.all([
           fetchPlayerStats(playerId),
           fetchPlayerAwards(playerId),
+          fetchPlayerAchievements(playerId),
         ]);
         setStats(data);
         setAwards(playerAwards);
+        setAchievements(playerAchievements);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load player stats');
       } finally {
@@ -98,6 +103,53 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
       <span className={className}>{name}</span>
     )
   );
+
+  if (showAchievements) {
+    const completed = achievements.filter(a => a.current >= a.target).length;
+    const total = achievements.length;
+    return (
+      <div className="h-full overflow-y-auto max-w-lg mx-auto px-4 py-4 pb-8">
+        <button onClick={() => setShowAchievements(false)} className="flex items-center gap-1 text-text-secondary hover:text-text-primary mb-4 transition-colors">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          <span className="text-sm font-medium">Back to Profile</span>
+        </button>
+
+        <h2 className="text-2xl font-bold text-gold italic mb-1">ACHIEVEMENTS</h2>
+        <p className="text-text-tertiary text-sm mb-4">{completed} of {total} unlocked</p>
+
+        <div className="space-y-2">
+          {achievements.map(a => {
+            const done = a.current >= a.target;
+            const pct = Math.round((a.current / a.target) * 100);
+            return (
+              <div key={a.id} className={`rounded-xl border p-4 ${done ? 'bg-surface border-gold/40' : 'bg-surface border-border opacity-70'}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-lg ${done ? 'bg-gold/20' : 'bg-surface-active'}`}>
+                    {done ? '✅' : '🔒'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className={`text-sm font-semibold ${done ? 'text-text-primary' : 'text-text-secondary'}`}>{a.name}</p>
+                      <p className="text-xs text-text-tertiary">{a.current}/{a.target}</p>
+                    </div>
+                    <p className="text-xs text-text-tertiary mb-2">{a.description}</p>
+                    <div className="w-full h-1.5 bg-surface-active rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${done ? 'bg-gold' : 'bg-text-tertiary'}`}
+                        style={{ width: `${Math.min(pct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto max-w-lg mx-auto px-4 py-4 pb-8">
@@ -176,6 +228,36 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           </div>
         ))}
       </div>
+
+      {/* Achievements */}
+      {achievements.length > 0 && (() => {
+        const completed = achievements.filter(a => a.current >= a.target).length;
+        const total = achievements.length;
+        const pct = Math.round((completed / total) * 100);
+        return (
+          <button
+            onClick={() => setShowAchievements(true)}
+            className="w-full mb-6 bg-surface rounded-xl border border-border p-4 flex items-center gap-4 hover:bg-surface-hover transition-colors text-left"
+          >
+            <div className="text-2xl flex-shrink-0">🎮</div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-sm font-semibold text-text-primary">Achievements</p>
+                <p className="text-xs text-text-tertiary">{completed}/{total}</p>
+              </div>
+              <div className="w-full h-2 bg-surface-active rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gold rounded-full transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+            <svg className="w-4 h-4 text-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        );
+      })()}
 
       {/* Awards */}
       {awards.length > 0 && (() => {

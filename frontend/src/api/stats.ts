@@ -68,7 +68,7 @@ export interface ChemistryEntry {
   players: PlayerStatsPlayer[];
   gamesPlayed?: number;
   wins?: number;
-  winRate?: number;
+  ppg?: number;
   totalContributions?: number;
 }
 
@@ -148,6 +148,24 @@ export async function fetchPlayerAwards(playerId: string): Promise<PlayerAward[]
   });
   if (!response.ok) {
     throw new Error('Failed to fetch player awards');
+  }
+  return response.json();
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  current: number;
+  target: number;
+}
+
+export async function fetchPlayerAchievements(playerId: string): Promise<Achievement[]> {
+  const response = await fetch(`${API_BASE_URL}/stats/player/${playerId}/achievements`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch player achievements');
   }
   return response.json();
 }
