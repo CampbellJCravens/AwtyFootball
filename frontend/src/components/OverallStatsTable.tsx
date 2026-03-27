@@ -490,7 +490,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
                           </div>
                         )}
                         <span
-                          className={`font-medium truncate ${onPlayerClick ? 'text-gold cursor-pointer hover:underline' : 'text-text-primary'}`}
+                          className={`font-medium truncate text-text-primary ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
                           onClick={onPlayerClick ? (e) => { e.stopPropagation(); onPlayerClick(stats.player.id); } : undefined}
                         >
                           {stats.player.name}

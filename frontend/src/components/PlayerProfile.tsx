@@ -3,10 +3,11 @@ import { fetchPlayerStats, PlayerStatsResponse } from '../api/stats';
 
 interface PlayerProfileProps {
   playerId: string;
-  onBack: () => void;
+  onBack?: () => void;
+  onPlayerClick?: (playerId: string) => void;
 }
 
-export default function PlayerProfile({ playerId, onBack }: PlayerProfileProps) {
+export default function PlayerProfile({ playerId, onBack, onPlayerClick }: PlayerProfileProps) {
   const [stats, setStats] = useState<PlayerStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,15 +57,25 @@ export default function PlayerProfile({ playerId, onBack }: PlayerProfileProps) 
   };
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
 
+  const ClickableName = ({ id, name, className = '' }: { id: string; name: string; className?: string }) => (
+    onPlayerClick ? (
+      <span className={`cursor-pointer hover:underline ${className}`} onClick={(e) => { e.stopPropagation(); onPlayerClick(id); }}>{name}</span>
+    ) : (
+      <span className={className}>{name}</span>
+    )
+  );
+
   return (
     <div className="h-full overflow-y-auto max-w-lg mx-auto px-4 py-4 pb-8">
       {/* Back button */}
-      <button onClick={onBack} className="flex items-center gap-1 text-text-secondary hover:text-text-primary mb-4 transition-colors">
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-        <span className="text-sm font-medium">Back</span>
-      </button>
+      {onBack && (
+        <button onClick={onBack} className="flex items-center gap-1 text-text-secondary hover:text-text-primary mb-4 transition-colors">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          <span className="text-sm font-medium">Back</span>
+        </button>
+      )}
 
       {/* Hero */}
       <div className="flex items-center gap-4 mb-6">
@@ -95,10 +106,10 @@ export default function PlayerProfile({ playerId, onBack }: PlayerProfileProps) 
       <div className="grid grid-cols-3 gap-2 mb-6">
         {[
           { label: 'GAMES', value: aggregate.games, rank: ranks?.games },
+          { label: 'POINTS', value: (aggregate.wins * 3) + (aggregate.ties * 1), rank: ranks?.points },
           { label: 'PPG', value: aggregate.ppg.toFixed(2), highlight: true, rank: ranks?.ppg },
+          { label: 'G+A', value: aggregate.goals + aggregate.assists, rank: ranks?.goalInvolvements },
           { label: 'GOALS', value: aggregate.goals, rank: ranks?.goals },
-          { label: 'WINS', value: aggregate.wins, rank: ranks?.wins },
-          { label: 'LOSSES', value: aggregate.losses },
           { label: 'ASSISTS', value: aggregate.assists, rank: ranks?.assists },
         ].map(stat => (
           <div key={stat.label} className="bg-surface rounded-xl border border-border p-3 text-center">
@@ -127,7 +138,7 @@ export default function PlayerProfile({ playerId, onBack }: PlayerProfileProps) 
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-text-primary truncate">{partner.player.name}</p>
+                    <p className="text-xs font-medium text-text-primary truncate"><ClickableName id={partner.player.id} name={partner.player.name} /></p>
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between">
@@ -171,7 +182,9 @@ export default function PlayerProfile({ playerId, onBack }: PlayerProfileProps) 
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-text-primary truncate">
-                    {group.players.map(p => p.name.split(' ')[0]).join(', ')}
+                    {group.players.map((p, j) => (
+                      <span key={p.id}>{j > 0 && ', '}<ClickableName id={p.id} name={p.name.split(' ')[0]} /></span>
+                    ))}
                   </p>
                   <p className="text-[10px] text-text-tertiary">{group.gamesPlayed} GP · Group of {group.size}</p>
                 </div>
@@ -198,7 +211,7 @@ export default function PlayerProfile({ playerId, onBack }: PlayerProfileProps) 
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-text-primary truncate">{entry.player.name}</p>
+                    <p className="text-xs font-medium text-text-primary truncate"><ClickableName id={entry.player.id} name={entry.player.name} /></p>
                   </div>
                 </div>
                 <span className="text-lg font-bold text-gold">{entry.count} <span className="text-[10px] text-text-tertiary font-normal">assists</span></span>
@@ -224,7 +237,7 @@ export default function PlayerProfile({ playerId, onBack }: PlayerProfileProps) 
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-text-primary truncate">{entry.player.name}</p>
+                    <p className="text-xs font-medium text-text-primary truncate"><ClickableName id={entry.player.id} name={entry.player.name} /></p>
                   </div>
                 </div>
                 <span className="text-lg font-bold text-gold">{entry.count} <span className="text-[10px] text-text-tertiary font-normal">assists</span></span>

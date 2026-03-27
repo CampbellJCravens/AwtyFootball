@@ -15,6 +15,7 @@ import Stats from './components/Stats';
 import PlayerProfile from './components/PlayerProfile';
 import GameDetailReadOnly from './components/GameDetailReadOnly';
 import PlayerLinkSetup from './components/PlayerLinkSetup';
+import HomeTab from './components/HomeTab';
 
 function App() {
   const { user, logout, refreshUser, isAdmin } = useAuth();
@@ -22,7 +23,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
-  const [activeTab, setActiveTab] = useState<string>('games');
+  const [activeTab, setActiveTab] = useState<string>('home');
   const [games, setGames] = useState<Game[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);
   const [gamesError, setGamesError] = useState<string | null>(null);
@@ -319,6 +320,7 @@ function App() {
         <PlayerProfile
           playerId={selectedPlayerId}
           onBack={() => { setSelectedPlayerId(null); setActiveTab(playerProfileReturnTab); }}
+          onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('players'); }}
         />
       );
     }
@@ -374,7 +376,7 @@ function App() {
         <div className="h-full overflow-y-auto">
           <PlayerProfile
             playerId={user.playerId}
-            onBack={() => {}} // No back on profile tab
+            onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('profile'); setActiveTab('players'); }}
           />
           <div className="max-w-lg mx-auto px-4 pb-8">
             <button
@@ -409,13 +411,24 @@ function App() {
     );
   };
 
+  const handleHomePlayerClick = (playerId: string) => {
+    setSelectedPlayerId(playerId);
+    setPlayerProfileReturnTab('home');
+    setActiveTab('players');
+  };
+
+  const renderHomeTab = () => (
+    <HomeTab onPlayerClick={handleHomePlayerClick} />
+  );
+
   const renderActiveTab = () => {
     switch (activeTab) {
+      case 'home': return renderHomeTab();
       case 'games': return renderGamesTab();
       case 'players': return renderPlayersTab();
       case 'stats': return renderStatsTab();
       case 'profile': return renderProfileTab();
-      default: return renderGamesTab();
+      default: return renderHomeTab();
     }
   };
 

@@ -185,7 +185,7 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
     const form = matchHistory.slice(0, 10).map(m => m.result);
 
     // Compute league rankings by calculating stats for all players
-    const allPlayerStats = new Map<string, { games: number; wins: number; ppg: number; goals: number; assists: number }>();
+    const allPlayerStats = new Map<string, { games: number; wins: number; points: number; ppg: number; goals: number; assists: number; goalInvolvements: number }>();
     for (const p of allPlayers) {
       if (p.name.includes('Guest')) continue;
       let pWins = 0, pTies = 0, pGames = 0, pGoals = 0, pAssists = 0;
@@ -201,10 +201,10 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
       }
       if (pGames === 0) continue;
       const pPoints = (pWins * 3) + (pTies * 1);
-      allPlayerStats.set(p.id, { games: pGames, wins: pWins, ppg: Math.round((pPoints / pGames) * 100) / 100, goals: pGoals, assists: pAssists });
+      allPlayerStats.set(p.id, { games: pGames, wins: pWins, points: pPoints, ppg: Math.round((pPoints / pGames) * 100) / 100, goals: pGoals, assists: pAssists, goalInvolvements: pGoals + pAssists });
     }
 
-    const getRank = (metric: (s: { games: number; wins: number; ppg: number; goals: number; assists: number }) => number): number => {
+    const getRank = (metric: (s: { games: number; wins: number; points: number; ppg: number; goals: number; assists: number; goalInvolvements: number }) => number): number => {
       const myVal = allPlayerStats.get(player.id);
       if (!myVal) return 0;
       const myMetric = metric(myVal);
@@ -217,9 +217,10 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
 
     const ranks = {
       games: getRank(s => s.games),
+      points: getRank(s => s.points),
       ppg: getRank(s => s.ppg),
+      goalInvolvements: getRank(s => s.goalInvolvements),
       goals: getRank(s => s.goals),
-      wins: getRank(s => s.wins),
       assists: getRank(s => s.assists),
     };
 
@@ -342,5 +343,102 @@ function getCombinations(arr: string[], k: number): string[][] {
   }
   return results;
 }
+
+// ── GET /api/stats/monthly?month=3&year=2026 ──
+router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const now = new Date();
+    const month = parseInt(req.query.month as string) || (now.getMonth() + 1);
+    const year = parseInt(req.query.year as string) || now.getFullYear();
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+
+    const allGames = await loadAllGames();
+    const monthGames = allGames.filter(g => g.createdAt >= startDate && g.createdAt < endDate);
+
+    const allPlayers = await prisma.player.findMany();
+    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+
+    // Compute per-player stats for this month
+    const stats = new Map<string, { points: number; goals: number; assists: number; games: number; goalInvolvements: number }>();
+
+    for (const game of monthGames) {
+      const colorGoals = game.goals.filter(g => g.team === 'color').length;
+      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+
+      for (const [pid, team] of Object.entries(game.teamAssignments)) {
+        if (!playerMap.has(pid)) continue;
+        const playerInfo = playerMap.get(pid)!;
+        if (playerInfo.name.includes('Guest')) continue;
+
+        if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0 });
+        const s = stats.get(pid)!;
+        s.games++;
+
+        const isTie = colorGoals === whiteGoals;
+        const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
+        if (isWin) s.points += 3;
+        else if (isTie) s.points += 1;
+      }
+
+      for (const goal of game.goals) {
+        if (stats.has(goal.scorerId)) {
+          stats.get(goal.scorerId)!.goals++;
+          stats.get(goal.scorerId)!.goalInvolvements++;
+        }
+        if (goal.assisterId && stats.has(goal.assisterId)) {
+          stats.get(goal.assisterId)!.assists++;
+          stats.get(goal.assisterId)!.goalInvolvements++;
+        }
+      }
+    }
+
+    const getTop = (metric: (s: { points: number; goals: number; assists: number; games: number; goalInvolvements: number }) => number) => {
+      let topId: string | null = null;
+      let topVal = -1;
+      for (const [pid, s] of stats) {
+        const val = metric(s);
+        if (val > topVal) { topVal = val; topId = pid; }
+      }
+      if (!topId || topVal === 0) return null;
+      return { player: playerMap.get(topId)!, value: topVal };
+    };
+
+    const playerOfTheMonth = getTop(s => s.points);
+    const topGoalContributor = getTop(s => s.goalInvolvements);
+    const topScorer = getTop(s => s.goals);
+    const topAssister = getTop(s => s.assists);
+    const topAttendance = getTop(s => s.games);
+
+    // Figure out which months have games
+    const allMonths: { month: number; year: number }[] = [];
+    const seen = new Set<string>();
+    for (const g of allGames) {
+      const m = g.createdAt.getMonth() + 1;
+      const y = g.createdAt.getFullYear();
+      const key = `${y}-${m}`;
+      if (!seen.has(key)) { seen.add(key); allMonths.push({ month: m, year: y }); }
+    }
+    allMonths.sort((a, b) => b.year - a.year || b.month - a.month);
+
+    res.json({
+      month,
+      year,
+      gamesPlayed: monthGames.length,
+      availableMonths: allMonths,
+      awards: {
+        playerOfTheMonth,
+        topGoalContributor,
+        topScorer,
+        topAssister,
+        topAttendance,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching monthly stats:', error);
+    res.status(500).json({ error: 'Failed to fetch monthly stats' });
+  }
+});
 
 export default router;
