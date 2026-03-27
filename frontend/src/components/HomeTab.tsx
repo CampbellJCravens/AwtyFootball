@@ -192,15 +192,20 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
 
           <div className="text-center">
             <h2 className="text-xl font-bold text-gold">{MONTH_NAMES[month]}</h2>
-            <select
-              value={year}
-              onChange={(e) => setYear(parseInt(e.target.value))}
-              className="bg-transparent text-text-tertiary text-xs font-medium text-center cursor-pointer outline-none"
-            >
-              {availableYears.map(y => (
-                <option key={y} value={y} className="bg-surface text-text-primary">{y}</option>
-              ))}
-            </select>
+            <div className="relative inline-flex items-center">
+              <select
+                value={year}
+                onChange={(e) => setYear(parseInt(e.target.value))}
+                className="bg-transparent text-text-tertiary text-xs font-medium text-center cursor-pointer outline-none appearance-none pr-4"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y} className="bg-surface text-text-primary">{y}</option>
+                ))}
+              </select>
+              <svg className="w-3 h-3 text-text-tertiary absolute right-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
           </div>
 
           <button

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchChemistry, ChemistryEntry } from '../api/stats';
+import GroupDetailModal from './GroupDetailModal';
 
 type ChemistryType = 'duos' | 'trios' | 'squads' | 'goalPartners';
 
@@ -13,7 +14,7 @@ const ALL_TABS: { id: ChemistryType; label: string }[] = [
   { id: 'duos', label: 'DUOS' },
   { id: 'trios', label: 'TRIOS' },
   { id: 'squads', label: 'SQUADS' },
-  { id: 'goalPartners', label: 'GOAL PART.' },
+  { id: 'goalPartners', label: 'GOALS' },
 ];
 
 export default function ChemistrySection({ defaultType = 'duos', showTypes, onPlayerClick }: ChemistrySectionProps) {
@@ -22,6 +23,7 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
   const [results, setResults] = useState<ChemistryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<ChemistryEntry | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -79,7 +81,7 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
       ) : (
         <div className="space-y-2">
           {results.map((entry, i) => (
-            <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3">
+            <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3 cursor-pointer hover:bg-surface-hover transition-colors" onClick={() => setSelectedEntry(entry)}>
               {/* Rank */}
               <span className="text-gold font-bold text-sm w-5 text-center flex-shrink-0">{i + 1}</span>
 
@@ -146,6 +148,23 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
             </div>
           ))}
         </div>
+      )}
+      {selectedEntry && (
+        <GroupDetailModal
+          players={selectedEntry.players}
+          stats={
+            selectedEntry.totalContributions != null
+              ? [
+                  { label: 'Goal Contributions', value: String(selectedEntry.totalContributions) },
+                ]
+              : [
+                  { label: 'PPG', value: selectedEntry.ppg?.toFixed(2) || '0' },
+                  { label: 'Games', value: String(selectedEntry.gamesPlayed || 0) },
+                ]
+          }
+          onPlayerClick={onPlayerClick}
+          onClose={() => setSelectedEntry(null)}
+        />
       )}
     </div>
   );

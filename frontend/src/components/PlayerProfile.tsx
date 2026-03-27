@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { fetchPlayerStats, PlayerStatsResponse, fetchPlayerAwards, PlayerAward, fetchPlayerAchievements, Achievement } from '../api/stats';
 import { updatePlayer } from '../api/players';
+import GroupDetailModal from './GroupDetailModal';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -22,6 +23,7 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
   const [showAllGroups, setShowAllGroups] = useState(false);
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [expandedAward, setExpandedAward] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<{ players: { id: string; name: string; pictureUrl: string | null }[]; stats: { label: string; value: string }[] } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -320,7 +322,14 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           <h3 className="text-sm font-bold text-gold uppercase tracking-wider mb-3">Best Partners (PPG)</h3>
           <div className="flex gap-3 overflow-x-auto pb-2">
             {bestPartnersByPPG.map(partner => (
-              <div key={partner.player.id} className="bg-surface rounded-xl border border-border p-3 min-w-[140px] flex-shrink-0">
+              <div
+                key={partner.player.id}
+                className="bg-surface rounded-xl border border-border p-3 min-w-[140px] flex-shrink-0 cursor-pointer hover:bg-surface-hover transition-colors"
+                onClick={() => setSelectedGroup({
+                  players: [{ id: player.id, name: player.name, pictureUrl: player.pictureUrl }, partner.player],
+                  stats: [{ label: 'PPG', value: partner.ppg.toFixed(2) }, { label: 'Games', value: String(partner.gamesPlayed) }],
+                })}
+              >
                 <div className="flex items-center gap-2 mb-2">
                   {partner.player.pictureUrl ? (
                     <img src={partner.player.pictureUrl} alt={partner.player.name} className="w-8 h-8 rounded-full object-cover border border-border-emphasis" />
@@ -349,7 +358,14 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           <h3 className="text-sm font-bold text-gold uppercase tracking-wider mb-3">Best Groups (PPG)</h3>
           <div className="space-y-2">
             {(showAllGroups ? bestGroups : bestGroups.slice(0, 5)).map((group, i) => (
-              <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3">
+              <div
+                key={i}
+                className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3 cursor-pointer hover:bg-surface-hover transition-colors"
+                onClick={() => setSelectedGroup({
+                  players: group.players,
+                  stats: [{ label: 'PPG', value: group.ppg.toFixed(2) }, { label: 'Games', value: String(group.gamesPlayed) }, { label: 'Size', value: String(group.size) }],
+                })}
+              >
                 {/* Overlapping avatars */}
                 <div className="flex -space-x-2 flex-shrink-0">
                   {group.players.map((p, j) => (
@@ -497,6 +513,15 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           </>
         )}
       </div>
+
+      {selectedGroup && (
+        <GroupDetailModal
+          players={selectedGroup.players}
+          stats={selectedGroup.stats}
+          onPlayerClick={onPlayerClick}
+          onClose={() => setSelectedGroup(null)}
+        />
+      )}
     </div>
   );
 }
