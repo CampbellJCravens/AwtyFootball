@@ -3,6 +3,7 @@ import { Player } from '../api/players';
 import { Game } from '../api/games';
 import OverallStatsTable from './OverallStatsTable';
 import ChemistrySection from './ChemistrySection';
+import LegacyStatsTable from './LegacyStatsTable';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -12,7 +13,7 @@ interface StatsProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type StatsView = 'players' | 'pairings' | 'groups';
+type StatsView = 'players' | 'pairings' | 'groups' | 'legacy';
 
 export default function Stats({ players, games, onPlayerClick }: StatsProps) {
   const [filterMonth, setFilterMonth] = useState<number | null>(null);
@@ -53,6 +54,7 @@ export default function Stats({ players, games, onPlayerClick }: StatsProps) {
     { id: 'players', label: 'Players' },
     { id: 'pairings', label: 'Pairings' },
     { id: 'groups', label: 'Groups' },
+    { id: 'legacy', label: 'Legacy' },
   ];
 
   return (
@@ -149,6 +151,10 @@ export default function Stats({ players, games, onPlayerClick }: StatsProps) {
 
         {activeView === 'groups' && (
           <ChemistrySection defaultType="trios" showTypes={['trios', 'squads']} onPlayerClick={onPlayerClick} />
+        )}
+
+        {activeView === 'legacy' && (
+          <LegacyStatsTable onPlayerClick={onPlayerClick} />
         )}
       </div>
     </div>

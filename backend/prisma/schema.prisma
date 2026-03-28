@@ -60,4 +60,16 @@ model AllowedEmail {
   createdAt DateTime @default(now())
 }
 
+model LegacyStat {
+  id        String   @id @default(uuid())
+  playerId  String
+  season    String   // "2022-2023" or "2023-2024"
+  goals     Int      @default(0)
+  assists   Int      @default(0)
+  wins      Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([playerId, season])
+}
+
 

@@ -224,6 +224,17 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
       assists: getRank(s => s.assists),
     };
 
+    // Legacy stats
+    const legacyRecords = await prisma.legacyStat.findMany({ where: { playerId: player.id } });
+    const legacyStats: Record<string, { goals: number; assists: number; wins: number }> = {};
+    const legacyTotals = { goals: 0, assists: 0, wins: 0 };
+    for (const rec of legacyRecords) {
+      legacyStats[rec.season] = { goals: rec.goals, assists: rec.assists, wins: rec.wins };
+      legacyTotals.goals += rec.goals;
+      legacyTotals.assists += rec.assists;
+      legacyTotals.wins += rec.wins;
+    }
+
     res.json({
       player: { id: player.id, name: player.name, pictureUrl: player.pictureUrl },
       aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, assists: totalAssists },
@@ -234,6 +245,8 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
       myAssistsTo,
       assistsToMe,
       form,
+      legacyStats: Object.keys(legacyStats).length > 0 ? legacyStats : null,
+      legacyTotals: Object.keys(legacyStats).length > 0 ? legacyTotals : null,
     });
   } catch (error) {
     console.error('Error fetching player stats:', error);
@@ -712,6 +725,49 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
   } catch (error) {
     console.error('Error fetching player achievements:', error);
     res.status(500).json({ error: 'Failed to fetch player achievements' });
+  }
+});
+
+// ── GET /api/stats/legacy?season=all|2022-2023|2023-2024 ──
+router.get('/legacy', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seasonFilter = (req.query.season as string) || 'all';
+
+    const where = seasonFilter !== 'all' ? { season: seasonFilter } : {};
+    const legacyStats = await prisma.legacyStat.findMany({ where });
+
+    const playerIds = [...new Set(legacyStats.map(s => s.playerId))];
+    const players = await prisma.player.findMany({ where: { id: { in: playerIds } } });
+    const playerMap = new Map(players.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+
+    // Group by player
+    const grouped = new Map<string, { seasons: Record<string, { goals: number; assists: number; wins: number }>; totals: { goals: number; assists: number; wins: number } }>();
+
+    for (const stat of legacyStats) {
+      if (!grouped.has(stat.playerId)) {
+        grouped.set(stat.playerId, { seasons: {}, totals: { goals: 0, assists: 0, wins: 0 } });
+      }
+      const entry = grouped.get(stat.playerId)!;
+      entry.seasons[stat.season] = { goals: stat.goals, assists: stat.assists, wins: stat.wins };
+      entry.totals.goals += stat.goals;
+      entry.totals.assists += stat.assists;
+      entry.totals.wins += stat.wins;
+    }
+
+    const stats = Array.from(grouped.entries())
+      .map(([playerId, data]) => ({
+        player: playerMap.get(playerId) || { id: playerId, name: 'Unknown', pictureUrl: null },
+        seasons: data.seasons,
+        totals: data.totals,
+      }))
+      .sort((a, b) => (b.totals.goals + b.totals.assists) - (a.totals.goals + a.totals.assists));
+
+    const seasons = [...new Set(legacyStats.map(s => s.season))].sort();
+
+    res.json({ seasons, stats });
+  } catch (error) {
+    console.error('Error fetching legacy stats:', error);
+    res.status(500).json({ error: 'Failed to fetch legacy stats' });
   }
 });
 

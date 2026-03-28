@@ -169,3 +169,31 @@ export async function fetchPlayerAchievements(playerId: string): Promise<Achieve
   }
   return response.json();
 }
+
+export interface LegacySeasonStat {
+  goals: number;
+  assists: number;
+  wins: number;
+}
+
+export interface LegacyPlayerStat {
+  player: PlayerStatsPlayer;
+  seasons: Record<string, LegacySeasonStat>;
+  totals: LegacySeasonStat;
+}
+
+export interface LegacyStatsResponse {
+  seasons: string[];
+  stats: LegacyPlayerStat[];
+}
+
+export async function fetchLegacyStats(season?: string): Promise<LegacyStatsResponse> {
+  const params = season && season !== 'all' ? `?season=${season}` : '';
+  const response = await fetch(`${API_BASE_URL}/stats/legacy${params}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch legacy stats');
+  }
+  return response.json();
+}
