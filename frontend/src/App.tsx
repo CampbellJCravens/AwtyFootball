@@ -30,6 +30,7 @@ function App() {
   const [expandedGameId, setExpandedGameId] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [playerProfileReturnTab, setPlayerProfileReturnTab] = useState<string>('players');
+  const [homeMonth, setHomeMonth] = useState<{ month: number; year: number } | null>(null);
   const [gameToDelete, setGameToDelete] = useState<string | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<Player | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -321,6 +322,7 @@ function App() {
           playerId={selectedPlayerId}
           onBack={() => { setSelectedPlayerId(null); setActiveTab(playerProfileReturnTab); }}
           onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('players'); }}
+          onNavigateToMonth={handleNavigateToMonth}
         />
       );
     }
@@ -378,6 +380,7 @@ function App() {
             playerId={user.playerId}
             isOwnProfile
             onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('profile'); setActiveTab('players'); }}
+            onNavigateToMonth={handleNavigateToMonth}
           />
           <div className="max-w-lg mx-auto px-4 pb-8 mt-6 space-y-3">
             <button
@@ -431,8 +434,14 @@ function App() {
     setActiveTab('players');
   };
 
+  const handleNavigateToMonth = (month: number, year: number) => {
+    setHomeMonth({ month, year });
+    setSelectedPlayerId(null);
+    setActiveTab('home');
+  };
+
   const renderHomeTab = () => (
-    <HomeTab onPlayerClick={handleHomePlayerClick} />
+    <HomeTab onPlayerClick={handleHomePlayerClick} initialMonth={homeMonth ?? undefined} onMonthViewed={() => setHomeMonth(null)} />
   );
 
   const renderActiveTab = () => {

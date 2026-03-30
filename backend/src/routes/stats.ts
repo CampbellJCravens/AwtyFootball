@@ -218,6 +218,7 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
     const ranks = {
       games: getRank(s => s.games),
       points: getRank(s => s.points),
+      wins: getRank(s => s.wins),
       ppg: getRank(s => s.ppg),
       goalInvolvements: getRank(s => s.goalInvolvements),
       goals: getRank(s => s.goals),
@@ -380,7 +381,8 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
     const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
 
     // Compute per-player stats for this month
-    const stats = new Map<string, { points: number; goals: number; assists: number; games: number; goalInvolvements: number }>();
+    const stats = new Map<string, PlayerStat>();
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number };
 
     for (const game of monthGames) {
       const colorGoals = game.goals.filter(g => g.team === 'color').length;
@@ -391,7 +393,7 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
         const playerInfo = playerMap.get(pid)!;
         if (playerInfo.name.includes('Guest')) continue;
 
-        if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0 });
         const s = stats.get(pid)!;
         s.games++;
 
@@ -399,6 +401,9 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
         if (isWin) s.points += 3;
         else if (isTie) s.points += 1;
+
+        const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
+        s.goalsAllowed += opponentGoals;
       }
 
       for (const goal of game.goals) {
@@ -413,17 +418,17 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
       }
     }
 
-    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number };
-
-    const getTop = (metric: (s: PlayerStat) => number, tiebreakers?: ((s: PlayerStat) => number)[]) => {
+    const getTop = (metric: (s: PlayerStat) => number, tiebreakers?: ((s: PlayerStat) => number)[], minimum?: number, filter?: (s: PlayerStat) => boolean) => {
       let topIds: string[] = [];
       let topVal = -1;
       for (const [pid, s] of stats) {
+        if (filter && !filter(s)) continue;
         const val = metric(s);
         if (val > topVal) { topVal = val; topIds = [pid]; }
         else if (val === topVal && val > 0) { topIds.push(pid); }
       }
       if (topIds.length === 0 || topVal === 0) return null;
+      if (minimum !== undefined && topVal <= minimum) return null;
 
       // Apply tiebreakers if there are ties
       if (topIds.length > 1 && tiebreakers) {
@@ -442,14 +447,57 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
 
       return topIds.map(id => {
         const s = stats.get(id)!;
-        return { player: playerMap.get(id)!, value: topVal, games: s.games, goals: s.goals, assists: s.assists };
+        return { player: playerMap.get(id)!, value: topVal, games: s.games, goals: s.goals, assists: s.assists, goalsAllowed: s.goalsAllowed };
       });
     };
 
-    const playerOfTheMonth = getTop(s => s.points);
-    const topGoalContributor = getTop(s => s.goalInvolvements);
-    const topScorer = getTop(s => s.goals);
-    const topAssister = getTop(s => s.assists);
+    // Top leaderboard: targets ~5 entries, only adds a new rank group if it fits within 5
+    const getLeaderboard = (metric: (s: PlayerStat) => number, opts?: { target?: number; includeAll?: boolean; extraFields?: (s: PlayerStat) => Record<string, number>; filter?: (s: PlayerStat) => boolean }) => {
+      const target = opts?.target ?? 5;
+      const entries = Array.from(stats.entries())
+        .filter(([, s]) => !opts?.filter || opts.filter(s))
+        .map(([pid, s]) => ({ pid, value: metric(s), extra: opts?.extraFields?.(s) }))
+        .filter(e => opts?.includeAll || e.value > 0)
+        .sort((a, b) => b.value - a.value);
+      if (entries.length === 0) return [];
+      const result: { player: typeof playerMap extends Map<string, infer V> ? V : never; value: number; games?: number; goalsAllowed?: number }[] = [];
+      let lastVal = Infinity;
+      for (const e of entries) {
+        const isNewRank = e.value !== lastVal;
+        if (isNewRank && result.length >= target) break;
+        lastVal = e.value;
+        result.push({ player: playerMap.get(e.pid)!, value: e.value, ...e.extra });
+      }
+      return result;
+    };
+
+    const playerOfTheMonth = getTop(s => s.points, undefined, 3);
+    const topGoalContributor = getTop(s => s.goalInvolvements, undefined, 1);
+    const topScorer = getTop(s => s.goals, undefined, 1);
+    const topAssister = getTop(s => s.assists, undefined, 1);
+    const topDefender = getTop(s => (s.games * 3) - s.goalsAllowed, undefined, undefined, s => s.games > 1);
+
+    // Top Duo: pair with the most scorer-assister goal contributions to each other
+    const duoStats = new Map<string, { ids: [string, string]; contributions: number }>();
+    for (const game of monthGames) {
+      for (const goal of game.goals) {
+        if (!goal.assisterId) continue;
+        if (!stats.has(goal.scorerId) || !stats.has(goal.assisterId)) continue;
+        const [a, b] = [goal.scorerId, goal.assisterId].sort();
+        const duoKey = `${a}:${b}`;
+        if (!duoStats.has(duoKey)) duoStats.set(duoKey, { ids: [a, b] as [string, string], contributions: 0 });
+        duoStats.get(duoKey)!.contributions++;
+      }
+    }
+    let topDuoVal = 0;
+    for (const [, duo] of duoStats) {
+      if (duo.contributions > topDuoVal) topDuoVal = duo.contributions;
+    }
+    const topDuo = topDuoVal > 1
+      ? Array.from(duoStats.values())
+          .filter(d => d.contributions === topDuoVal)
+          .map(d => ({ players: [playerMap.get(d.ids[0])!, playerMap.get(d.ids[1])!], value: d.contributions }))
+      : null;
 
     // Figure out which months have games
     const allMonths: { month: number; year: number }[] = [];
@@ -472,6 +520,15 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
         topGoalContributor,
         topScorer,
         topAssister,
+        topDefender,
+        topDuo,
+      },
+      leaderboards: {
+        points: getLeaderboard(s => s.points),
+        goalInvolvements: getLeaderboard(s => s.goalInvolvements),
+        goals: getLeaderboard(s => s.goals),
+        assists: getLeaderboard(s => s.assists),
+        defensiveRating: getLeaderboard(s => (s.games * 3) - s.goalsAllowed, { includeAll: true, extraFields: s => ({ games: s.games, goalsAllowed: s.goalsAllowed }), filter: s => s.games > 1 }),
       },
     });
   } catch (error) {
@@ -498,12 +555,13 @@ router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, 
       gamesByMonth.get(key)!.push(g);
     }
 
-    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number };
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number };
 
-    const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number, tiebreakers?: ((s: PlayerStat) => number)[]): string[] => {
+    const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number, tiebreakers?: ((s: PlayerStat) => number)[], filter?: (s: PlayerStat) => boolean): string[] => {
       let topIds: string[] = [];
       let topVal = -1;
       for (const [pid, s] of stats) {
+        if (filter && !filter(s)) continue;
         const val = metric(s);
         if (val > topVal) { topVal = val; topIds = [pid]; }
         else if (val === topVal && val > 0) { topIds.push(pid); }
@@ -525,7 +583,7 @@ router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, 
       return topIds;
     };
 
-    const awards: { month: number; year: number; award: string; value: number; unit: string }[] = [];
+    const awards: { month: number; year: number; award: string; value: number; unit: string; partner?: { id: string; name: string; pictureUrl: string | null } }[] = [];
     const now = new Date();
     const currentMonth = now.getMonth() + 1;
     const currentYear = now.getFullYear();
@@ -545,13 +603,15 @@ router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, 
         for (const [pid, team] of Object.entries(game.teamAssignments)) {
           if (!playerMap.has(pid)) continue;
           if (playerMap.get(pid)!.name.includes('Guest')) continue;
-          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0 });
+          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0 });
           const s = stats.get(pid)!;
           s.games++;
           const isTie = colorGoals === whiteGoals;
           const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
           if (isWin) s.points += 3;
           else if (isTie) s.points += 1;
+          const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
+          s.goalsAllowed += opponentGoals;
         }
         for (const goal of game.goals) {
           if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
@@ -559,17 +619,47 @@ router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, 
         }
       }
 
-      const awardDefs: { name: string; unit: string; metric: (s: PlayerStat) => number; tiebreakers?: ((s: PlayerStat) => number)[] }[] = [
-        { name: 'Player of the Month', unit: 'Points', metric: s => s.points },
-        { name: 'Top Goal Contributor', unit: 'Goals + Assists', metric: s => s.goalInvolvements },
-        { name: 'Top Scorer', unit: 'Goals', metric: s => s.goals },
-        { name: 'Top Assister', unit: 'Assists', metric: s => s.assists },
+      const awardDefs: { name: string; unit: string; metric: (s: PlayerStat) => number; tiebreakers?: ((s: PlayerStat) => number)[]; minimum?: number; filter?: (s: PlayerStat) => boolean }[] = [
+        { name: 'Player of the Month', unit: 'Points', metric: s => s.points, minimum: 3 },
+        { name: 'Top Goal Contributor', unit: 'Goals + Assists', metric: s => s.goalInvolvements, minimum: 1 },
+        { name: 'Top Scorer', unit: 'Goals', metric: s => s.goals, minimum: 1 },
+        { name: 'Top Assister', unit: 'Assists', metric: s => s.assists, minimum: 1 },
+        { name: 'Top Defender', unit: 'Defensive Rating', metric: s => (s.games * 3) - s.goalsAllowed, filter: s => s.games > 1 },
       ];
 
       for (const def of awardDefs) {
-        const winnerIds = getTopIds(stats, def.metric, def.tiebreakers);
+        const winnerIds = getTopIds(stats, def.metric, def.tiebreakers, def.filter);
+        const topVal = winnerIds.length > 0 ? def.metric(stats.get(winnerIds[0])!) : 0;
+        if (def.minimum !== undefined && topVal <= def.minimum) continue;
         if (winnerIds.includes(playerId)) {
           awards.push({ month, year, award: def.name, value: def.metric(stats.get(playerId)!), unit: def.unit });
+        }
+      }
+
+      // Top Duo for this month (scorer-assister pairs)
+      const duoStats = new Map<string, { ids: [string, string]; contributions: number }>();
+      for (const game of monthGames) {
+        for (const goal of game.goals) {
+          if (!goal.assisterId) continue;
+          if (!stats.has(goal.scorerId) || !stats.has(goal.assisterId)) continue;
+          const [a, b] = [goal.scorerId, goal.assisterId].sort();
+          const duoKey = `${a}:${b}`;
+          if (!duoStats.has(duoKey)) duoStats.set(duoKey, { ids: [a, b] as [string, string], contributions: 0 });
+          duoStats.get(duoKey)!.contributions++;
+        }
+      }
+      let topDuoVal = 0;
+      for (const [, duo] of duoStats) {
+        if (duo.contributions > topDuoVal) topDuoVal = duo.contributions;
+      }
+      if (topDuoVal > 1) {
+        for (const [, duo] of duoStats) {
+          if (duo.contributions === topDuoVal && duo.ids.includes(playerId)) {
+            const partnerId = duo.ids[0] === playerId ? duo.ids[1] : duo.ids[0];
+            const partner = playerMap.get(partnerId);
+            awards.push({ month, year, award: 'Top Duo', value: topDuoVal, unit: 'Goal Contributions', partner: partner ? { id: partner.id, name: partner.name, pictureUrl: partner.pictureUrl } : undefined });
+            break;
+          }
         }
       }
     }
@@ -593,7 +683,7 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
     if (!playerMap.has(playerId)) return res.status(404).json({ error: 'Player not found' });
 
     // Basic stats
-    let wins = 0, ties = 0, goals = 0, assists = 0, gamesPlayed = 0;
+    let wins = 0, ties = 0, goals = 0, assists = 0, gamesPlayed = 0, cleanSheets = 0;
     const matchResults: ('W' | 'L' | 'T')[] = []; // chronological order
 
     // Sort games chronologically for streak tracking
@@ -611,6 +701,11 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
 
       goals += game.goals.filter(g => g.scorerId === playerId).length;
       assists += game.goals.filter(g => g.assisterId === playerId).length;
+
+      // Clean sheet: opponent scored 0 goals
+      const opponentTeam = playerTeam === 'color' ? 'white' : 'color';
+      const opponentGoals = game.goals.filter(g => g.team === opponentTeam).length;
+      if (opponentGoals === 0) cleanSheets++;
     }
 
     // Win streak (max consecutive wins)
@@ -632,12 +727,13 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
       gamesByMonth.get(key)!.push(g);
     }
 
-    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number };
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number };
 
-    const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number): string[] => {
+    const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number, filter?: (s: PlayerStat) => boolean): string[] => {
       let topIds: string[] = [];
       let topVal = -1;
       for (const [pid, s] of stats) {
+        if (filter && !filter(s)) continue;
         const val = metric(s);
         if (val > topVal) { topVal = val; topIds = [pid]; }
         else if (val === topVal && val > 0) { topIds.push(pid); }
@@ -663,13 +759,15 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
         for (const [pid, team] of Object.entries(game.teamAssignments)) {
           if (!playerMap.has(pid)) continue;
           if (playerMap.get(pid)!.name.includes('Guest')) continue;
-          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0 });
+          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0 });
           const s = stats.get(pid)!;
           s.games++;
           const isTie = colorGoals === whiteGoals;
           const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
           if (isWin) s.points += 3;
           else if (isTie) s.points += 1;
+          const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
+          s.goalsAllowed += opponentGoals;
         }
         for (const goal of game.goals) {
           if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
@@ -678,14 +776,40 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
       }
 
       const awardDefs = [
-        { metric: (s: PlayerStat) => s.points },
-        { metric: (s: PlayerStat) => s.goalInvolvements },
-        { metric: (s: PlayerStat) => s.goals },
-        { metric: (s: PlayerStat) => s.assists },
+        { metric: (s: PlayerStat) => s.points, minimum: 3 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
+        { metric: (s: PlayerStat) => s.goalInvolvements, minimum: 1 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
+        { metric: (s: PlayerStat) => s.goals, minimum: 1 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
+        { metric: (s: PlayerStat) => s.assists, minimum: 1 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
+        { metric: (s: PlayerStat) => (s.games * 3) - s.goalsAllowed, minimum: undefined as number | undefined, filter: ((s: PlayerStat) => s.games > 1) as ((s: PlayerStat) => boolean) | undefined },
       ];
       for (const def of awardDefs) {
-        const winnerIds = getTopIds(stats, def.metric);
+        const winnerIds = getTopIds(stats, def.metric, def.filter);
+        if (winnerIds.length === 0) continue;
+        const topVal = def.metric(stats.get(winnerIds[0])!);
+        if (def.minimum !== undefined && topVal <= def.minimum) continue;
         if (winnerIds.includes(playerId)) awardsCount++;
+      }
+
+      // Top Duo for achievements count (scorer-assister pairs)
+      const duoStats = new Map<string, { ids: [string, string]; contributions: number }>();
+      for (const game of monthGames) {
+        for (const goal of game.goals) {
+          if (!goal.assisterId) continue;
+          if (!stats.has(goal.scorerId) || !stats.has(goal.assisterId)) continue;
+          const [a, b] = [goal.scorerId, goal.assisterId].sort();
+          const duoKey = `${a}:${b}`;
+          if (!duoStats.has(duoKey)) duoStats.set(duoKey, { ids: [a, b] as [string, string], contributions: 0 });
+          duoStats.get(duoKey)!.contributions++;
+        }
+      }
+      let topDuoVal = 0;
+      for (const [, duo] of duoStats) {
+        if (duo.contributions > topDuoVal) topDuoVal = duo.contributions;
+      }
+      if (topDuoVal > 1) {
+        for (const [, duo] of duoStats) {
+          if (duo.contributions === topDuoVal && duo.ids.includes(playerId)) { awardsCount++; break; }
+        }
       }
 
       // Check attendance and undefeated for this month
@@ -713,10 +837,11 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
       { id: 'first_win', name: 'My First Win!', description: 'Win your first game', current: Math.min(wins, 1), target: 1 },
       { id: 'wins_10', name: 'Victory Lap', description: 'Win 10 games', current: Math.min(wins, 10), target: 10 },
       { id: 'games_10', name: 'Regular', description: 'Play 10 games', current: Math.min(gamesPlayed, 10), target: 10 },
-      { id: 'games_100', name: 'Iron Man', description: 'Play 100 games', current: Math.min(gamesPlayed, 100), target: 100 },
+      { id: 'games_50', name: 'Iron Man', description: 'Play 50 games', current: Math.min(gamesPlayed, 50), target: 50 },
       { id: 'points_100', name: 'Centurion', description: 'Earn 100 points', current: Math.min(totalPoints, 100), target: 100 },
       { id: 'awards_3', name: 'Trophy Collector', description: 'Win 3 awards', current: Math.min(awardsCount, 3), target: 3 },
       { id: 'win_streak_3', name: 'Hat Trick of Wins', description: 'Win 3 games in a row', current: Math.min(maxWinStreak, 3), target: 3 },
+      { id: 'clean_sheets_3', name: 'Brick Wall', description: 'Keep 3 clean sheets', current: Math.min(cleanSheets, 3), target: 3 },
       { id: 'mr_consistent', name: 'Mr. Consistent', description: 'Play every game in a month', current: playedAllGamesInMonth ? 1 : 0, target: 1 },
       { id: 'invincible', name: 'Invincible', description: 'Go undefeated in a month (play all games, only wins or ties)', current: undefeatedInMonth ? 1 : 0, target: 1 },
     ];

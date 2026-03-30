@@ -11,9 +11,10 @@ interface PlayerProfileProps {
   isOwnProfile?: boolean;
   onBack?: () => void;
   onPlayerClick?: (playerId: string) => void;
+  onNavigateToMonth?: (month: number, year: number) => void;
 }
 
-export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick }: PlayerProfileProps) {
+export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick, onNavigateToMonth }: PlayerProfileProps) {
   const [stats, setStats] = useState<PlayerStatsResponse | null>(null);
   const [awards, setAwards] = useState<PlayerAward[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
@@ -26,6 +27,7 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
   const [expandedAward, setExpandedAward] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<{ players: { id: string; name: string; pictureUrl: string | null }[]; stats: { label: string; value: string }[] } | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [perGame, setPerGame] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -214,14 +216,30 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
       </div>
 
       {/* Stat Grid */}
+      <div className="flex justify-end mb-2">
+        <div className="inline-flex rounded-lg border border-border overflow-hidden text-[11px]">
+          <button
+            className={`px-3 py-1 font-semibold transition-colors ${!perGame ? 'bg-gold text-text-on-accent' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+            onClick={() => setPerGame(false)}
+          >
+            Totals
+          </button>
+          <button
+            className={`px-3 py-1 font-semibold transition-colors ${perGame ? 'bg-gold text-text-on-accent' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+            onClick={() => setPerGame(true)}
+          >
+            Per Game
+          </button>
+        </div>
+      </div>
       <div className="grid grid-cols-3 gap-2 mb-6">
         {[
           { label: 'GAMES', value: aggregate.games, rank: ranks?.games },
-          { label: 'POINTS', value: (aggregate.wins * 3) + (aggregate.ties * 1), rank: ranks?.points },
-          { label: 'PPG', value: aggregate.ppg.toFixed(2), rank: ranks?.ppg },
-          { label: 'G+A', value: aggregate.goals + aggregate.assists, rank: ranks?.goalInvolvements },
-          { label: 'GOALS', value: aggregate.goals, rank: ranks?.goals },
-          { label: 'ASSISTS', value: aggregate.assists, rank: ranks?.assists },
+          { label: 'POINTS', value: perGame ? (aggregate.games > 0 ? (((aggregate.wins * 3) + aggregate.ties) / aggregate.games).toFixed(2) : '0.00') : (aggregate.wins * 3) + (aggregate.ties * 1), rank: perGame ? ranks?.ppg : ranks?.points },
+          { label: 'WINS', value: perGame ? (aggregate.games > 0 ? `${Math.round((aggregate.wins / aggregate.games) * 100)}%` : '0%') : aggregate.wins, rank: ranks?.wins },
+          { label: 'G+A', value: perGame ? (aggregate.games > 0 ? ((aggregate.goals + aggregate.assists) / aggregate.games).toFixed(2) : '0.00') : aggregate.goals + aggregate.assists, rank: ranks?.goalInvolvements },
+          { label: 'GOALS', value: perGame ? (aggregate.games > 0 ? (aggregate.goals / aggregate.games).toFixed(2) : '0.00') : aggregate.goals, rank: ranks?.goals },
+          { label: 'ASSISTS', value: perGame ? (aggregate.games > 0 ? (aggregate.assists / aggregate.games).toFixed(2) : '0.00') : aggregate.assists, rank: ranks?.assists },
         ].map(stat => (
           <div key={stat.label} className="bg-surface rounded-xl border border-border p-3 text-center">
             <p className="text-[10px] text-text-tertiary font-semibold tracking-wider">{stat.label}</p>
@@ -270,6 +288,8 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           'Top Goal Contributor': '🎯',
           'Top Scorer': '⚽',
           'Top Assister': '🤝',
+          'Top Defender': '🛡️',
+          'Top Duo': '🤜🤛',
         };
         const grouped = awards.reduce<Record<string, typeof awards>>((acc, a) => {
           if (!acc[a.award]) acc[a.award] = [];
@@ -304,7 +324,19 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
                       <div className="ml-6 mt-1 space-y-1">
                         {items.map((a, i) => (
                           <div key={i} className="bg-surface-hover/50 rounded-lg px-3 py-2 flex items-center justify-between">
-                            <span className="text-xs text-text-secondary">{MONTH_NAMES[a.month]} {a.year}</span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-xs text-text-secondary ${onNavigateToMonth ? 'cursor-pointer hover:text-gold transition-colors' : ''}`}
+                                onClick={onNavigateToMonth ? () => onNavigateToMonth(a.month, a.year) : undefined}
+                              >
+                                {MONTH_NAMES[a.month]} {a.year}
+                              </span>
+                              {a.partner && (
+                                <span className="text-xs text-text-tertiary">
+                                  w/ <ClickableName id={a.partner.id} name={a.partner.name} className="text-text-secondary" />
+                                </span>
+                              )}
+                            </div>
                             <span className="text-xs font-medium text-text-primary">{a.value} {a.unit}</span>
                           </div>
                         ))}

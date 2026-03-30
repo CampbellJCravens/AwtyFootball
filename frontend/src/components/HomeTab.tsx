@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward } from '../api/stats';
+import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward, LeaderboardEntry } from '../api/stats';
 import ImageLightbox from './ImageLightbox';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 interface HomeTabProps {
   onPlayerClick?: (playerId: string) => void;
+  initialMonth?: { month: number; year: number };
+  onMonthViewed?: () => void;
 }
 
 function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick, onImageClick }: {
@@ -65,7 +67,7 @@ function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick, onImage
   );
 }
 
-function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetailedStats, onPlayerClick, onImageClick }: {
+function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetailedStats, onPlayerClick, onImageClick, titleExtra, noQualifierMessage, onShowLeaderboard }: {
   title: string;
   titlePlural?: string;
   emoji?: string;
@@ -74,8 +76,19 @@ function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetail
   showDetailedStats?: boolean;
   onPlayerClick?: (playerId: string) => void;
   onImageClick?: (src: string) => void;
+  titleExtra?: React.ReactNode;
+  noQualifierMessage?: string;
+  onShowLeaderboard?: () => void;
 }) {
-  if (!awards || awards.length === 0) return null;
+  if ((!awards || awards.length === 0) && !noQualifierMessage) return null;
+  if (!awards || awards.length === 0) {
+    return (
+      <div className="mb-6">
+        <h3 className="text-lg font-bold text-text-primary mb-2">{emoji && <span className="mr-1.5">{emoji}</span>}{title}{titleExtra}</h3>
+        <p className="text-sm text-text-tertiary italic">{noQualifierMessage}</p>
+      </div>
+    );
+  }
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
 
   const isTied = awards.length > 1;
@@ -83,7 +96,14 @@ function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetail
 
   return (
     <div className="mb-6">
-      <h3 className="text-lg font-bold text-text-primary mb-2">{emoji && <span className="mr-1.5">{emoji}</span>}{displayTitle}</h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-lg font-bold text-text-primary">{emoji && <span className="mr-1.5">{emoji}</span>}{displayTitle}{titleExtra}</h3>
+        {onShowLeaderboard && (
+          <button onClick={onShowLeaderboard} className="text-[11px] text-text-tertiary hover:text-gold transition-colors font-medium">
+            Show Leaderboard
+          </button>
+        )}
+      </div>
       {!isTied ? (
         <AwardCard award={awards[0]} statLabel={statLabel} showDetailedStats={showDetailedStats} onPlayerClick={onPlayerClick} onImageClick={onImageClick} />
       ) : (
@@ -140,13 +160,23 @@ function AwardSection({ title, titlePlural, emoji, statLabel, awards, showDetail
   );
 }
 
-export default function HomeTab({ onPlayerClick }: HomeTabProps) {
+export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: HomeTabProps) {
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(initialMonth?.month ?? (now.getMonth() + 1));
+  const [year, setYear] = useState(initialMonth?.year ?? now.getFullYear());
+
+  useEffect(() => {
+    if (initialMonth) {
+      setMonth(initialMonth.month);
+      setYear(initialMonth.year);
+      onMonthViewed?.();
+    }
+  }, [initialMonth]);
   const [data, setData] = useState<MonthlyStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [showDefenderInfo, setShowDefenderInfo] = useState(false);
+  const [leaderboardModal, setLeaderboardModal] = useState<{ title: string; emoji: string; unit: string; entries: LeaderboardEntry[]; showFormula?: boolean } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -238,6 +268,9 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
           </div>
         ) : (
           <div>
+            {month === (now.getMonth() + 1) && year === now.getFullYear() && (
+              <p className="text-xs text-gold font-semibold uppercase tracking-wider mb-2">In Progress</p>
+            )}
             <p className="text-xs text-text-tertiary font-medium mb-4">{data.gamesPlayed} game{data.gamesPlayed !== 1 ? 's' : ''} played this month</p>
 
             <AwardSection
@@ -249,6 +282,8 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               showDetailedStats
               onPlayerClick={onPlayerClick}
               onImageClick={setLightboxImage}
+              noQualifierMessage="No one surpassed 3 points this month."
+              onShowLeaderboard={() => setLeaderboardModal({ title: 'Points', emoji: '👑', unit: 'Pts', entries: data.leaderboards.points })}
             />
             <AwardSection
               title="Top Goal Contributor"
@@ -258,6 +293,8 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               awards={data.awards.topGoalContributor}
               onPlayerClick={onPlayerClick}
               onImageClick={setLightboxImage}
+              noQualifierMessage="No one surpassed 1 goal contribution this month."
+              onShowLeaderboard={() => setLeaderboardModal({ title: 'Goal Contributions', emoji: '🎯', unit: 'G+A', entries: data.leaderboards.goalInvolvements })}
             />
             <AwardSection
               title="Top Scorer"
@@ -267,6 +304,8 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               awards={data.awards.topScorer}
               onPlayerClick={onPlayerClick}
               onImageClick={setLightboxImage}
+              noQualifierMessage="No one surpassed 1 goal this month."
+              onShowLeaderboard={() => setLeaderboardModal({ title: 'Goals', emoji: '⚽', unit: 'G', entries: data.leaderboards.goals })}
             />
             <AwardSection
               title="Top Assister"
@@ -276,13 +315,190 @@ export default function HomeTab({ onPlayerClick }: HomeTabProps) {
               awards={data.awards.topAssister}
               onPlayerClick={onPlayerClick}
               onImageClick={setLightboxImage}
+              noQualifierMessage="No one surpassed 1 assist this month."
+              onShowLeaderboard={() => setLeaderboardModal({ title: 'Assists', emoji: '🤝', unit: 'A', entries: data.leaderboards.assists })}
             />
+            <AwardSection
+              title="Top Defender"
+              titlePlural="Top Defenders"
+              emoji="🛡️"
+              statLabel={`${data.awards.topDefender?.[0]?.games ?? 0} Games Played · ${data.awards.topDefender?.[0]?.goalsAllowed ?? 0} Goals Allowed`}
+              awards={data.awards.topDefender}
+              onPlayerClick={onPlayerClick}
+              onImageClick={setLightboxImage}
+              titleExtra={
+                <button
+                  onClick={() => setShowDefenderInfo(true)}
+                  className="ml-2 w-5 h-5 rounded-full border border-border-emphasis text-text-tertiary text-[11px] font-bold inline-flex items-center justify-center hover:bg-surface-hover transition-colors align-middle"
+                >
+                  i
+                </button>
+              }
+              onShowLeaderboard={() => setLeaderboardModal({ title: 'Defensive Rating', emoji: '🛡️', unit: 'DR', entries: data.leaderboards.defensiveRating, showFormula: true })}
+            />
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-text-primary mb-2"><span className="mr-1.5">🤜🤛</span>{data.awards.topDuo && data.awards.topDuo.length > 1 ? 'Top Duos' : 'Top Duo'}</h3>
+              {data.awards.topDuo && data.awards.topDuo.length > 0 ? (
+                <div className="space-y-3">
+                  {data.awards.topDuo.map((duo, duoIdx) => (
+                    <div key={duoIdx} className="bg-surface rounded-2xl border border-border overflow-hidden p-5">
+                      <div className="flex -space-x-4 mb-3">
+                        {duo.players.map((player, i) => (
+                          player.pictureUrl ? (
+                            <img
+                              key={player.id}
+                              src={player.pictureUrl}
+                              alt={player.name}
+                              className="w-16 h-16 rounded-full object-cover border-4 border-surface cursor-pointer hover:scale-105 transition-transform"
+                              style={{ zIndex: 2 - i }}
+                              onClick={() => setLightboxImage(player.pictureUrl!)}
+                            />
+                          ) : (
+                            <div
+                              key={player.id}
+                              className="w-16 h-16 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xl font-black border-4 border-surface cursor-pointer hover:scale-105 transition-transform"
+                              style={{ zIndex: 2 - i }}
+                              onClick={onPlayerClick ? () => onPlayerClick(player.id) : undefined}
+                            >
+                              {player.name.charAt(0).toUpperCase()}
+                            </div>
+                          )
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-x-1 mb-1">
+                        {duo.players.map((player, i) => (
+                          <span key={player.id}>
+                            <span
+                              className={`text-lg font-black italic text-gold leading-tight ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
+                              onClick={onPlayerClick ? () => onPlayerClick(player.id) : undefined}
+                            >
+                              {player.name.split(' ')[0].toUpperCase()}
+                            </span>
+                            {i === 0 && <span className="text-text-tertiary font-medium"> &</span>}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-xs text-text-tertiary font-semibold tracking-wider uppercase">
+                        {duo.value} Goal Contributions
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-text-tertiary italic">No duo surpassed 1 goal contribution this month.</p>
+              )}
+            </div>
           </div>
         )}
 
         {lightboxImage && (
           <ImageLightbox src={lightboxImage} alt="Player" onClose={() => setLightboxImage(null)} />
         )}
+
+        {showDefenderInfo && data?.awards.topDefender && data.awards.topDefender.length > 0 && (() => {
+          const d = data.awards.topDefender![0];
+          const gp = d.games ?? 0;
+          const ga = d.goalsAllowed ?? 0;
+          const rating = (gp * 3) - ga;
+          return (
+            <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center" onClick={() => setShowDefenderInfo(false)}>
+              <div className="absolute inset-0 bg-black/60" />
+              <div
+                className="relative bg-base rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm mx-auto p-5 pb-8 sm:pb-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4 sm:hidden" />
+                <h3 className="text-lg font-bold text-text-primary mb-3">🛡️ Top Defender Formula</h3>
+                <p className="text-sm text-text-secondary mb-4">
+                  The defensive rating rewards players whose teams concede the fewest goals over the most games.
+                </p>
+                <div className="bg-surface rounded-xl border border-border p-4 text-center">
+                  <p className="text-xs text-text-tertiary font-semibold tracking-wider uppercase mb-2">Formula</p>
+                  <p className="text-lg font-bold text-text-primary mb-3">
+                    (Games Played x 3) - Goals Allowed
+                  </p>
+                  <div className="h-px bg-border mb-3" />
+                  <p className="text-xs text-text-tertiary font-semibold tracking-wider uppercase mb-2">
+                    {d.player.name}'s Rating
+                  </p>
+                  <p className="text-lg font-bold text-gold">
+                    ({gp} x 3) - {ga} = <span className="text-2xl">{rating}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowDefenderInfo(false)}
+                  className="mt-4 w-full py-2.5 bg-surface hover:bg-surface-hover text-text-primary text-sm font-semibold rounded-xl border border-border transition-colors"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {leaderboardModal && (() => {
+          const { title, emoji, unit, entries, showFormula } = leaderboardModal;
+          const getInitial = (name: string) => name.charAt(0).toUpperCase();
+          // Assign ranks (ties get same rank)
+          let rank = 0;
+          let lastVal = -1;
+          const ranked = entries.map(e => {
+            if (e.value !== lastVal) { rank++; lastVal = e.value; }
+            return { ...e, rank };
+          });
+          return (
+            <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center" onClick={() => setLeaderboardModal(null)}>
+              <div className="absolute inset-0 bg-black/60" />
+              <div
+                className="relative bg-base rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm mx-auto p-5 pb-8 sm:pb-5 max-h-[80vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4 sm:hidden flex-shrink-0" />
+                <h3 className="text-lg font-bold text-text-primary mb-4 flex-shrink-0">{emoji} {title}</h3>
+                <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
+                  {ranked.map((entry) => (
+                    <div
+                      key={entry.player.id}
+                      className={`flex items-center gap-3 rounded-xl p-3 ${entry.rank === 1 ? 'bg-gold/10 border border-gold/30' : 'bg-surface border border-border'}`}
+                    >
+                      <span className={`w-7 text-center font-bold text-sm flex-shrink-0 ${entry.rank <= 3 ? '' : 'text-text-tertiary'}`}>
+                        {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : entry.rank}
+                      </span>
+                      {entry.player.pictureUrl ? (
+                        <img src={entry.player.pictureUrl} alt={entry.player.name} className="w-8 h-8 rounded-full object-cover border border-border-emphasis flex-shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
+                          {getInitial(entry.player.name)}
+                        </div>
+                      )}
+                      <span
+                        className={`flex-1 text-sm font-medium text-text-primary truncate ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
+                        onClick={onPlayerClick ? () => { onPlayerClick(entry.player.id); setLeaderboardModal(null); } : undefined}
+                      >
+                        {entry.player.name}
+                      </span>
+                      <span className={`text-sm font-bold flex-shrink-0 ${entry.rank === 1 ? 'text-gold' : 'text-text-secondary'}`}>
+                        {showFormula && entry.games != null && entry.goalsAllowed != null ? (
+                          <span className="text-xs">
+                            <span className="text-text-tertiary font-normal">({entry.games}×3)-{entry.goalsAllowed}</span> = {entry.value}
+                          </span>
+                        ) : (
+                          <>{entry.value} <span className="text-[10px] text-text-tertiary font-normal">{unit}</span></>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setLeaderboardModal(null)}
+                  className="mt-4 w-full py-2.5 bg-surface hover:bg-surface-hover text-text-primary text-sm font-semibold rounded-xl border border-border transition-colors flex-shrink-0"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

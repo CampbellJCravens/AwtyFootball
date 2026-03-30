@@ -51,6 +51,7 @@ export interface PlayerStatsResponse {
   ranks: {
     games: number;
     points: number;
+    wins: number;
     ppg: number;
     goalInvolvements: number;
     goals: number;
@@ -108,6 +109,7 @@ export interface MonthlyAward {
   games?: number;
   goals?: number;
   assists?: number;
+  goalsAllowed?: number;
 }
 
 export interface MonthlyStatsResponse {
@@ -120,7 +122,23 @@ export interface MonthlyStatsResponse {
     topGoalContributor: MonthlyAward[] | null;
     topScorer: MonthlyAward[] | null;
     topAssister: MonthlyAward[] | null;
+    topDefender: MonthlyAward[] | null;
+    topDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
   };
+  leaderboards: {
+    points: LeaderboardEntry[];
+    goalInvolvements: LeaderboardEntry[];
+    goals: LeaderboardEntry[];
+    assists: LeaderboardEntry[];
+    defensiveRating: LeaderboardEntry[];
+  };
+}
+
+export interface LeaderboardEntry {
+  player: PlayerStatsPlayer;
+  value: number;
+  games?: number;
+  goalsAllowed?: number;
 }
 
 export async function fetchMonthlyStats(month: number, year: number): Promise<MonthlyStatsResponse> {
@@ -140,6 +158,7 @@ export interface PlayerAward {
   award: string;
   value: number;
   unit: string;
+  partner?: PlayerStatsPlayer;
 }
 
 export async function fetchPlayerAwards(playerId: string): Promise<PlayerAward[]> {

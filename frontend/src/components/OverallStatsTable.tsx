@@ -25,13 +25,14 @@ interface OverallStatsTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortColumn = 'points' | 'gamesPlayed' | 'pointsPerGame' | 'goalInvolvements' | 'goals' | 'assists' | 'formWins';
+type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'formWins';
 type SortDirection = 'asc' | 'desc';
 
 
 export default function OverallStatsTable({ players, games, onPlayerClick }: OverallStatsTableProps) {
   const [sortColumn, setSortColumn] = useState<SortColumn>('points');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [perGame, setPerGame] = useState(false);
   
   // Refs for manual sticky header
   const verticalScrollRef = useRef<HTMLDivElement>(null);
@@ -262,89 +263,51 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
     );
   }, [players, games]);
 
+  // Helper to get per-game value
+  const pg = (val: number, gp: number) => gp > 0 ? val / gp : 0;
+
   // Sort stats
   const sortedStats = useMemo(() => {
-    const sorted = [...playerStats].sort((a, b) => {
-      let comparison = 0;
-      
-      switch (sortColumn) {
-        case 'points':
-          comparison = a.points - b.points;
-          // Tie-breaker: PPG, then goal involvements, then goals
-          if (comparison === 0) {
-            comparison = a.pointsPerGame - b.pointsPerGame;
-            if (comparison === 0) {
-              comparison = a.goalInvolvements - b.goalInvolvements;
-              if (comparison === 0) {
-                comparison = a.goals - b.goals;
-              }
-            }
-          }
-          break;
-        case 'pointsPerGame':
-          comparison = a.pointsPerGame - b.pointsPerGame;
-          // Tie-breaker: total points
-          if (comparison === 0) {
-            comparison = a.points - b.points;
-          }
-          break;
-        case 'gamesPlayed':
-          comparison = a.gamesPlayed - b.gamesPlayed;
-          // Tie-breaker: points, then goal involvements
-          if (comparison === 0) {
-            comparison = a.points - b.points;
-            if (comparison === 0) {
-              comparison = a.goalInvolvements - b.goalInvolvements;
-            }
-          }
-          break;
-        case 'goalInvolvements':
-          comparison = a.goalInvolvements - b.goalInvolvements;
-          // Tie-breaker: goals, then points
-          if (comparison === 0) {
-            comparison = a.goals - b.goals;
-            if (comparison === 0) {
-              comparison = a.points - b.points;
-            }
-          }
-          break;
-        case 'goals':
-          comparison = a.goals - b.goals;
-          // Tie-breaker: assists, then points
-          if (comparison === 0) {
-            comparison = a.assists - b.assists;
-            if (comparison === 0) {
-              comparison = a.points - b.points;
-            }
-          }
-          break;
-        case 'assists':
-          comparison = a.assists - b.assists;
-          // Tie-breaker: goals, then points
-          if (comparison === 0) {
-            comparison = a.goals - b.goals;
-            if (comparison === 0) {
-              comparison = a.points - b.points;
-            }
-          }
-          break;
-        case 'formWins':
-          comparison = a.formWins - b.formWins;
-          // Tie-breaker: points, then goal involvements
-          if (comparison === 0) {
-            comparison = a.points - b.points;
-            if (comparison === 0) {
-              comparison = a.goalInvolvements - b.goalInvolvements;
-            }
-          }
-          break;
+    const v = (stats: PlayerStats, col: SortColumn) => {
+      const gp = stats.gamesPlayed;
+      switch (col) {
+        case 'points': return perGame ? pg(stats.points, gp) : stats.points;
+        case 'gamesPlayed': return stats.gamesPlayed;
+        case 'wins': return perGame ? pg(stats.wins, gp) : stats.wins;
+        case 'losses': return perGame ? pg(stats.losses, gp) : stats.losses;
+        case 'ties': return perGame ? pg(stats.ties, gp) : stats.ties;
+        case 'goalInvolvements': return perGame ? pg(stats.goalInvolvements, gp) : stats.goalInvolvements;
+        case 'goals': return perGame ? pg(stats.goals, gp) : stats.goals;
+        case 'assists': return perGame ? pg(stats.assists, gp) : stats.assists;
+        case 'formWins': return stats.formWins;
       }
+    };
 
+    const tiebreakers: Record<SortColumn, SortColumn[]> = {
+      points: ['goalInvolvements', 'goals'],
+      gamesPlayed: ['points', 'goalInvolvements'],
+      wins: ['points', 'goalInvolvements'],
+      losses: ['points', 'goalInvolvements'],
+      ties: ['points', 'goalInvolvements'],
+      goalInvolvements: ['goals', 'points'],
+      goals: ['assists', 'points'],
+      assists: ['goals', 'points'],
+      formWins: ['points', 'goalInvolvements'],
+    };
+
+    const sorted = [...playerStats].sort((a, b) => {
+      let comparison = v(a, sortColumn) - v(b, sortColumn);
+      if (comparison === 0) {
+        for (const tb of tiebreakers[sortColumn]) {
+          comparison = v(a, tb) - v(b, tb);
+          if (comparison !== 0) break;
+        }
+      }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
 
     return sorted;
-  }, [playerStats, sortColumn, sortDirection]);
+  }, [playerStats, sortColumn, sortDirection, perGame]);
 
   // Measure header height for padding-top calculation (must be after sortedStats is defined)
   useLayoutEffect(() => {
@@ -391,9 +354,11 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
   const columns = [
     { key: 'rank', label: 'Rk', tooltip: 'Rank', width: 'w-6', widthPx: 24, sticky: true, left: '0' },
     { key: 'player', label: 'Player', tooltip: 'Player', width: 'w-28', widthPx: 112, sticky: true, left: '1.5rem' },
-    { key: 'points', label: 'Pts', tooltip: 'Points', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'points' },
     { key: 'gamesPlayed', label: 'GP', tooltip: 'Games Played', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'gamesPlayed' },
-    { key: 'pointsPerGame', label: 'PPG', tooltip: 'Points Per Game', width: 'w-12', widthPx: 48, sortable: true, sortKey: 'pointsPerGame' },
+    { key: 'points', label: 'Pts', tooltip: 'Points', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'points' },
+    { key: 'wins', label: 'W', tooltip: 'Wins', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'wins' },
+    { key: 'losses', label: 'L', tooltip: 'Losses', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'losses' },
+    { key: 'ties', label: 'T', tooltip: 'Ties', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'ties' },
     { key: 'goalInvolvements', label: 'G+A', tooltip: 'Goals + Assists', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'goalInvolvements' },
     { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'goals' },
     { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'assists' },
@@ -404,6 +369,22 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
   // This works regardless of CSS containment/transform issues that break position: sticky
   return (
     <>
+      <div className="flex justify-end px-2 py-1.5">
+        <div className="inline-flex rounded-lg border border-border overflow-hidden text-[11px]">
+          <button
+            className={`px-3 py-1 font-semibold transition-colors ${!perGame ? 'bg-gold text-text-on-accent' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+            onClick={() => setPerGame(false)}
+          >
+            Totals
+          </button>
+          <button
+            className={`px-3 py-1 font-semibold transition-colors ${perGame ? 'bg-gold text-text-on-accent' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+            onClick={() => setPerGame(true)}
+          >
+            Per Game
+          </button>
+        </div>
+      </div>
       <div ref={verticalScrollRef} className="flex-1 min-h-0 overflow-y-auto relative">
         {/* Manual sticky header overlay - synced with scroll via transform */}
         <div 
@@ -499,12 +480,14 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
                     </td>
 
                     {/* Rest of columns - Scrollable */}
-                    <td className="py-1.5 px-1 text-text-secondary">{stats.points}</td>
                     <td className="py-1.5 px-1 text-text-secondary">{stats.gamesPlayed}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{stats.pointsPerGame.toFixed(2)}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{stats.goalInvolvements}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{stats.goals}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{stats.assists}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.points, stats.gamesPlayed).toFixed(2) : stats.points}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.wins, stats.gamesPlayed) * 100)}%` : stats.wins}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.losses, stats.gamesPlayed) * 100)}%` : stats.losses}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.ties, stats.gamesPlayed) * 100)}%` : stats.ties}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goalInvolvements, stats.gamesPlayed).toFixed(2) : stats.goalInvolvements}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
+                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
                     <td className="py-1.5 px-1">
                       <div className="flex items-center gap-0.5">
                         {[0, 1, 2, 3, 4].map((i) => {
