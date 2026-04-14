@@ -34,6 +34,12 @@ model Game {
   
   // Team changes: Array of { playerId, timestamp, team, type, previousTeam?, newTeam? }
   teamChanges String? // JSON string of team change array
+
+  // Game events: Array of { type: 'halfTime' | 'gameOver', timestamp }
+  gameEvents String? // JSON string of game event array
+
+  // Sportsmanship points per player: { playerId: number }
+  sportsmanship String? // JSON string of Record<string, number>
 }
 
 model AppSettings {
@@ -72,4 +78,25 @@ model LegacyStat {
   @@unique([playerId, season])
 }
 
+// Tracks which achievement-unlock popups a user has already been shown.
+// Used to diff "currently-earned" against "already-notified" so we can pop
+// up only newly-earned achievements on app load.
+model UserAchievementSeen {
+  userId        String
+  achievementId String
+  seenAt        DateTime @default(now())
 
+  @@id([userId, achievementId])
+  @@index([userId])
+}
+
+// Session storage for connect-pg-simple. This table is created and managed
+// by the session middleware, not the application code. It is declared here
+// only so that `prisma db push` will not drop it during deploys.
+model user_sessions {
+  sid    String   @id(map: "session_pkey") @db.VarChar
+  sess   Json     @db.Json
+  expire DateTime @db.Timestamp(6)
+
+  @@index([expire], map: "IDX_session_expire")
+}

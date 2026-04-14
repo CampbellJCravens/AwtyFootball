@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Player, fetchPlayers, deletePlayer } from './api/players';
 import { Game, fetchGames, createGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
+import { Achievement, fetchNewAchievements } from './api/stats';
 import { useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import PlayerForm from './components/PlayerForm';
@@ -16,6 +17,7 @@ import PlayerProfile from './components/PlayerProfile';
 import GameDetailReadOnly from './components/GameDetailReadOnly';
 import PlayerLinkSetup from './components/PlayerLinkSetup';
 import HomeTab from './components/HomeTab';
+import AchievementUnlockedModal from './components/AchievementUnlockedModal';
 
 function App() {
   const { user, logout, refreshUser, isAdmin } = useAuth();
@@ -41,6 +43,8 @@ function App() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [newAchievements, setNewAchievements] = useState<Achievement[]>([]);
+  const [openProfileToAchievements, setOpenProfileToAchievements] = useState(false);
   const playersFileInputRef = useRef<HTMLInputElement>(null);
   const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -79,11 +83,30 @@ function App() {
     document.documentElement.classList.add('dark');
   }, []);
 
+  // Check for new achievements once per load, when the user is known to have
+  // a linked player. The server atomically marks them as seen, so it's safe
+  // to call once — refreshing won't re-trigger the popup.
+  useEffect(() => {
+    if (!user?.playerId) return;
+    let cancelled = false;
+    fetchNewAchievements()
+      .then(list => {
+        if (!cancelled && list.length > 0) setNewAchievements(list);
+      })
+      .catch(err => {
+        console.error('Failed to fetch new achievements:', err);
+      });
+    return () => { cancelled = true; };
+  }, [user?.playerId]);
+
   // Clear sub-views when switching tabs
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     setExpandedGameId(null);
     setSelectedPlayerId(null);
+    // The "View Achievements" deep-link is one-shot — consumed on arrival,
+    // so switching tabs again returns to the normal profile view.
+    setOpenProfileToAchievements(false);
   };
 
   const handleFormSuccess = () => {
@@ -368,7 +391,7 @@ function App() {
   };
 
   const renderStatsTab = () => (
-    <Stats players={players} games={games} onPlayerClick={handleStatsPlayerClick} />
+    <Stats players={players} games={games} onPlayerClick={handleStatsPlayerClick} currentPlayerId={user?.playerId} />
   );
 
   const renderProfileTab = () => {
@@ -377,8 +400,10 @@ function App() {
       return (
         <div className="h-full overflow-y-auto">
           <PlayerProfile
+            key={openProfileToAchievements ? 'profile-achievements' : 'profile-main'}
             playerId={user.playerId}
             isOwnProfile
+            initialShowAchievements={openProfileToAchievements}
             onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('profile'); setActiveTab('players'); }}
             onNavigateToMonth={handleNavigateToMonth}
           />
@@ -570,6 +595,24 @@ function App() {
             onConfirm={handleConfirmDeletePlayer}
             onCancel={handleCancelDeletePlayer}
             itemType="player"
+          />
+        )}
+
+        {/* Newly-unlocked achievements popup (shown once per achievement) */}
+        {newAchievements.length > 0 && (
+          <AchievementUnlockedModal
+            achievements={newAchievements}
+            onViewProfile={() => {
+              setOpenProfileToAchievements(false);
+              setActiveTab('profile');
+              setNewAchievements([]);
+            }}
+            onViewAchievements={() => {
+              setOpenProfileToAchievements(true);
+              setActiveTab('profile');
+              setNewAchievements([]);
+            }}
+            onDismiss={() => setNewAchievements([])}
           />
         )}
 

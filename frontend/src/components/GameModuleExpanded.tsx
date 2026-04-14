@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import { incrementGuestCount } from '../api/settings';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
@@ -41,6 +41,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<{ scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null }>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
+  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver'; timestamp: Date }>>([]);
+  const [sportsmanship, setSportsmanship] = useState<Record<string, number>>({});
+  const [gameEventToDelete, setGameEventToDelete] = useState<number | null>(null);
+  const [editingGameEventIndex, setEditingGameEventIndex] = useState<number | null>(null);
   const [editingGoalIndex, setEditingGoalIndex] = useState<number | null>(null);
   const [editingScorer, setEditingScorer] = useState<Player | null>(null);
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
@@ -58,6 +62,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGoals, setShowGoals] = useState<boolean>(true);
   const [showTeamChanges, setShowTeamChanges] = useState<boolean>(true); // active by default
+  const [showGameEvents, setShowGameEvents] = useState<boolean>(true); // active by default
   const playersFileInputRef = useRef<HTMLInputElement>(null);
   const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,6 +109,21 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         setGoals(restoredGoals);
       }
       
+      // Restore game events (half time / game over) from database
+      if (gameData.gameEvents && gameData.gameEvents.length > 0) {
+        setGameEvents(
+          gameData.gameEvents.map(event => ({
+            type: event.type,
+            timestamp: new Date(event.timestamp),
+          }))
+        );
+      }
+
+      // Restore sportsmanship data
+      if (gameData.sportsmanship) {
+        setSportsmanship(gameData.sportsmanship);
+      }
+
       // Restore team changes from database
       if (gameData.teamChanges && gameData.teamChanges.length > 0) {
         const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
@@ -157,11 +177,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         previousTeam: change.previousTeam,
         newTeam: change.newTeam,
       }));
-      
+
+      // Convert game events to API format
+      const gameEventsData: GameEvent[] = gameEvents.map(event => ({
+        type: event.type,
+        timestamp: event.timestamp.toISOString(),
+      }));
+
       await updateGame(gameId, {
         teamAssignments: playerTeams,
         goals: goalsData,
         teamChanges: teamChangesData,
+        gameEvents: gameEventsData,
+        sportsmanship,
       });
     } catch (err) {
       console.error('Error saving game data:', err);
@@ -169,7 +197,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSaving(false);
     }
-  }, [gameId, playerTeams, goals, teamChanges]);
+  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship]);
 
   // Export game data to Google Sheets
   const handleExportToSheets = useCallback(async () => {
@@ -381,7 +409,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, loading, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, loading, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -658,6 +686,50 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setTeamChangeToDelete(null);
   };
 
+  // Game event handlers (Half Time / Game Over)
+  const handleRecordGameEvent = (type: 'halfTime' | 'gameOver') => {
+    if (!isAdmin) return;
+    const gameDateObj = new Date(gameDate);
+    const now = new Date(gameDateObj);
+    now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
+    setGameEvents(prev => [...prev, { type, timestamp: now }]);
+  };
+
+  const handleDeleteGameEvent = (index: number) => {
+    setGameEventToDelete(index);
+  };
+
+  const handleConfirmDeleteGameEvent = () => {
+    if (gameEventToDelete === null) return;
+    setGameEvents(prev => prev.filter((_, i) => i !== gameEventToDelete));
+    setGameEventToDelete(null);
+  };
+
+  const handleCancelDeleteGameEvent = () => {
+    setGameEventToDelete(null);
+  };
+
+  const handleEditGameEventTime = (index: number) => {
+    setEditingGameEventIndex(index);
+  };
+
+  const handleGameEventTimeChange = (newTime: Date) => {
+    if (editingGameEventIndex !== null) {
+      const gameDateObj = new Date(gameDate);
+      const correctedTime = new Date(gameDateObj);
+      correctedTime.setHours(newTime.getHours(), newTime.getMinutes(), newTime.getSeconds(), newTime.getMilliseconds());
+
+      setGameEvents(prev => prev.map((ev, i) =>
+        i === editingGameEventIndex ? { ...ev, timestamp: correctedTime } : ev
+      ));
+      setEditingGameEventIndex(null);
+    }
+  };
+
+  const handleCloseGameEventTimePicker = () => {
+    setEditingGameEventIndex(null);
+  };
+
   // Get team players for the goal scorer
   const getTeamPlayers = (scorer: Player): Player[] => {
     const scorerTeam = playerTeams[scorer.id];
@@ -677,7 +749,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   }, [allPlayers, searchQuery]);
 
   return (
-    <div className="h-full flex flex-col bg-surface">
+    <div className="h-full flex flex-col bg-surface max-w-lg mx-auto">
       {/* Header with Save and Close Buttons */}
             <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
               <h2 className="text-xl font-semibold text-text-primary">{gameTitle}</h2>
@@ -830,12 +902,32 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           </div>
         )}
 
+        {/* Game Event Controls (admin only) */}
+        {!loading && !error && isAdmin && (
+          <div className="mb-4 flex gap-2 flex-shrink-0">
+            <button
+              onClick={() => handleRecordGameEvent('halfTime')}
+              className="flex-1 px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover active:bg-accent-active transition-colors"
+              data-tooltip="Record Half Time"
+            >
+              Half Time
+            </button>
+            <button
+              onClick={() => handleRecordGameEvent('gameOver')}
+              className="flex-1 px-4 py-2 bg-gold text-text-on-accent text-sm font-medium rounded-xl hover:bg-gold-hover active:bg-gold-active transition-colors"
+              data-tooltip="Record Game Over"
+            >
+              Game Over
+            </button>
+          </div>
+        )}
+
         {/* Game Summary Section */}
         {!loading && !error && (
           <div className="mb-6 flex-shrink-0">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-text-primary">Game Summary</h3>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap justify-end">
                 <button
                   onClick={() => setShowGoals(prev => !prev)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
@@ -853,6 +945,15 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                   data-tooltip="Toggle Team Changes"
                 >
                   Team Changes
+                </button>
+                <button
+                  onClick={() => setShowGameEvents(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    showGameEvents ? 'bg-accent text-text-on-accent' : 'bg-surface-raised text-text-primary hover:bg-surface-active'
+                  }`}
+                  data-tooltip="Toggle Game Events"
+                >
+                  Events
                 </button>
               </div>
             </div>
@@ -872,10 +973,17 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                     change,
                     changeIndex: index,
                   })),
+                  ...gameEvents.map((event, index) => ({
+                    type: 'gameEvent' as const,
+                    timestamp: event.timestamp,
+                    event,
+                    eventIndex: index,
+                  })),
                 ]
                   .filter(item =>
                     (item.type === 'goal' && showGoals) ||
-                    (item.type === 'teamChange' && showTeamChanges)
+                    (item.type === 'teamChange' && showTeamChanges) ||
+                    (item.type === 'gameEvent' && showGameEvents)
                   )
                   .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()); // Sort by most recent first
 
@@ -936,6 +1044,71 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                                     onClick={() => handleDeleteGoal(goalIndex)}
                                     className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-error-bg active:bg-error-bg transition-colors flex-shrink-0"
                                     aria-label="Delete goal"
+                                    data-tooltip="Delete"
+                                  >
+                                    <svg
+                                      className="w-4 h-4 text-error"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                      />
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      } else if (item.type === 'gameEvent') {
+                        const { event, eventIndex } = item;
+                        const label = event.type === 'halfTime' ? 'Half Time' : 'Game Over';
+                        const accent = event.type === 'halfTime' ? 'text-accent' : 'text-gold';
+                        return (
+                          <div
+                            key={`event-${eventIndex}-${event.timestamp.getTime()}-${idx}`}
+                            className="flex items-center justify-between text-sm text-text-primary font-semibold mb-2 last:mb-0 border-t border-b border-border py-2"
+                          >
+                            <span className={`pr-3 flex-1 uppercase tracking-wide ${accent}`}>
+                              — {label} —
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-text-tertiary whitespace-nowrap">
+                                {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {isAdmin && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditGameEventTime(eventIndex)}
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-surface-raised active:bg-surface-active transition-colors flex-shrink-0"
+                                    aria-label="Edit event time"
+                                    data-tooltip="Edit"
+                                  >
+                                    <svg
+                                      className="w-4 h-4 text-text-secondary"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                      />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteGameEvent(eventIndex)}
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-error-bg active:bg-error-bg transition-colors flex-shrink-0"
+                                    aria-label="Delete event"
                                     data-tooltip="Delete"
                                   >
                                     <svg
@@ -1039,6 +1212,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               players={allPlayers}
               playerTeams={playerTeams}
               leftPlayers={leftPlayers}
+              sportsmanship={sportsmanship}
               onTeamSelect={handleTeamSelect}
               onAddGuest={handleAddGuest}
               onRemoveFromTeam={handleRemoveFromTeam}
@@ -1046,6 +1220,17 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               onGoalClick={handleGoalClick}
               onLeaveTeam={handleLeaveTeam}
               onReturnToTeam={handleReturnToTeam}
+              onSportsmanshipChange={(playerId, delta) => {
+                setSportsmanship(prev => {
+                  const current = prev[playerId] || 0;
+                  const next = current + delta;
+                  if (next <= 0) {
+                    const { [playerId]: _, ...rest } = prev;
+                    return rest;
+                  }
+                  return { ...prev, [playerId]: next };
+                });
+              }}
               isAdmin={isAdmin}
             />
           </div>
@@ -1108,6 +1293,24 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           currentTime={teamChanges[editingTeamChangeIndex].timestamp}
           onSelect={handleTeamChangeTimeChange}
           onClose={handleCloseTeamChangeTimePicker}
+        />
+      )}
+
+      {/* Delete Game Event Confirmation Modal */}
+      {gameEventToDelete !== null && (
+        <DeleteConfirmationModal
+          onConfirm={handleConfirmDeleteGameEvent}
+          onCancel={handleCancelDeleteGameEvent}
+          message={`Are you sure you want to delete this ${gameEvents[gameEventToDelete]?.type === 'halfTime' ? 'Half Time' : 'Game Over'} event?`}
+        />
+      )}
+
+      {/* Time Picker Modal for Game Events */}
+      {editingGameEventIndex !== null && gameEvents[editingGameEventIndex] && (
+        <TimePickerModal
+          currentTime={gameEvents[editingGameEventIndex].timestamp}
+          onSelect={handleGameEventTimeChange}
+          onClose={handleCloseGameEventTimePicker}
         />
       )}
 

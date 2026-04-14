@@ -14,6 +14,7 @@ interface PlayerStats {
   goalInvolvements: number; // goals + assists
   goals: number;
   assists: number;
+  cleanSheets: number; // games where the opponent scored 0
   score: number;
   form: ('W' | 'L' | 'T')[]; // Last 5 game results (oldest to newest, left to right)
   formWins: number; // Wins minus losses in the form array (for sorting)
@@ -23,13 +24,16 @@ interface OverallStatsTableProps {
   players: Player[];
   games: Game[];
   onPlayerClick?: (playerId: string) => void;
+  currentPlayerId?: string | null;
 }
 
-type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'formWins';
+type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'cleanSheets' | 'formWins';
 type SortDirection = 'asc' | 'desc';
 
 
-export default function OverallStatsTable({ players, games, onPlayerClick }: OverallStatsTableProps) {
+const MIN_QUALIFIED_GAMES = 3;
+
+export default function OverallStatsTable({ players, games, onPlayerClick, currentPlayerId }: OverallStatsTableProps) {
   const [sortColumn, setSortColumn] = useState<SortColumn>('points');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [perGame, setPerGame] = useState(false);
@@ -98,6 +102,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
         goalInvolvements: 0,
         goals: 0,
         assists: 0,
+        cleanSheets: 0,
         score: 0,
         form: [],
         formWins: 0,
@@ -145,6 +150,12 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
           stats.wins++;
         } else if (team === 'white' && colorWon) {
           stats.losses++;
+        }
+
+        // Clean sheet: opponent scored 0 goals
+        const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
+        if (opponentGoals === 0) {
+          stats.cleanSheets++;
         }
       });
 
@@ -279,6 +290,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
         case 'goalInvolvements': return perGame ? pg(stats.goalInvolvements, gp) : stats.goalInvolvements;
         case 'goals': return perGame ? pg(stats.goals, gp) : stats.goals;
         case 'assists': return perGame ? pg(stats.assists, gp) : stats.assists;
+        case 'cleanSheets': return perGame ? pg(stats.cleanSheets, gp) : stats.cleanSheets;
         case 'formWins': return stats.formWins;
       }
     };
@@ -292,6 +304,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
       goalInvolvements: ['goals', 'points'],
       goals: ['assists', 'points'],
       assists: ['goals', 'points'],
+      cleanSheets: ['wins', 'points'],
       formWins: ['points', 'goalInvolvements'],
     };
 
@@ -308,6 +321,10 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
 
     return sorted;
   }, [playerStats, sortColumn, sortDirection, perGame]);
+
+  const qualifiedStats = useMemo(() => sortedStats.filter(s => s.gamesPlayed >= MIN_QUALIFIED_GAMES), [sortedStats]);
+  const unqualifiedStats = useMemo(() => sortedStats.filter(s => s.gamesPlayed < MIN_QUALIFIED_GAMES), [sortedStats]);
+  const [showUnqualified, setShowUnqualified] = useState(true);
 
   // Measure header height for padding-top calculation (must be after sortedStats is defined)
   useLayoutEffect(() => {
@@ -362,6 +379,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
     { key: 'goalInvolvements', label: 'G+A', tooltip: 'Goals + Assists', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'goalInvolvements' },
     { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'goals' },
     { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'assists' },
+    { key: 'cleanSheets', label: 'CS', tooltip: 'Clean Sheets', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'cleanSheets' },
     { key: 'form', label: 'Form', tooltip: 'Form', width: 'w-28', widthPx: 112, sortable: true, sortKey: 'formWins' },
   ];
 
@@ -439,80 +457,135 @@ export default function OverallStatsTable({ players, games, onPlayerClick }: Ove
               ))}
             </colgroup>
             <tbody>
-              {sortedStats.length === 0 ? (
+              {qualifiedStats.length === 0 && unqualifiedStats.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="text-center py-8 text-text-tertiary">
                     No stats available. Play some games first!
                   </td>
                 </tr>
               ) : (
-                sortedStats.map((stats, index) => (
-                  <tr key={stats.player.id} className="border-b border-border hover:bg-surface-hover even:bg-surface-hover/50">
-                    {/* Rank - Sticky */}
-                    <td className="py-1.5 px-1 text-text-secondary font-medium bg-base sticky left-0 z-20 text-[11px]">
-                      {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
-                    </td>
-
-                    {/* Player - Sticky */}
-                    <td
-                      className="py-1.5 px-1 bg-base sticky z-20"
-                      style={{ left: `${columns[0].widthPx}px` }}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {stats.player.pictureUrl ? (
-                          <img
-                            src={stats.player.pictureUrl}
-                            alt={stats.player.name}
-                            className="w-6 h-6 rounded-full object-cover border border-border-emphasis flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-surface-active flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
-                            {getInitial(stats.player.name)}
-                          </div>
-                        )}
-                        <span
-                          className={`font-medium truncate text-text-primary text-[11px] ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
-                          onClick={onPlayerClick ? (e) => { e.stopPropagation(); onPlayerClick(stats.player.id); } : undefined}
+                <>
+                  {qualifiedStats.map((stats, index) => {
+                    const isCurrentUser = stats.player.id === currentPlayerId;
+                    return (
+                      <tr key={stats.player.id} className={`border-b border-border ${isCurrentUser ? 'bg-gold/10' : 'hover:bg-surface-hover even:bg-surface-hover/50'}`}>
+                        <td className={`py-1.5 px-1 font-medium sticky left-0 z-20 text-[11px] ${isCurrentUser ? 'bg-gold/10 text-gold' : 'bg-base text-text-secondary'}`}>
+                          {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
+                        </td>
+                        <td
+                          className={`py-1.5 px-1 sticky z-20 ${isCurrentUser ? 'bg-gold/10' : 'bg-base'}`}
+                          style={{ left: `${columns[0].widthPx}px` }}
                         >
-                          {stats.player.name}
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Rest of columns - Scrollable */}
-                    <td className="py-1.5 px-1 text-text-secondary">{stats.gamesPlayed}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.points, stats.gamesPlayed).toFixed(2) : stats.points}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.wins, stats.gamesPlayed) * 100)}%` : stats.wins}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.losses, stats.gamesPlayed) * 100)}%` : stats.losses}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.ties, stats.gamesPlayed) * 100)}%` : stats.ties}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goalInvolvements, stats.gamesPlayed).toFixed(2) : stats.goalInvolvements}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
-                    <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
-                    <td className="py-1.5 px-1">
-                      <div className="flex items-center gap-0.5">
-                        {[0, 1, 2, 3, 4].map((i) => {
-                          const result = stats.form[i];
-                          return (
-                            <div
-                              key={i}
-                              className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold ${
-                                result === 'W'
-                                  ? 'bg-green-700 border-green-600 text-white'
-                                  : result === 'L'
-                                  ? 'bg-red-600 border-red-500 text-white'
-                                  : result === 'T'
-                                  ? 'bg-gray-600 border-gray-500 text-white'
-                                  : 'bg-transparent border-border-emphasis text-text-muted'
-                              }`}
+                          <div className="flex items-center gap-1.5">
+                            {stats.player.pictureUrl ? (
+                              <img src={stats.player.pictureUrl} alt={stats.player.name} className="w-6 h-6 rounded-full object-cover border border-border-emphasis flex-shrink-0" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-surface-active flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
+                                {getInitial(stats.player.name)}
+                              </div>
+                            )}
+                            <span
+                              className={`font-medium truncate text-[11px] ${isCurrentUser ? 'text-gold' : 'text-text-primary'} ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
+                              onClick={onPlayerClick ? (e) => { e.stopPropagation(); onPlayerClick(stats.player.id); } : undefined}
                             >
-                              {result || ''}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                              {stats.player.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-1.5 px-1 text-text-secondary">{stats.gamesPlayed}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.points, stats.gamesPlayed).toFixed(2) : stats.points}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.wins, stats.gamesPlayed) * 100)}%` : stats.wins}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.losses, stats.gamesPlayed) * 100)}%` : stats.losses}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.ties, stats.gamesPlayed) * 100)}%` : stats.ties}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goalInvolvements, stats.gamesPlayed).toFixed(2) : stats.goalInvolvements}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
+                        <td className="py-1.5 px-1">
+                          <div className="flex items-center gap-0.5">
+                            {[0, 1, 2, 3, 4].map((i) => {
+                              const result = stats.form[i];
+                              return (
+                                <div key={i} className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold ${
+                                  result === 'W' ? 'bg-green-700 border-green-600 text-white'
+                                  : result === 'L' ? 'bg-red-600 border-red-500 text-white'
+                                  : result === 'T' ? 'bg-gray-600 border-gray-500 text-white'
+                                  : 'bg-transparent border-border-emphasis text-text-muted'
+                                }`}>{result || ''}</div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {unqualifiedStats.length > 0 && (
+                    <tr>
+                      <td colSpan={columns.length} className="py-2 px-2">
+                        <button
+                          onClick={() => setShowUnqualified(prev => !prev)}
+                          className="text-[11px] text-text-tertiary hover:text-text-secondary transition-colors"
+                        >
+                          {showUnqualified ? 'Hide' : 'Show'} unqualified ({unqualifiedStats.length} player{unqualifiedStats.length !== 1 ? 's' : ''} with &lt;{MIN_QUALIFIED_GAMES} games)
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {showUnqualified && unqualifiedStats.map((stats, index) => {
+                    const isCurrentUser = stats.player.id === currentPlayerId;
+                    return (
+                      <tr key={stats.player.id} className={`border-b border-border ${isCurrentUser ? 'bg-gold/10' : 'hover:bg-surface-hover even:bg-surface-hover/50'} opacity-50`}>
+                        <td className={`py-1.5 px-1 font-medium sticky left-0 z-20 text-[11px] ${isCurrentUser ? 'bg-gold/10 text-gold' : 'bg-base text-text-secondary'}`}>
+                          {index + 1}
+                        </td>
+                        <td
+                          className={`py-1.5 px-1 sticky z-20 ${isCurrentUser ? 'bg-gold/10' : 'bg-base'}`}
+                          style={{ left: `${columns[0].widthPx}px` }}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {stats.player.pictureUrl ? (
+                              <img src={stats.player.pictureUrl} alt={stats.player.name} className="w-6 h-6 rounded-full object-cover border border-border-emphasis flex-shrink-0" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-surface-active flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
+                                {getInitial(stats.player.name)}
+                              </div>
+                            )}
+                            <span
+                              className={`font-medium truncate text-[11px] ${isCurrentUser ? 'text-gold' : 'text-text-primary'} ${onPlayerClick ? 'cursor-pointer hover:underline' : ''}`}
+                              onClick={onPlayerClick ? (e) => { e.stopPropagation(); onPlayerClick(stats.player.id); } : undefined}
+                            >
+                              {stats.player.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-1.5 px-1 text-text-secondary">{stats.gamesPlayed}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.points, stats.gamesPlayed).toFixed(2) : stats.points}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.wins, stats.gamesPlayed) * 100)}%` : stats.wins}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.losses, stats.gamesPlayed) * 100)}%` : stats.losses}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.ties, stats.gamesPlayed) * 100)}%` : stats.ties}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goalInvolvements, stats.gamesPlayed).toFixed(2) : stats.goalInvolvements}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
+                        <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
+                        <td className="py-1.5 px-1">
+                          <div className="flex items-center gap-0.5">
+                            {[0, 1, 2, 3, 4].map((i) => {
+                              const result = stats.form[i];
+                              return (
+                                <div key={i} className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold ${
+                                  result === 'W' ? 'bg-green-700 border-green-600 text-white'
+                                  : result === 'L' ? 'bg-red-600 border-red-500 text-white'
+                                  : result === 'T' ? 'bg-gray-600 border-gray-500 text-white'
+                                  : 'bg-transparent border-border-emphasis text-text-muted'
+                                }`}>{result || ''}</div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </>
               )}
             </tbody>
           </table>

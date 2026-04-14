@@ -107,6 +107,8 @@ router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Re
       teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
       goals: safeParseJSON(game.goals, [] as any[]),
       teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
+      gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
+      sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
     }));
     
     res.json(parsedGames);
@@ -134,6 +136,8 @@ router.get('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res:
       teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
       goals: safeParseJSON(game.goals, [] as any[]),
       teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
+      gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
+      sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
     };
 
     res.json(parsedGame);
@@ -173,7 +177,15 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
     if (data.teamChanges !== undefined) {
       updateData.teamChanges = JSON.stringify(data.teamChanges);
     }
-    
+
+    if (data.gameEvents !== undefined) {
+      updateData.gameEvents = JSON.stringify(data.gameEvents);
+    }
+
+    if (data.sportsmanship !== undefined) {
+      updateData.sportsmanship = JSON.stringify(data.sportsmanship);
+    }
+
     if (data.createdAt !== undefined) {
       updateData.createdAt = new Date(data.createdAt);
     }
@@ -193,6 +205,8 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(game.teamAssignments, {}),
       goals: safeParseJSON(game.goals, [] as any[]),
       teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
+      gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
+      sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
     };
 
     res.json(parsedGame);
@@ -272,6 +286,9 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       day: 'numeric',
     })}`;
 
+    // Parse sportsmanship data
+    const sportsmanship = safeParseJSON<Record<string, number>>(game.sportsmanship, {});
+
     // Build Players CSV data
     const playersData: Array<{
       Player: string;
@@ -279,11 +296,12 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       Team: string;
       Goals: number;
       Assists: number;
+      Sportsmanship: number;
     }> = [];
 
     // Calculate stats for each player in the game
     const playerStats = new Map<string, { goals: number; assists: number; team: string }>();
-    
+
     // Initialize stats for all players in team assignments
     Object.entries(teamAssignments).forEach(([playerId, team]) => {
       const player = allPlayers.find(p => p.id === playerId);
@@ -324,6 +342,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
           Team: stats.team,
           Goals: stats.goals,
           Assists: stats.assists,
+          Sportsmanship: sportsmanship[playerId] || 0,
         });
       }
     });
@@ -354,6 +373,20 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
           Timestamp: new Date(goal.timestamp).toISOString(),
         });
       }
+    });
+
+    // Add game event entries (half time / game over)
+    const gameEvents = safeParseJSON<Array<{ type: string; timestamp: string }>>(game.gameEvents, []);
+    gameEvents.forEach(event => {
+      const label = event.type === 'halfTime' ? 'half time' : event.type === 'gameOver' ? 'game over' : event.type;
+      gameSummaryData.push({
+        EntryType: label,
+        Game: gameName,
+        PlayerName: '',
+        Assister: '',
+        Team: '',
+        Timestamp: new Date(event.timestamp).toISOString(),
+      });
     });
 
     // Add team swap entries (sent from frontend)
@@ -410,7 +443,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
     // Prepare data for sheets API (include filtered existing data and new data)
     const playersValues = [
       ...filteredPlayers.slice(1), // Skip header from filtered data
-      ...playersData.map(p => [p.Player, p.Game, p.Team, p.Goals.toString(), p.Assists.toString()]),
+      ...playersData.map(p => [p.Player, p.Game, p.Team, p.Goals.toString(), p.Assists.toString(), p.Sportsmanship.toString()]),
     ];
 
     const gameSummaryValues = [
@@ -443,7 +476,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       valueInputOption: 'RAW',
       requestBody: {
         values: [
-          ['Player', 'Game', 'Team', 'Goals', 'Assists'], // Header
+          ['Player', 'Game', 'Team', 'Goals', 'Assists', 'Sportsmanship'], // Header
           ...playersValues,
         ],
       },

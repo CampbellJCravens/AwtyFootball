@@ -12,13 +12,14 @@ interface PlayerProfileProps {
   onBack?: () => void;
   onPlayerClick?: (playerId: string) => void;
   onNavigateToMonth?: (month: number, year: number) => void;
+  initialShowAchievements?: boolean;
 }
 
-export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick, onNavigateToMonth }: PlayerProfileProps) {
+export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick, onNavigateToMonth, initialShowAchievements }: PlayerProfileProps) {
   const [stats, setStats] = useState<PlayerStatsResponse | null>(null);
   const [awards, setAwards] = useState<PlayerAward[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [showAchievements, setShowAchievements] = useState(false);
+  const [showAchievements, setShowAchievements] = useState(!!initialShowAchievements);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -37,7 +38,6 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
         setShowAllGroups(false);
         setShowAllMatches(false);
         setExpandedAward(null);
-        setShowAchievements(false);
         const [data, playerAwards, playerAchievements] = await Promise.all([
           fetchPlayerStats(playerId),
           fetchPlayerAwards(playerId),

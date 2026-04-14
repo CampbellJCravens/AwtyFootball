@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ interface ParsedGame {
   createdAt: Date;
   teamAssignments: Record<string, 'color' | 'white'>;
   goals: GoalData[];
+  sportsmanship: Record<string, number>;
 }
 
 async function loadAllGames(): Promise<ParsedGame[]> {
@@ -37,6 +39,7 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     createdAt: g.createdAt,
     teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
     goals: safeParseJSON<GoalData[]>(g.goals, []),
+    sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
   }));
 }
 
@@ -204,13 +207,14 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
       allPlayerStats.set(p.id, { games: pGames, wins: pWins, points: pPoints, ppg: Math.round((pPoints / pGames) * 100) / 100, goals: pGoals, assists: pAssists, goalInvolvements: pGoals + pAssists });
     }
 
+    const MIN_QUALIFIED_GAMES = 3;
     const getRank = (metric: (s: { games: number; wins: number; points: number; ppg: number; goals: number; assists: number; goalInvolvements: number }) => number): number => {
       const myVal = allPlayerStats.get(player.id);
-      if (!myVal) return 0;
+      if (!myVal || myVal.games < MIN_QUALIFIED_GAMES) return 0;
       const myMetric = metric(myVal);
       let rank = 1;
       for (const [pid, s] of allPlayerStats) {
-        if (pid !== player.id && metric(s) > myMetric) rank++;
+        if (pid !== player.id && s.games >= MIN_QUALIFIED_GAMES && metric(s) > myMetric) rank++;
       }
       return rank;
     };
@@ -338,6 +342,7 @@ router.get('/chemistry', requireAuth, async (req: AuthenticatedRequest, res: Res
           gamesPlayed: c.games,
           wins: c.wins,
           ppg,
+          totalPoints: points,
         };
       })
       .sort((a, b) => b.ppg - a.ppg || b.gamesPlayed - a.gamesPlayed)
@@ -382,7 +387,7 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
 
     // Compute per-player stats for this month
     const stats = new Map<string, PlayerStat>();
-    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number };
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number };
 
     for (const game of monthGames) {
       const colorGoals = game.goals.filter(g => g.team === 'color').length;
@@ -393,9 +398,10 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
         const playerInfo = playerMap.get(pid)!;
         if (playerInfo.name.includes('Guest')) continue;
 
-        if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
         const s = stats.get(pid)!;
         s.games++;
+        s.sportsmanship += game.sportsmanship[pid] || 0;
 
         const isTie = colorGoals === whiteGoals;
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
@@ -477,6 +483,11 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
     const topAssister = getTop(s => s.assists, undefined, 1);
     const topDefender = getTop(s => (s.games * 3) - s.goalsAllowed, undefined, undefined, s => s.games > 1);
 
+    // Sportsman of the Month: only awarded from May 2026 onwards (no historical data)
+    const sportsmanOfTheMonth = (year > 2026 || (year === 2026 && month >= 5))
+      ? getTop(s => s.sportsmanship, undefined, 1)
+      : null;
+
     // Top Duo: pair with the most scorer-assister goal contributions to each other
     const duoStats = new Map<string, { ids: [string, string]; contributions: number }>();
     for (const game of monthGames) {
@@ -521,6 +532,7 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
         topScorer,
         topAssister,
         topDefender,
+        sportsmanOfTheMonth,
         topDuo,
       },
       leaderboards: {
@@ -529,6 +541,7 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
         goals: getLeaderboard(s => s.goals),
         assists: getLeaderboard(s => s.assists),
         defensiveRating: getLeaderboard(s => (s.games * 3) - s.goalsAllowed, { includeAll: true, extraFields: s => ({ games: s.games, goalsAllowed: s.goalsAllowed }), filter: s => s.games > 1 }),
+        sportsmanship: (year > 2026 || (year === 2026 && month >= 5)) ? getLeaderboard(s => s.sportsmanship) : [],
       },
     });
   } catch (error) {
@@ -672,184 +685,64 @@ router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, 
   }
 });
 
+// ── GET /api/stats/me/new-achievements ──
+// Returns achievements the logged-in user's linked player has earned but has
+// not yet seen a popup for. Atomically marks them as seen in the same call,
+// so refreshing or losing the popup mid-view doesn't re-trigger.
+router.get('/me/new-achievements', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, playerId: true },
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.playerId) return res.json([]); // No linked player → no popup
+
+    const achievements = await computePlayerAchievements(user.playerId);
+    if (!achievements) return res.json([]); // Linked player was deleted
+
+    const earnedIds = earnedAchievementIds(achievements);
+    if (earnedIds.length === 0) return res.json([]);
+
+    const alreadySeen = await prisma.userAchievementSeen.findMany({
+      where: { userId: user.id, achievementId: { in: earnedIds } },
+      select: { achievementId: true },
+    });
+    const seenSet = new Set(alreadySeen.map(r => r.achievementId));
+    const newIds = earnedIds.filter(id => !seenSet.has(id));
+
+    if (newIds.length === 0) return res.json([]);
+
+    // Mark seen atomically so we don't re-show on refresh.
+    await prisma.userAchievementSeen.createMany({
+      data: newIds.map(id => ({ userId: user.id, achievementId: id })),
+      skipDuplicates: true,
+    });
+
+    const achievementsById = new Map(achievements.map(a => [a.id, a]));
+    const newAchievements = newIds
+      .map(id => achievementsById.get(id))
+      .filter((a): a is NonNullable<typeof a> => !!a);
+
+    res.json(newAchievements);
+  } catch (error) {
+    console.error('Error fetching new achievements:', error);
+    res.status(500).json({ error: 'Failed to fetch new achievements' });
+  }
+});
+
 // ── GET /api/stats/player/:id/achievements ──
 router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const playerId = req.params.id;
-    const allGames = await loadAllGames();
-    const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
-
-    if (!playerMap.has(playerId)) return res.status(404).json({ error: 'Player not found' });
-
-    // Basic stats
-    let wins = 0, ties = 0, goals = 0, assists = 0, gamesPlayed = 0, cleanSheets = 0;
-    const matchResults: ('W' | 'L' | 'T')[] = []; // chronological order
-
-    // Sort games chronologically for streak tracking
-    const sortedGames = [...allGames].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-
-    for (const game of sortedGames) {
-      const playerTeam = game.teamAssignments[playerId];
-      if (!playerTeam) continue;
-
-      gamesPlayed++;
-      const result = getGameResult(game, playerTeam);
-      matchResults.push(result);
-      if (result === 'W') wins++;
-      else if (result === 'T') ties++;
-
-      goals += game.goals.filter(g => g.scorerId === playerId).length;
-      assists += game.goals.filter(g => g.assisterId === playerId).length;
-
-      // Clean sheet: opponent scored 0 goals
-      const opponentTeam = playerTeam === 'color' ? 'white' : 'color';
-      const opponentGoals = game.goals.filter(g => g.team === opponentTeam).length;
-      if (opponentGoals === 0) cleanSheets++;
-    }
-
-    // Win streak (max consecutive wins)
-    let maxWinStreak = 0, currentStreak = 0;
-    for (const r of matchResults) {
-      if (r === 'W') { currentStreak++; maxWinStreak = Math.max(maxWinStreak, currentStreak); }
-      else currentStreak = 0;
-    }
-
-    // Awards count (reuse logic from player awards endpoint, only concluded months)
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-
-    const gamesByMonth = new Map<string, ParsedGame[]>();
-    for (const g of allGames) {
-      const key = `${g.createdAt.getFullYear()}-${g.createdAt.getMonth() + 1}`;
-      if (!gamesByMonth.has(key)) gamesByMonth.set(key, []);
-      gamesByMonth.get(key)!.push(g);
-    }
-
-    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number };
-
-    const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number, filter?: (s: PlayerStat) => boolean): string[] => {
-      let topIds: string[] = [];
-      let topVal = -1;
-      for (const [pid, s] of stats) {
-        if (filter && !filter(s)) continue;
-        const val = metric(s);
-        if (val > topVal) { topVal = val; topIds = [pid]; }
-        else if (val === topVal && val > 0) { topIds.push(pid); }
-      }
-      if (topIds.length === 0 || topVal === 0) return [];
-      return topIds;
-    };
-
-    let awardsCount = 0;
-    let playedAllGamesInMonth = false;
-    let undefeatedInMonth = false;
-
-    for (const [key, monthGames] of gamesByMonth) {
-      const [yearStr, monthStr] = key.split('-');
-      const year = parseInt(yearStr);
-      const month = parseInt(monthStr);
-      if (year === currentYear && month === currentMonth) continue;
-
-      const stats = new Map<string, PlayerStat>();
-      for (const game of monthGames) {
-        const colorGoals = game.goals.filter(g => g.team === 'color').length;
-        const whiteGoals = game.goals.filter(g => g.team === 'white').length;
-        for (const [pid, team] of Object.entries(game.teamAssignments)) {
-          if (!playerMap.has(pid)) continue;
-          if (playerMap.get(pid)!.name.includes('Guest')) continue;
-          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0 });
-          const s = stats.get(pid)!;
-          s.games++;
-          const isTie = colorGoals === whiteGoals;
-          const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
-          if (isWin) s.points += 3;
-          else if (isTie) s.points += 1;
-          const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
-          s.goalsAllowed += opponentGoals;
-        }
-        for (const goal of game.goals) {
-          if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
-          if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
-        }
-      }
-
-      const awardDefs = [
-        { metric: (s: PlayerStat) => s.points, minimum: 3 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
-        { metric: (s: PlayerStat) => s.goalInvolvements, minimum: 1 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
-        { metric: (s: PlayerStat) => s.goals, minimum: 1 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
-        { metric: (s: PlayerStat) => s.assists, minimum: 1 as number | undefined, filter: undefined as ((s: PlayerStat) => boolean) | undefined },
-        { metric: (s: PlayerStat) => (s.games * 3) - s.goalsAllowed, minimum: undefined as number | undefined, filter: ((s: PlayerStat) => s.games > 1) as ((s: PlayerStat) => boolean) | undefined },
-      ];
-      for (const def of awardDefs) {
-        const winnerIds = getTopIds(stats, def.metric, def.filter);
-        if (winnerIds.length === 0) continue;
-        const topVal = def.metric(stats.get(winnerIds[0])!);
-        if (def.minimum !== undefined && topVal <= def.minimum) continue;
-        if (winnerIds.includes(playerId)) awardsCount++;
-      }
-
-      // Top Duo for achievements count (scorer-assister pairs)
-      const duoStats = new Map<string, { ids: [string, string]; contributions: number }>();
-      for (const game of monthGames) {
-        for (const goal of game.goals) {
-          if (!goal.assisterId) continue;
-          if (!stats.has(goal.scorerId) || !stats.has(goal.assisterId)) continue;
-          const [a, b] = [goal.scorerId, goal.assisterId].sort();
-          const duoKey = `${a}:${b}`;
-          if (!duoStats.has(duoKey)) duoStats.set(duoKey, { ids: [a, b] as [string, string], contributions: 0 });
-          duoStats.get(duoKey)!.contributions++;
-        }
-      }
-      let topDuoVal = 0;
-      for (const [, duo] of duoStats) {
-        if (duo.contributions > topDuoVal) topDuoVal = duo.contributions;
-      }
-      if (topDuoVal > 1) {
-        for (const [, duo] of duoStats) {
-          if (duo.contributions === topDuoVal && duo.ids.includes(playerId)) { awardsCount++; break; }
-        }
-      }
-
-      // Check attendance and undefeated for this month
-      const playerGamesInMonth = monthGames.filter(g => g.teamAssignments[playerId]);
-      if (playerGamesInMonth.length === monthGames.length && monthGames.length > 0) {
-        playedAllGamesInMonth = true;
-
-        // Check if undefeated (all wins or ties)
-        const allUndefeated = playerGamesInMonth.every(g => {
-          const team = g.teamAssignments[playerId];
-          const result = getGameResult(g, team);
-          return result === 'W' || result === 'T';
-        });
-        if (allUndefeated) undefeatedInMonth = true;
-      }
-    }
-
-    const totalPoints = (wins * 3) + (ties * 1);
-
-    const achievements = [
-      { id: 'first_goal', name: 'My First Goal!', description: 'Score your first goal', current: Math.min(goals, 1), target: 1 },
-      { id: 'goals_10', name: 'R9? Or Manny Suarez?', description: 'Score 10 goals', current: Math.min(goals, 10), target: 10 },
-      { id: 'first_assist', name: 'My First Assist!', description: 'Record your first assist', current: Math.min(assists, 1), target: 1 },
-      { id: 'assists_10', name: 'The Playmaker', description: 'Record 10 assists', current: Math.min(assists, 10), target: 10 },
-      { id: 'first_win', name: 'My First Win!', description: 'Win your first game', current: Math.min(wins, 1), target: 1 },
-      { id: 'wins_10', name: 'Victory Lap', description: 'Win 10 games', current: Math.min(wins, 10), target: 10 },
-      { id: 'games_10', name: 'Regular', description: 'Play 10 games', current: Math.min(gamesPlayed, 10), target: 10 },
-      { id: 'games_50', name: 'Iron Man', description: 'Play 50 games', current: Math.min(gamesPlayed, 50), target: 50 },
-      { id: 'points_100', name: 'Centurion', description: 'Earn 100 points', current: Math.min(totalPoints, 100), target: 100 },
-      { id: 'awards_3', name: 'Trophy Collector', description: 'Win 3 awards', current: Math.min(awardsCount, 3), target: 3 },
-      { id: 'win_streak_3', name: 'Hat Trick of Wins', description: 'Win 3 games in a row', current: Math.min(maxWinStreak, 3), target: 3 },
-      { id: 'clean_sheets_3', name: 'Brick Wall', description: 'Keep 3 clean sheets', current: Math.min(cleanSheets, 3), target: 3 },
-      { id: 'mr_consistent', name: 'Mr. Consistent', description: 'Play every game in a month', current: playedAllGamesInMonth ? 1 : 0, target: 1 },
-      { id: 'invincible', name: 'Invincible', description: 'Go undefeated in a month (play all games, only wins or ties)', current: undefeatedInMonth ? 1 : 0, target: 1 },
-    ];
-
-    res.json(achievements);
+    const achievements = await computePlayerAchievements(playerId);
+    if (!achievements) return res.status(404).json({ error: 'Player not found' });
+    return res.json(achievements);
   } catch (error) {
     console.error('Error fetching player achievements:', error);
-    res.status(500).json({ error: 'Failed to fetch player achievements' });
+    return res.status(500).json({ error: 'Failed to fetch player achievements' });
   }
 });
 

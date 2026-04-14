@@ -296,6 +296,19 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
               noQualifierMessage="No one surpassed 1 goal contribution this month."
               onShowLeaderboard={() => setLeaderboardModal({ title: 'Goal Contributions', emoji: '🎯', unit: 'G+A', entries: data.leaderboards.goalInvolvements })}
             />
+            {(data.year > 2026 || (data.year === 2026 && data.month >= 5)) && (
+              <AwardSection
+                title="Sportsman of the Month"
+                titlePlural="Sportsmen of the Month"
+                emoji="🤙"
+                statLabel={`${data.awards.sportsmanOfTheMonth?.[0]?.value ?? 0} Sportsmanship Points`}
+                awards={data.awards.sportsmanOfTheMonth}
+                onPlayerClick={onPlayerClick}
+                onImageClick={setLightboxImage}
+                noQualifierMessage="No one earned a sportsmanship point this month."
+                onShowLeaderboard={() => setLeaderboardModal({ title: 'Sportsmanship', emoji: '🤙', unit: 'SP', entries: data.leaderboards.sportsmanship })}
+              />
+            )}
             <AwardSection
               title="Top Scorer"
               titlePlural="Top Scorers"

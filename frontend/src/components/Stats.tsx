@@ -11,11 +11,12 @@ interface StatsProps {
   players: Player[];
   games: Game[];
   onPlayerClick?: (playerId: string) => void;
+  currentPlayerId?: string | null;
 }
 
 type StatsView = 'players' | 'pairings' | 'groups' | 'legacy';
 
-export default function Stats({ players, games, onPlayerClick }: StatsProps) {
+export default function Stats({ players, games, onPlayerClick, currentPlayerId }: StatsProps) {
   const [filterMonth, setFilterMonth] = useState<number | null>(null);
   const [filterYear, setFilterYear] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<StatsView>('players');
@@ -141,7 +142,7 @@ export default function Stats({ players, games, onPlayerClick }: StatsProps) {
         {/* Content */}
         {activeView === 'players' && (
           <div className="overflow-hidden">
-            <OverallStatsTable players={players} games={filteredGames} onPlayerClick={onPlayerClick} />
+            <OverallStatsTable players={players} games={filteredGames} onPlayerClick={onPlayerClick} currentPlayerId={currentPlayerId} />
           </div>
         )}
 

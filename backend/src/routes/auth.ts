@@ -3,6 +3,22 @@ import passport from 'passport';
 import prisma from '../prisma';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { env } from '../env';
+import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
+
+/**
+ * Mark all currently-earned achievements for a player as "seen" by the given user,
+ * so they don't get hit with the full-history popup right after linking.
+ */
+async function suppressAchievementPopupForNewLink(userId: string, playerId: string): Promise<void> {
+  const achievements = await computePlayerAchievements(playerId);
+  if (!achievements) return;
+  const earned = earnedAchievementIds(achievements);
+  if (earned.length === 0) return;
+  await prisma.userAchievementSeen.createMany({
+    data: earned.map(id => ({ userId, achievementId: id })),
+    skipDuplicates: true,
+  });
+}
 
 const router = Router();
 
@@ -192,6 +208,10 @@ router.post('/link-player', requireAuth, async (req: AuthenticatedRequest, res: 
       select: { id: true, email: true, name: true, picture: true, role: true, playerId: true },
     });
 
+    // Suppress the achievement popup for this fresh link — user shouldn't be
+    // hit with the full history of achievements their new player has earned.
+    await suppressAchievementPopupForNewLink(req.user.id, playerId);
+
     res.json(updatedUser);
   } catch (error) {
     console.error('Error linking player:', error);
@@ -231,6 +251,10 @@ router.post('/setup-profile', requireAuth, async (req: AuthenticatedRequest, res
       return [newPlayer, user];
     });
 
+    // A brand-new player has no games yet, but call through anyway for consistency
+    // so if they somehow already have earned achievements, the popup is suppressed.
+    await suppressAchievementPopupForNewLink(req.user.id, player.id);
+
     res.status(201).json({ user: updatedUser, player });
   } catch (error) {
     console.error('Error setting up profile:', error);
@@ -251,6 +275,11 @@ router.post('/unlink-player', requireAuth, async (req: AuthenticatedRequest, res
       data: { playerId: null },
       select: { id: true, email: true, name: true, picture: true, role: true, playerId: true },
     });
+
+    // Clear seen records so a future link will correctly re-seed. Without this,
+    // a user who unlinks and links to a different player would see no popup
+    // for achievements earned by the new player that happen to share IDs.
+    await prisma.userAchievementSeen.deleteMany({ where: { userId: req.user.id } });
 
     res.json(updatedUser);
   } catch (error) {

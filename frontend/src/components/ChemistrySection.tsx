@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchChemistry, ChemistryEntry } from '../api/stats';
 import GroupDetailModal from './GroupDetailModal';
 
@@ -24,6 +24,7 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<ChemistryEntry | null>(null);
+  const [perGame, setPerGame] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -40,6 +41,14 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
     };
     load();
   }, [activeType]);
+
+  const sortedResults = useMemo(() => {
+    if (activeType === 'goalPartners') return results;
+    return [...results].sort((a, b) => {
+      if (perGame) return (b.ppg ?? 0) - (a.ppg ?? 0) || (b.gamesPlayed ?? 0) - (a.gamesPlayed ?? 0);
+      return (b.totalPoints ?? 0) - (a.totalPoints ?? 0) || (b.gamesPlayed ?? 0) - (a.gamesPlayed ?? 0);
+    });
+  }, [results, perGame, activeType]);
 
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
   const isGoalPartners = activeType === 'goalPartners';
@@ -65,6 +74,26 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
         </div>
       )}
 
+      {/* Totals / Per Game toggle (not shown for goal partners) */}
+      {!isGoalPartners && (
+        <div className="flex justify-end mb-3">
+          <div className="inline-flex rounded-lg border border-border overflow-hidden text-[11px]">
+            <button
+              className={`px-3 py-1 font-semibold transition-colors ${!perGame ? 'bg-gold text-text-on-accent' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+              onClick={() => setPerGame(false)}
+            >
+              Totals
+            </button>
+            <button
+              className={`px-3 py-1 font-semibold transition-colors ${perGame ? 'bg-gold text-text-on-accent' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+              onClick={() => setPerGame(true)}
+            >
+              Per Game
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       {loading ? (
         <div className="text-center py-8">
@@ -74,13 +103,13 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
         <div className="text-center py-8">
           <p className="text-error text-sm">{error}</p>
         </div>
-      ) : results.length === 0 ? (
+      ) : sortedResults.length === 0 ? (
         <div className="text-center py-8">
           <p className="text-text-tertiary text-sm">Not enough data yet. Need at least 3 games together.</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {results.map((entry, i) => (
+          {sortedResults.map((entry, i) => (
             <div key={i} className="bg-surface rounded-xl border border-border p-3 flex items-center gap-3 cursor-pointer hover:bg-surface-hover transition-colors" onClick={() => setSelectedEntry(entry)}>
               {/* Rank */}
               <span className="text-gold font-bold text-sm w-5 text-center flex-shrink-0">{i + 1}</span>
@@ -141,8 +170,10 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
               <div className="text-right flex-shrink-0">
                 {isGoalPartners ? (
                   <span className="text-lg font-bold text-gold">{entry.totalContributions} <span className="text-[10px] text-text-tertiary">G+A</span></span>
-                ) : (
+                ) : perGame ? (
                   <span className="text-lg font-bold text-gold">{entry.ppg?.toFixed(2)} <span className="text-[10px] text-text-tertiary">PPG</span></span>
+                ) : (
+                  <span className="text-lg font-bold text-gold">{entry.totalPoints ?? 0} <span className="text-[10px] text-text-tertiary">Pts</span></span>
                 )}
               </div>
             </div>
@@ -158,6 +189,7 @@ export default function ChemistrySection({ defaultType = 'duos', showTypes, onPl
                   { label: 'Goal Contributions', value: String(selectedEntry.totalContributions) },
                 ]
               : [
+                  { label: 'Points', value: String(selectedEntry.totalPoints ?? 0) },
                   { label: 'PPG', value: selectedEntry.ppg?.toFixed(2) || '0' },
                   { label: 'Games', value: String(selectedEntry.gamesPlayed || 0) },
                 ]

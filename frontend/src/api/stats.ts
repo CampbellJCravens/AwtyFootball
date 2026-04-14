@@ -70,6 +70,7 @@ export interface ChemistryEntry {
   gamesPlayed?: number;
   wins?: number;
   ppg?: number;
+  totalPoints?: number;
   totalContributions?: number;
 }
 
@@ -123,6 +124,7 @@ export interface MonthlyStatsResponse {
     topScorer: MonthlyAward[] | null;
     topAssister: MonthlyAward[] | null;
     topDefender: MonthlyAward[] | null;
+    sportsmanOfTheMonth: MonthlyAward[] | null;
     topDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
   };
   leaderboards: {
@@ -131,6 +133,7 @@ export interface MonthlyStatsResponse {
     goals: LeaderboardEntry[];
     assists: LeaderboardEntry[];
     defensiveRating: LeaderboardEntry[];
+    sportsmanship: LeaderboardEntry[];
   };
 }
 
@@ -185,6 +188,19 @@ export async function fetchPlayerAchievements(playerId: string): Promise<Achieve
   });
   if (!response.ok) {
     throw new Error('Failed to fetch player achievements');
+  }
+  return response.json();
+}
+
+// Returns newly-earned achievements for the logged-in user's linked player.
+// The server atomically marks them as seen, so the popup won't reappear on
+// refresh or across devices.
+export async function fetchNewAchievements(): Promise<Achievement[]> {
+  const response = await fetch(`${API_BASE_URL}/stats/me/new-achievements`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch new achievements');
   }
   return response.json();
 }

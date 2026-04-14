@@ -16,10 +16,17 @@ export const teamChangeSchema = z.object({
   newTeam: z.enum(['color', 'white']).optional(),
 });
 
+export const gameEventSchema = z.object({
+  type: z.enum(['halfTime', 'gameOver']),
+  timestamp: z.string(), // ISO date string
+});
+
 export const updateGameSchema = z.object({
   teamAssignments: z.record(z.enum(['color', 'white'])).optional(),
   goals: z.array(goalSchema).optional(),
   teamChanges: z.array(teamChangeSchema).optional(),
+  gameEvents: z.array(gameEventSchema).optional(),
+  sportsmanship: z.record(z.number()).optional(),
   createdAt: z.string().datetime().optional(), // ISO date string
   gameNumber: z.number().int().positive().optional(), // Add game number support
 });

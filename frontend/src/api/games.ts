@@ -19,6 +19,11 @@ export interface TeamChange {
   newTeam?: 'color' | 'white';
 }
 
+export interface GameEvent {
+  type: 'halfTime' | 'gameOver';
+  timestamp: string; // ISO date string
+}
+
 export interface Game {
   id: string;
   gameNumber: number | null; // Can be null for existing games before migration
@@ -27,12 +32,16 @@ export interface Game {
   teamAssignments?: Record<string, 'color' | 'white'>;
   goals?: Goal[];
   teamChanges?: TeamChange[];
+  gameEvents?: GameEvent[];
+  sportsmanship?: Record<string, number>;
 }
 
 export interface UpdateGameData {
   teamAssignments?: Record<string, 'color' | 'white'>;
   goals?: Goal[];
   teamChanges?: TeamChange[];
+  gameEvents?: GameEvent[];
+  sportsmanship?: Record<string, number>;
   createdAt?: string; // ISO date string
   gameNumber?: number; // Add game number
 }

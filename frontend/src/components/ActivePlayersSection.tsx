@@ -5,6 +5,7 @@ interface ActivePlayersSectionProps {
   players: Player[];
   playerTeams: Record<string, 'color' | 'white'>;
   leftPlayers: Record<string, boolean>;
+  sportsmanship?: Record<string, number>;
   onTeamSelect: (playerId: string, team: 'color' | 'white') => void;
   onAddGuest: (team: 'color' | 'white') => void;
   onRemoveFromTeam: (playerId: string) => void;
@@ -12,6 +13,7 @@ interface ActivePlayersSectionProps {
   onGoalClick: (player: Player) => void;
   onLeaveTeam: (playerId: string) => void;
   onReturnToTeam: (playerId: string) => void;
+  onSportsmanshipChange?: (playerId: string, delta: number) => void;
   isAdmin?: boolean; // Whether user is admin (can modify games)
 }
 
@@ -19,6 +21,7 @@ export default function ActivePlayersSection({
   players,
   playerTeams,
   leftPlayers,
+  sportsmanship = {},
   onTeamSelect: _onTeamSelect,
   onAddGuest,
   onRemoveFromTeam: _onRemoveFromTeam,
@@ -26,6 +29,7 @@ export default function ActivePlayersSection({
   onGoalClick,
   onLeaveTeam,
   onReturnToTeam,
+  onSportsmanshipChange,
   isAdmin = true,
 }: ActivePlayersSectionProps) {
   const [activeTab, setActiveTab] = useState<'color' | 'white'>('color');
@@ -110,6 +114,23 @@ export default function ActivePlayersSection({
                         </div>
                       )}
                       <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      {isAdmin && onSportsmanshipChange && (
+                        <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip="Sportsmanship">
+                          <button
+                            onClick={() => onSportsmanshipChange(player.id, -1)}
+                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            aria-label="Decrease sportsmanship"
+                          >-</button>
+                          <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${(sportsmanship[player.id] || 0) > 0 ? 'text-gold' : 'text-text-tertiary'}`}>
+                            {sportsmanship[player.id] || 0}
+                          </span>
+                          <button
+                            onClick={() => onSportsmanshipChange(player.id, 1)}
+                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            aria-label="Increase sportsmanship"
+                          >+</button>
+                        </div>
+                      )}
                       <div className="flex gap-1 flex-shrink-0">
                         {isAdmin && (
                           <button
@@ -273,6 +294,23 @@ export default function ActivePlayersSection({
                         </div>
                       )}
                       <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      {isAdmin && onSportsmanshipChange && (
+                        <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip="Sportsmanship">
+                          <button
+                            onClick={() => onSportsmanshipChange(player.id, -1)}
+                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            aria-label="Decrease sportsmanship"
+                          >-</button>
+                          <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${(sportsmanship[player.id] || 0) > 0 ? 'text-gold' : 'text-text-tertiary'}`}>
+                            {sportsmanship[player.id] || 0}
+                          </span>
+                          <button
+                            onClick={() => onSportsmanshipChange(player.id, 1)}
+                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            aria-label="Increase sportsmanship"
+                          >+</button>
+                        </div>
+                      )}
                       <div className="flex gap-1 flex-shrink-0">
                         {isAdmin && (
                           <button
