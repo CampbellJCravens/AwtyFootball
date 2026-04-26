@@ -789,4 +789,23 @@ router.get('/legacy', requireAuth, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
+const FIELD_STATS_URL =
+  'https://docs.google.com/spreadsheets/d/18NqBcjOKXKOxl6OinKBCELvHz_qAUxYrWXalYLo0yvo/gviz/tq?tqx=out:csv&sheet=Field%20Statistics';
+
+router.get('/field-stats', async (_req, res: Response) => {
+  try {
+    const upstream = await fetch(FIELD_STATS_URL);
+    if (!upstream.ok) {
+      return res.status(502).json({ error: 'Failed to fetch field statistics from Google Sheets' });
+    }
+    const csv = await upstream.text();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(csv);
+  } catch (error) {
+    console.error('Error proxying field stats:', error);
+    res.status(500).json({ error: 'Failed to fetch field statistics' });
+  }
+});
+
 export default router;

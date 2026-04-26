@@ -4,6 +4,7 @@ import { Game } from '../api/games';
 import OverallStatsTable from './OverallStatsTable';
 import ChemistrySection from './ChemistrySection';
 import LegacyStatsTable from './LegacyStatsTable';
+import FieldStatsTab from './FieldStatsTab';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -14,7 +15,7 @@ interface StatsProps {
   currentPlayerId?: string | null;
 }
 
-type StatsView = 'players' | 'pairings' | 'groups' | 'legacy';
+type StatsView = 'players' | 'pairings' | 'groups' | 'legacy' | 'field';
 
 export default function Stats({ players, games, onPlayerClick, currentPlayerId }: StatsProps) {
   const [filterMonth, setFilterMonth] = useState<number | null>(null);
@@ -56,6 +57,7 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
     { id: 'pairings', label: 'Pairings' },
     { id: 'groups', label: 'Groups' },
     { id: 'legacy', label: 'Legacy' },
+    { id: 'field', label: 'Field' },
   ];
 
   return (
@@ -156,6 +158,10 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
 
         {activeView === 'legacy' && (
           <LegacyStatsTable onPlayerClick={onPlayerClick} />
+        )}
+
+        {activeView === 'field' && (
+          <FieldStatsTab />
         )}
       </div>
     </div>
