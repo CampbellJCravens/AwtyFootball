@@ -789,21 +789,30 @@ router.get('/legacy', requireAuth, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
-const FIELD_STATS_URL =
-  'https://docs.google.com/spreadsheets/d/18NqBcjOKXKOxl6OinKBCELvHz_qAUxYrWXalYLo0yvo/gviz/tq?tqx=out:csv&sheet=Field%20Statistics';
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-router.get('/field-stats', async (_req, res: Response) => {
+router.get('/field-stats', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const upstream = await fetch(FIELD_STATS_URL);
-    if (!upstream.ok) {
-      return res.status(502).json({ error: 'Failed to fetch field statistics from Google Sheets' });
-    }
-    const csv = await upstream.text();
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    res.send(csv);
+    const yearParam = req.query.year as string | undefined;
+    const year = yearParam ? parseInt(yearParam) : null;
+    const where = year && !isNaN(year) ? { year } : {};
+
+    const stats = await prisma.fieldStat.findMany({ where, orderBy: { date: 'asc' } });
+
+    const records = stats.map(s => ({
+      year: s.year,
+      date: `${s.date.getUTCDate()}-${MONTH_NAMES[s.date.getUTCMonth()]}`,
+      played: s.played,
+      eviteResponse: s.eviteResponse,
+      responseRate: parseFloat((s.responseRate * 100).toFixed(2)),
+      showUp: s.showUp,
+      attendanceRate: parseFloat((s.attendanceRate * 100).toFixed(2)),
+      notes: [s.engagement, s.notes].filter(Boolean).join(' | '),
+    }));
+
+    res.json(records);
   } catch (error) {
-    console.error('Error proxying field stats:', error);
+    console.error('Error fetching field stats:', error);
     res.status(500).json({ error: 'Failed to fetch field statistics' });
   }
 });
