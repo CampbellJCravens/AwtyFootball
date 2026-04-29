@@ -1,19 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import Papa from 'papaparse';
-
-const FIELD_STATS_URL =
-  'https://docs.google.com/spreadsheets/d/18NqBcjOKXKOxl6OinKBCELvHz_qAUxYrWXalYLo0yvo/pub?gid=1341421447&single=true&output=csv';
-
-interface GameRecord {
-  year: number;
-  date: string;
-  played: string;
-  eviteResponse: number | null;
-  responseRate: number;
-  showUp: number | null;
-  attendanceRate: number;
-  notes: string;
-}
+import { fetchFieldStats, FieldGameRecord as GameRecord } from '../api/stats';
 
 const FIELD_STATUS: Record<string, { label: string; color: string; bg: string }> = {
   yes:          { label: 'Awty',         color: 'text-emerald-400', bg: 'bg-emerald-400' },
@@ -24,13 +10,6 @@ const FIELD_STATUS: Record<string, { label: string; color: string; bg: string }>
   'school use': { label: 'School Use',   color: 'text-purple-400',  bg: 'bg-purple-400'  },
 };
 
-function parsePercent(val: string): number {
-  return parseFloat((val || '').replace('%', '').trim()) || 0;
-}
-
-function isDateLike(val: string): boolean {
-  return /^\d{1,2}-[A-Za-z]{3}/.test((val || '').trim());
-}
 
 export default function FieldStatsTab() {
   const [records, setRecords] = useState<GameRecord[]>([]);
@@ -39,41 +18,10 @@ export default function FieldStatsTab() {
   const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch(FIELD_STATS_URL);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const text = await res.text();
-        const { data } = Papa.parse<string[]>(text, { skipEmptyLines: false });
-        const games: GameRecord[] = [];
-
-        for (const row of data as string[][]) {
-          const dateCell = (row[8] || '').trim();
-          if (!isDateLike(dateCell)) continue;
-
-          const year = parseInt((row[0] || '').trim());
-          if (!year || year < 2015 || year > 2030) continue;
-
-          games.push({
-            year,
-            date: dateCell,
-            played: (row[9] || '').trim(),
-            eviteResponse: row[10]?.trim() ? parseInt(row[10]) : null,
-            responseRate: parsePercent(row[11]),
-            showUp: row[12]?.trim() ? parseInt(row[12]) : null,
-            attendanceRate: parsePercent(row[13]),
-            notes: (row[15] || '').trim(),
-          });
-        }
-
-        setRecords(games);
-      } catch {
-        setError('Could not load field statistics.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    fetchFieldStats()
+      .then(setRecords)
+      .catch(() => setError('Could not load field statistics.'))
+      .finally(() => setLoading(false));
   }, []);
 
   const years = useMemo(

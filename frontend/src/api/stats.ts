@@ -222,6 +222,27 @@ export interface LegacyStatsResponse {
   stats: LegacyPlayerStat[];
 }
 
+export interface FieldGameRecord {
+  year: number;
+  date: string;
+  played: string;
+  eviteResponse: number | null;
+  responseRate: number;
+  showUp: number | null;
+  attendanceRate: number;
+  notes: string;
+}
+
+export async function fetchFieldStats(): Promise<FieldGameRecord[]> {
+  const response = await fetch(`${API_BASE_URL}/stats/field-stats`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch field stats');
+  }
+  return response.json();
+}
+
 export async function fetchLegacyStats(season?: string): Promise<LegacyStatsResponse> {
   const params = season && season !== 'all' ? `?season=${season}` : '';
   const response = await fetch(`${API_BASE_URL}/stats/legacy${params}`, {
