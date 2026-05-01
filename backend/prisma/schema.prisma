@@ -89,6 +89,14 @@ model FieldStat {
   attendanceRate Float
   engagement     String?
   notes          String?
+  // WhatsApp RSVP breakdown
+  location       String?  // "stadium", "grass", or "turf"
+  waIn           Int?     // "In" votes
+  waPlus1        Int?     // "+1" votes (voter + 1 guest = 2 bodies)
+  waPlus2        Int?     // "+2" votes (voter + 2 guests = 3 bodies)
+  waMaybe        Int?     // "Maybe" votes
+  waOut          Int?     // "Out" votes
+  groupSize      Int?     // group size used as denominator for rates
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

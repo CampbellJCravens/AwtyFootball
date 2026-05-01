@@ -37,6 +37,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const DEV_USER: User = {
+    id: 'dev',
+    email: 'dev@local',
+    name: 'Dev User',
+    role: 'admin',
+    playerId: null,
+  };
+
   const checkAuth = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
@@ -49,9 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      setUser(null);
+    } catch {
+      // Backend unreachable — use a mock user in dev so the UI is accessible
+      if (import.meta.env.DEV) {
+        setUser(DEV_USER);
+      } else {
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
