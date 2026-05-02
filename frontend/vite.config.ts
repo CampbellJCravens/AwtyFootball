@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    allowedHosts: ['10.1.10.155.nip.io', '.nip.io', 'nuc.local', '.local'],
   },
 })
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward, LeaderboardEntry } from '../api/stats';
 import ImageLightbox from './ImageLightbox';
 
@@ -164,6 +164,7 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
   const now = new Date();
   const [month, setMonth] = useState(initialMonth?.month ?? (now.getMonth() + 1));
   const [year, setYear] = useState(initialMonth?.year ?? now.getFullYear());
+  const hasAutoNavigated = useRef(false);
 
   useEffect(() => {
     if (initialMonth) {
@@ -180,13 +181,25 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
       try {
-        setLoading(true);
         const result = await fetchMonthlyStats(month, year);
+        // On first load, if current month has no games, jump to the most recent month that does
+        if (!hasAutoNavigated.current && result.gamesPlayed === 0 && result.availableMonths?.length) {
+          hasAutoNavigated.current = true;
+          const latest = result.availableMonths.reduce((best, m) =>
+            m.year > best.year || (m.year === best.year && m.month > best.month) ? m : best
+          );
+          setMonth(latest.month);
+          setYear(latest.year);
+          // Don't setLoading(false) — the month change will trigger another fetch
+          return;
+        }
+        hasAutoNavigated.current = true;
         setData(result);
+        setLoading(false);
       } catch (err) {
         console.error('Failed to load monthly stats:', err);
-      } finally {
         setLoading(false);
       }
     };

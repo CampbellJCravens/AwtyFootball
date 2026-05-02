@@ -821,11 +821,15 @@ router.get('/field-stats', requireAuth, async (req: AuthenticatedRequest, res: R
         ? parseFloat((trackedPlayers / (s.waIn + (s.waPlus1 ?? 0) * 2 + (s.waPlus2 ?? 0) * 3) * 100).toFixed(1))
         : null;
 
+      // App game tracking supersedes FieldStat: if a game was played for this date,
+      // mark played='yes' regardless of stored FieldStat.played value.
+      const playedStatus = trackedPlayers && trackedPlayers > 0 ? 'yes' : s.played;
+
       return {
         year: s.year,
         date: `${s.date.getUTCDate()}-${MONTH_NAMES[s.date.getUTCMonth()]}`,
         isoDate,
-        played: s.played,
+        played: playedStatus,
         location: s.location ?? null,
         waIn: s.waIn ?? null,
         waPlus1: s.waPlus1 ?? null,
