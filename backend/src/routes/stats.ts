@@ -26,6 +26,7 @@ interface ParsedGame {
   id: string;
   gameNumber: number | null;
   createdAt: Date;
+  field: string | null;
   teamAssignments: Record<string, 'color' | 'white'>;
   goals: GoalData[];
   sportsmanship: Record<string, number>;
@@ -37,6 +38,7 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     id: g.id,
     gameNumber: g.gameNumber,
     createdAt: g.createdAt,
+    field: g.field,
     teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
@@ -380,7 +382,11 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     const endDate = new Date(year, month, 1);
 
     const allGames = await loadAllGames();
-    const monthGames = allGames.filter(g => g.createdAt >= startDate && g.createdAt < endDate);
+    // Cancelled games never happened — exclude them from the monthly count,
+    // award computation, and player stats for the period.
+    const monthGames = allGames.filter(g =>
+      g.createdAt >= startDate && g.createdAt < endDate && g.field !== 'cancelled'
+    );
 
     const allPlayers = await prisma.player.findMany();
     const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
@@ -510,10 +516,12 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
           .map(d => ({ players: [playerMap.get(d.ids[0])!, playerMap.get(d.ids[1])!], value: d.contributions }))
       : null;
 
-    // Figure out which months have games
+    // Figure out which months have non-cancelled games. A month with only
+    // cancelled games shouldn't show up in the month picker.
     const allMonths: { month: number; year: number }[] = [];
     const seen = new Set<string>();
     for (const g of allGames) {
+      if (g.field === 'cancelled') continue;
       const m = g.createdAt.getMonth() + 1;
       const y = g.createdAt.getFullYear();
       const key = `${y}-${m}`;

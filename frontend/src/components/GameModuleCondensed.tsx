@@ -53,7 +53,9 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, field = 
     <>
       <div
         onClick={onClick}
-        className="bg-surface rounded-xl shadow-card p-4 mb-3 cursor-pointer hover:shadow-card-hover active:bg-surface-active transition-all border-l-4 border-gold"
+        className={`bg-surface rounded-xl shadow-card p-4 mb-3 cursor-pointer hover:shadow-card-hover active:bg-surface-active transition-all border-l-4 ${
+          field === 'cancelled' ? 'border-red-500' : 'border-gold'
+        }`}
       >
         {/* Top row: Game number + date + actions */}
         <div className="flex items-center justify-between mb-2">
