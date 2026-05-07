@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,7 +11,7 @@ model Player {
   id         String   @id @default(uuid())
   name       String
   pictureUrl String?
-  team       String?  // "dark" or "white" or null
+  team       String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -22,32 +19,21 @@ model Player {
 }
 
 model Game {
-  id        String   @id @default(uuid())
-  gameNumber Int?     @unique // Persistent game number that doesn't change (nullable temporarily for migration)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  // Store game data as JSON
-  // Team assignments: { playerId: "color" | "white" }
-  teamAssignments String? // JSON string of Record<string, "color" | "white">
-  
-  // Goals: Array of { scorerId, assisterId?, timestamp, team }
-  goals String? // JSON string of goal array
-  
-  // Team changes: Array of { playerId, timestamp, team, type, previousTeam?, newTeam? }
-  teamChanges String? // JSON string of team change array
+  id              String   @id @default(uuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  teamAssignments String?
+  goals           String?
+  gameNumber      Int?     @unique
+  teamChanges     String?
+  gameEvents      String?
+  sportsmanship   String?
 
-  // Game events: Array of { type: 'halfTime' | 'gameOver', timestamp }
-  gameEvents String? // JSON string of game event array
+  // Which field/turf the game was played on. "stadium" | "grass" |
+  // "cancelled" | null. null = "N/A FIELD" in the UI.
+  field           String?
 
-  // Sportsmanship points per player: { playerId: number }
-  sportsmanship String? // JSON string of Record<string, number>
-
-  // Which field/turf the game was played on. "stadium" | "grass" | null.
-  // null = "N/A FIELD" in the UI.
-  field String?
-
-  rsvps GameRsvp[]
+  rsvps           GameRsvp[]
 }
 
 // Per-game RSVP from a player. Identity is the playerId (claimed via
@@ -72,9 +58,9 @@ model GameRsvp {
 }
 
 model AppSettings {
-  id          String   @id @default("singleton")
-  guestCount  Int      @default(0)
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default("singleton")
+  guestCount Int      @default(0)
+  updatedAt  DateTime @updatedAt
 }
 
 model User {
@@ -82,23 +68,23 @@ model User {
   email     String   @unique
   name      String?
   picture   String?
-  role      String   @default("regular") // "admin" or "regular"
-  playerId  String?  @unique // Link to a Player record
+  role      String   @default("regular")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  playerId  String?  @unique
 }
 
 model AllowedEmail {
   id        String   @id @default(uuid())
   email     String   @unique
-  role      String   @default("regular") // "admin" or "regular"
+  role      String   @default("regular")
   createdAt DateTime @default(now())
 }
 
 model LegacyStat {
   id        String   @id @default(uuid())
   playerId  String
-  season    String   // "2022-2023" or "2023-2024"
+  season    String
   goals     Int      @default(0)
   assists   Int      @default(0)
   wins      Int      @default(0)
@@ -107,9 +93,30 @@ model LegacyStat {
   @@unique([playerId, season])
 }
 
-// Tracks which achievement-unlock popups a user has already been shown.
-// Used to diff "currently-earned" against "already-notified" so we can pop
-// up only newly-earned achievements on app load.
+model FieldStat {
+  id             String   @id @default(uuid())
+  date           DateTime @unique
+  year           Int
+  played         String
+  eviteResponse  Int?
+  responseRate   Float
+  showUp         Int?
+  attendanceRate Float
+  engagement     String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  groupSize      Int?
+  location       String?
+  waIn           Int?
+  waMaybe        Int?
+  waOut          Int?
+  waPlus1        Int?
+  waPlus2        Int?
+
+  @@index([year])
+}
+
 model UserAchievementSeen {
   userId        String
   achievementId String
@@ -119,9 +126,6 @@ model UserAchievementSeen {
   @@index([userId])
 }
 
-// Session storage for connect-pg-simple. This table is created and managed
-// by the session middleware, not the application code. It is declared here
-// only so that `prisma db push` will not drop it during deploys.
 model user_sessions {
   sid    String   @id(map: "session_pkey") @db.VarChar
   sess   Json     @db.Json

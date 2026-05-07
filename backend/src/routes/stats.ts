@@ -789,21 +789,97 @@ router.get('/legacy', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-const FIELD_STATS_URL =
-  'https://docs.google.com/spreadsheets/d/18NqBcjOKXKOxl6OinKBCELvHz_qAUxYrWXalYLo0yvo/gviz/tq?tqx=out:csv&sheet=Field%20Statistics';
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-router.get('/field-stats', async (_req, res: Response) => {
+router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const upstream = await fetch(FIELD_STATS_URL);
-    if (!upstream.ok) {
-      return res.status(502).json({ error: 'Failed to fetch field statistics from Google Sheets' });
+    const yearParam = req.query.year as string | undefined;
+    const year = yearParam ? parseInt(yearParam) : null;
+    const where = year && !isNaN(year) ? { year } : {};
+
+    const [stats, allGames] = await Promise.all([
+      prisma.fieldStat.findMany({ where, orderBy: { date: 'asc' } }),
+      prisma.game.findMany({ select: { createdAt: true, teamAssignments: true } }),
+    ]);
+
+    // Build a map of ISO date → unique player count from tracked Game records
+    const playerCountByDate = new Map<string, number>();
+    for (const g of allGames) {
+      const dateKey = g.createdAt.toISOString().slice(0, 10);
+      const assignments = safeParseJSON<Record<string, string>>(g.teamAssignments, {});
+      const count = Object.keys(assignments).length;
+      playerCountByDate.set(dateKey, (playerCountByDate.get(dateKey) ?? 0) + count);
     }
-    const csv = await upstream.text();
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    res.send(csv);
+
+    const records = stats.map(s => {
+      const isoDate = s.date.toISOString().slice(0, 10);
+      const trackedPlayers = playerCountByDate.get(isoDate) ?? null;
+
+      // Cross-reference: if we have both WhatsApp showUp and tracked game players,
+      // compute actual vs expected turnout
+      const turnoutVsRsvp = (trackedPlayers !== null && s.waIn !== null && s.waIn > 0)
+        ? parseFloat((trackedPlayers / (s.waIn + (s.waPlus1 ?? 0) * 2 + (s.waPlus2 ?? 0) * 3) * 100).toFixed(1))
+        : null;
+
+      // App game tracking supersedes FieldStat: if a game was played for this date,
+      // mark played='yes' regardless of stored FieldStat.played value.
+      const playedStatus = trackedPlayers && trackedPlayers > 0 ? 'yes' : s.played;
+
+      return {
+        year: s.year,
+        date: `${s.date.getUTCDate()}-${MONTH_NAMES[s.date.getUTCMonth()]}`,
+        isoDate,
+        played: playedStatus,
+        location: s.location ?? null,
+        waIn: s.waIn ?? null,
+        waPlus1: s.waPlus1 ?? null,
+        waPlus2: s.waPlus2 ?? null,
+        waMaybe: s.waMaybe ?? null,
+        waOut: s.waOut ?? null,
+        groupSize: s.groupSize ?? null,
+        eviteResponse: s.eviteResponse,
+        responseRate: parseFloat((s.responseRate * 100).toFixed(2)),
+        showUp: s.showUp,
+        attendanceRate: parseFloat((s.attendanceRate * 100).toFixed(2)),
+        trackedPlayers,
+        turnoutVsRsvp,
+        notes: s.notes ?? null,
+      };
+    });
+
+    // Synthesize records for game dates not yet in FieldStats (e.g. current season)
+    const existingDates = new Set(records.map(r => r.isoDate));
+    for (const [isoDate, count] of playerCountByDate) {
+      if (existingDates.has(isoDate)) continue;
+      const dateObj = new Date(isoDate + 'T00:00:00Z');
+      const yr = dateObj.getUTCFullYear();
+      if (year && yr !== year) continue;
+      records.push({
+        year: yr,
+        date: `${dateObj.getUTCDate()}-${MONTH_NAMES[dateObj.getUTCMonth()]}`,
+        isoDate,
+        played: 'yes',
+        location: null,
+        waIn: null,
+        waPlus1: null,
+        waPlus2: null,
+        waMaybe: null,
+        waOut: null,
+        groupSize: null,
+        eviteResponse: null,
+        responseRate: 0,
+        attendanceRate: 0,
+        showUp: null,
+        trackedPlayers: count,
+        turnoutVsRsvp: null,
+        notes: null,
+      });
+    }
+    records.sort((a, b) => a.isoDate.localeCompare(b.isoDate));
+
+    res.json(records);
   } catch (error) {
-    console.error('Error proxying field stats:', error);
+    console.error('Error fetching field stats:', error);
     res.status(500).json({ error: 'Failed to fetch field statistics' });
   }
 });
