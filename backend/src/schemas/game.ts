@@ -29,6 +29,7 @@ export const updateGameSchema = z.object({
   sportsmanship: z.record(z.number()).optional(),
   createdAt: z.string().datetime().optional(), // ISO date string
   gameNumber: z.number().int().positive().optional(), // Add game number support
+  field: z.enum(['stadium', 'grass', 'cancelled']).nullable().optional(),
 });
 
 export type Goal = z.infer<typeof goalSchema>;

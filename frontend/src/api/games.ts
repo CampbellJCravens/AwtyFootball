@@ -24,6 +24,8 @@ export interface GameEvent {
   timestamp: string; // ISO date string
 }
 
+export type GameField = 'stadium' | 'grass' | 'cancelled';
+
 export interface Game {
   id: string;
   gameNumber: number | null; // Can be null for existing games before migration
@@ -34,6 +36,7 @@ export interface Game {
   teamChanges?: TeamChange[];
   gameEvents?: GameEvent[];
   sportsmanship?: Record<string, number>;
+  field?: GameField | null;
 }
 
 export interface UpdateGameData {
@@ -44,6 +47,7 @@ export interface UpdateGameData {
   sportsmanship?: Record<string, number>;
   createdAt?: string; // ISO date string
   gameNumber?: number; // Add game number
+  field?: GameField | null;
 }
 
 // Fetch all games
@@ -74,14 +78,16 @@ export async function fetchGame(id: string): Promise<Game> {
   return response.json();
 }
 
-// Create a new game
-export async function createGame(): Promise<Game> {
+// Create a new game. Pass an ISO string to override the server's default
+// (frontend uses this to set "next Saturday 8:45 AM" in browser-local time).
+export async function createGame(createdAt?: string): Promise<Game> {
   const response = await fetch(`${API_BASE_URL}/games`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    credentials: 'include', // Include cookies for authentication
+    credentials: 'include',
+    body: JSON.stringify(createdAt ? { createdAt } : {}),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to create game' }));

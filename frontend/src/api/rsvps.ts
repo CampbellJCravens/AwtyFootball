@@ -1,0 +1,63 @@
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+
+export type RsvpStatus = 'yes' | 'maybe' | 'no';
+
+export interface Rsvp {
+  id: string;
+  gameId: string;
+  playerId: string;
+  status: RsvpStatus;
+  guestCount: number;
+  setByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchRsvps(gameId: string): Promise<Rsvp[]> {
+  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to fetch RSVPs');
+  return res.json();
+}
+
+export async function submitRsvp(
+  gameId: string,
+  playerId: string,
+  status: RsvpStatus,
+  guestCount: number
+): Promise<Rsvp> {
+  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, status, guestCount }),
+  });
+  if (!res.ok) throw new Error('Failed to save RSVP');
+  return res.json();
+}
+
+// Admin: override another player's RSVP
+export async function adminSetRsvp(
+  gameId: string,
+  playerId: string,
+  status: RsvpStatus,
+  guestCount: number
+): Promise<Rsvp> {
+  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps/${playerId}`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, guestCount }),
+  });
+  if (!res.ok) throw new Error('Failed to override RSVP');
+  return res.json();
+}
+
+// Clear an RSVP. Used both for self-clear (tap same option twice) and for
+// admin clearing anyone via the row controls — the backend route is public.
+export async function clearRsvp(gameId: string, playerId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps/${playerId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok && res.status !== 204) throw new Error('Failed to clear RSVP');
+}

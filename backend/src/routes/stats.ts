@@ -52,7 +52,7 @@ function getGameResult(game: ParsedGame, team: 'color' | 'white'): 'W' | 'L' | '
 }
 
 // ── GET /api/stats/player/:id ──
-router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const player = await prisma.player.findUnique({ where: { id: req.params.id } });
     if (!player) return res.status(404).json({ error: 'Player not found' });
@@ -260,7 +260,7 @@ router.get('/player/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
 });
 
 // ── GET /api/stats/chemistry ──
-router.get('/chemistry', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/chemistry', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const type = (req.query.type as string) || 'duos';
     const minGames = parseInt(req.query.minGames as string) || 3;
@@ -370,7 +370,7 @@ function getCombinations(arr: string[], k: number): string[][] {
 }
 
 // ── GET /api/stats/monthly?month=3&year=2026 ──
-router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const now = new Date();
     const month = parseInt(req.query.month as string) || (now.getMonth() + 1);
@@ -551,7 +551,7 @@ router.get('/monthly', requireAuth, async (req: AuthenticatedRequest, res: Respo
 });
 
 // ── GET /api/stats/player/:id/awards ──
-router.get('/player/:id/awards', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const playerId = req.params.id;
     const allGames = await loadAllGames();
@@ -734,7 +734,7 @@ router.get('/me/new-achievements', requireAuth, async (req: AuthenticatedRequest
 });
 
 // ── GET /api/stats/player/:id/achievements ──
-router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/player/:id/achievements', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const playerId = req.params.id;
     const achievements = await computePlayerAchievements(playerId);
@@ -747,7 +747,7 @@ router.get('/player/:id/achievements', requireAuth, async (req: AuthenticatedReq
 });
 
 // ── GET /api/stats/legacy?season=all|2022-2023|2023-2024 ──
-router.get('/legacy', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/legacy', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seasonFilter = (req.query.season as string) || 'all';
 

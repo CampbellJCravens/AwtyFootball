@@ -1,34 +1,52 @@
 import { useState, useEffect } from 'react';
+import { GameField } from '../api/games';
+import {
+  toDateInputValue,
+  toTimeInputValue,
+  fromDateAndTimeInput,
+} from '../utils/gameSchedule';
 
 interface EditGameModalProps {
   currentDate: string; // ISO date string
   currentGameNumber: number | null;
-  onSelect: (date: string, gameNumber: number) => void; // ISO date string and game number
+  currentField: GameField | null;
+  onSelect: (updates: { dateIso: string; gameNumber: number; field: GameField | null }) => void;
   onClose: () => void;
+  onTriggerImport?: () => void; // optional admin-only entry point to CSV import
 }
 
-export default function EditGameModal({ currentDate, currentGameNumber, onSelect, onClose }: EditGameModalProps) {
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const date = new Date(currentDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  });
+const FIELD_OPTIONS: { value: GameField | ''; label: string }[] = [
+  { value: '', label: 'N/A FIELD' },
+  { value: 'stadium', label: 'Stadium' },
+  { value: 'grass', label: 'Grass' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
 
+export default function EditGameModal({
+  currentDate,
+  currentGameNumber,
+  currentField,
+  onSelect,
+  onClose,
+  onTriggerImport,
+}: EditGameModalProps) {
+  const initial = new Date(currentDate);
+  const [dateValue, setDateValue] = useState(() => toDateInputValue(initial));
+  const [timeValue, setTimeValue] = useState(() => toTimeInputValue(initial));
   const [gameNumber, setGameNumber] = useState<number>(currentGameNumber || 1);
+  const [field, setField] = useState<GameField | ''>(currentField ?? '');
 
   useEffect(() => {
-    if (currentGameNumber !== null) {
-      setGameNumber(currentGameNumber);
-    }
+    if (currentGameNumber !== null) setGameNumber(currentGameNumber);
   }, [currentGameNumber]);
 
   const handleSave = () => {
-    // Convert the date string to ISO format
-    const [year, month, day] = selectedDate.split('-').map(Number);
-    const date = new Date(year, month - 1, day, 0, 0, 0, 0);
-    onSelect(date.toISOString(), gameNumber);
+    const date = fromDateAndTimeInput(dateValue, timeValue);
+    onSelect({
+      dateIso: date.toISOString(),
+      gameNumber,
+      field: field === '' ? null : field,
+    });
     onClose();
   };
 
@@ -41,49 +59,55 @@ export default function EditGameModal({ currentDate, currentGameNumber, onSelect
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
             aria-label="Close"
-            data-tooltip="Close"
           >
-            <svg
-              className="w-6 h-6 text-text-secondary"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
+            <svg className="w-6 h-6 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-2">Date</label>
+            <input
+              type="date"
+              value={dateValue}
+              onChange={(e) => setDateValue(e.target.value)}
+              className="w-full px-3 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-2">Time</label>
+            <input
+              type="time"
+              value={timeValue}
+              onChange={(e) => setTimeValue(e.target.value)}
+              className="w-full px-3 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
+            />
+          </div>
+        </div>
+
         <div className="mb-4">
-          <label htmlFor="date-input" className="block text-sm font-medium text-text-secondary mb-2">
-            Game Date
-          </label>
-          <input
-            id="date-input"
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
-          />
+          <label className="block text-sm font-medium text-text-secondary mb-2">Field</label>
+          <select
+            value={field}
+            onChange={(e) => setField(e.target.value as GameField | '')}
+            className="w-full px-3 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
+          >
+            {FIELD_OPTIONS.map(opt => (
+              <option key={opt.label} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="mb-6">
-          <label htmlFor="game-number-input" className="block text-sm font-medium text-text-secondary mb-2">
-            Game Number
-          </label>
+          <label className="block text-sm font-medium text-text-secondary mb-2">Game Number</label>
           <input
-            id="game-number-input"
             type="number"
             min="1"
             value={gameNumber}
             onChange={(e) => setGameNumber(parseInt(e.target.value) || 1)}
-            className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
+            className="w-full px-3 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
           />
         </div>
 
@@ -101,6 +125,20 @@ export default function EditGameModal({ currentDate, currentGameNumber, onSelect
             Save
           </button>
         </div>
+
+        {onTriggerImport && (
+          <div className="mt-6 pt-6 border-t border-border">
+            <button
+              onClick={onTriggerImport}
+              className="w-full px-4 py-2.5 border-2 border-border-emphasis text-text-secondary rounded-xl font-medium hover:bg-surface-hover transition-colors flex items-center justify-center gap-2 text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M16 12l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Import from CSV
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

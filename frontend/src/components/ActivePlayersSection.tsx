@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo, ComponentType } from 'react';
+import { SoccerBall, Handshake, Star, DoorOpen, IconProps } from '@phosphor-icons/react';
 import { Player } from '../api/players';
+
+// Goals are tracked in the parent as Player objects (after restoring from API).
+type GameGoal = { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null };
 
 interface ActivePlayersSectionProps {
   players: Player[];
   playerTeams: Record<string, 'color' | 'white'>;
   leftPlayers: Record<string, boolean>;
   sportsmanship?: Record<string, number>;
+  goals?: GameGoal[];
   onTeamSelect: (playerId: string, team: 'color' | 'white') => void;
   onAddGuest: (team: 'color' | 'white') => void;
   onRemoveFromTeam: (playerId: string) => void;
@@ -17,11 +22,46 @@ interface ActivePlayersSectionProps {
   isAdmin?: boolean; // Whether user is admin (can modify games)
 }
 
+// Stat badge: stacks a Phosphor icon `count` times with a slight overlap so
+// 3 goals reads as three balls leaning on each other rather than "ball ×3".
+// Caps at 5 visible icons; anything beyond shows the cap + a small "+N" tail.
+const ICON_CAP = 5;
+function StatStack({
+  Icon,
+  count,
+  className = 'text-text-secondary',
+  weight = 'fill',
+  size = 16,
+  label,
+}: {
+  Icon: ComponentType<IconProps>;
+  count: number;
+  className?: string;
+  weight?: IconProps['weight'];
+  size?: number;
+  label: string;
+}) {
+  if (count <= 0) return null;
+  const visible = Math.min(count, ICON_CAP);
+  const overflow = count - visible;
+  return (
+    <span className={`inline-flex items-center ${className}`} title={`${count} ${label}${count === 1 ? '' : 's'}`}>
+      <span className="inline-flex items-center -space-x-1">
+        {Array.from({ length: visible }).map((_, i) => (
+          <Icon key={i} size={size} weight={weight} />
+        ))}
+      </span>
+      {overflow > 0 && <span className="ml-0.5 text-[10px] font-bold tabular-nums">+{overflow}</span>}
+    </span>
+  );
+}
+
 export default function ActivePlayersSection({
   players,
   playerTeams,
   leftPlayers,
   sportsmanship = {},
+  goals = [],
   onTeamSelect: _onTeamSelect,
   onAddGuest,
   onRemoveFromTeam: _onRemoveFromTeam,
@@ -32,6 +72,45 @@ export default function ActivePlayersSection({
   onSportsmanshipChange,
   isAdmin = true,
 }: ActivePlayersSectionProps) {
+  // Pre-aggregate goals/assists per playerId so each row doesn't re-scan.
+  const statsByPlayer = useMemo(() => {
+    const m = new Map<string, { goals: number; assists: number }>();
+    for (const g of goals) {
+      const sId = g.scorer.id;
+      const s = m.get(sId) ?? { goals: 0, assists: 0 };
+      s.goals += 1;
+      m.set(sId, s);
+      if (g.assister) {
+        const aId = g.assister.id;
+        const a = m.get(aId) ?? { goals: 0, assists: 0 };
+        a.assists += 1;
+        m.set(aId, a);
+      }
+    }
+    return m;
+  }, [goals]);
+
+  const renderStatBadges = (playerId: string, opts?: { showLeft?: boolean }) => {
+    const s = statsByPlayer.get(playerId);
+    const sportsCount = sportsmanship[playerId] || 0;
+    const goalCount = s?.goals ?? 0;
+    const assistCount = s?.assists ?? 0;
+    const showLeft = opts?.showLeft;
+    if (!goalCount && !assistCount && !sportsCount && !showLeft) return null;
+    return (
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <StatStack Icon={SoccerBall} count={goalCount} weight="duotone" className="text-text-primary" label="goal" />
+        <StatStack Icon={Handshake} count={assistCount} weight="regular" className="text-text-secondary" label="assist" />
+        <StatStack Icon={Star} count={sportsCount} weight="fill" className="text-gold" label="sportsmanship" />
+        {showLeft && (
+          <span className="inline-flex items-center text-warning" title="Left the game">
+            <DoorOpen size={16} weight="bold" />
+          </span>
+        )}
+      </div>
+    );
+  };
+
   const [activeTab, setActiveTab] = useState<'color' | 'white'>('color');
   const colorTeamPlayers = players.filter(player => playerTeams[player.id] === 'color');
   const whiteTeamPlayers = players.filter(player => playerTeams[player.id] === 'white');
@@ -96,7 +175,9 @@ export default function ActivePlayersSection({
             <div className="flex-1 overflow-y-auto space-y-2 relative z-0">
               {colorActive.length === 0 ? (
                 <p className="text-text-tertiary text-sm text-center py-4">
-                  Add players to this team in the Choose Teams module above
+                  {isAdmin
+                    ? 'Add players to this team in the Choose Teams module above'
+                    : 'Waiting on an admin to add players to this team'}
                 </p>
               ) : (
                 colorActive.map((player) => (
@@ -114,6 +195,7 @@ export default function ActivePlayersSection({
                         </div>
                       )}
                       <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      {!isAdmin && renderStatBadges(player.id)}
                       {isAdmin && onSportsmanshipChange && (
                         <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip="Sportsmanship">
                           <button
@@ -229,6 +311,7 @@ export default function ActivePlayersSection({
                           </div>
                         )}
                         <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                        {!isAdmin && renderStatBadges(player.id, { showLeft: true })}
                         {isAdmin && (
                           <button
                             onClick={() => onReturnToTeam(player.id)}
@@ -276,7 +359,9 @@ export default function ActivePlayersSection({
             <div className="flex-1 overflow-y-auto space-y-2 relative z-0">
               {whiteActive.length === 0 ? (
                 <p className="text-text-tertiary text-sm text-center py-4">
-                  Add players to this team in the Choose Teams module above
+                  {isAdmin
+                    ? 'Add players to this team in the Choose Teams module above'
+                    : 'Waiting on an admin to add players to this team'}
                 </p>
               ) : (
                 whiteActive.map((player) => (
@@ -294,6 +379,7 @@ export default function ActivePlayersSection({
                         </div>
                       )}
                       <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      {!isAdmin && renderStatBadges(player.id)}
                       {isAdmin && onSportsmanshipChange && (
                         <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip="Sportsmanship">
                           <button
@@ -409,6 +495,7 @@ export default function ActivePlayersSection({
                           </div>
                         )}
                         <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                        {!isAdmin && renderStatBadges(player.id, { showLeft: true })}
                         {isAdmin && (
                           <button
                             onClick={() => onReturnToTeam(player.id)}

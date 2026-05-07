@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { updateGameSchema, UpdateGameInput } from '../schemas/game';
-import { requireAdmin, requireRegularOrAdmin, AuthenticatedRequest } from '../middleware/auth';
+import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { google } from 'googleapis';
 import { env } from '../env';
 import Papa from 'papaparse';
@@ -17,6 +17,18 @@ const safeParseJSON = <T>(value: string | null | undefined, fallback: T): T => {
     return fallback;
   }
 };
+
+// Fallback for when no explicit createdAt is sent on POST /api/games. Returns
+// the next Saturday at 08:45 in the server's local timezone — Saturday counts
+// as "still today" all day, so we only roll forward starting Sunday.
+function computeNextSaturday845(now: Date = new Date()): Date {
+  const day = now.getDay(); // 0 Sun … 6 Sat
+  const daysUntilSat = day === 6 ? 0 : day === 0 ? 6 : 6 - day;
+  const target = new Date(now);
+  target.setDate(now.getDate() + daysUntilSat);
+  target.setHours(8, 45, 0, 0);
+  return target;
+}
 
 const router = Router();
 
@@ -64,11 +76,22 @@ router.post('/', requireAdmin, async (req: AuthenticatedRequest, res: Response, 
       throw dbError;
     }
 
-    const game = await prisma.game.create({
-      data: {
-        gameNumber: nextGameNumber,
-      },
-    });
+    // Accept an optional explicit createdAt from the client (frontend computes
+    // "next Saturday 8:45 AM in user's local timezone"). Falls back to a
+    // server-side computation so direct API calls still get a sensible value.
+    const data: { gameNumber: number; createdAt?: Date } = { gameNumber: nextGameNumber };
+    const explicit = (req.body as { createdAt?: unknown })?.createdAt;
+    if (typeof explicit === 'string') {
+      const parsed = new Date(explicit);
+      if (!Number.isNaN(parsed.getTime())) {
+        data.createdAt = parsed;
+      }
+    }
+    if (!data.createdAt) {
+      data.createdAt = computeNextSaturday845();
+    }
+
+    const game = await prisma.game.create({ data });
     // Parse JSON fields for response
     const parsedGame = {
       ...game,
@@ -92,8 +115,8 @@ router.post('/', requireAdmin, async (req: AuthenticatedRequest, res: Response, 
   }
 });
 
-// GET /api/games - Get all games (authenticated users can view)
-router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/games - Get all games (public)
+router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const games = await prisma.game.findMany({
       orderBy: {
@@ -118,8 +141,8 @@ router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// GET /api/games/:id - Get a single game (authenticated users can view)
-router.get('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/games/:id - Get a single game (public)
+router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const game = await prisma.game.findUnique({
@@ -192,6 +215,10 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
 
     if (data.gameNumber !== undefined) {
       updateData.gameNumber = data.gameNumber;
+    }
+
+    if (data.field !== undefined) {
+      updateData.field = data.field; // null clears, 'stadium'/'grass' sets
     }
 
     const game = await prisma.game.update({

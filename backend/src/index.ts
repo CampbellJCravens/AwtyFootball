@@ -37,6 +37,7 @@ import { env } from './env';
 import './config/passport'; // Initialize passport strategies
 import playersRouter from './routes/players';
 import gamesRouter from './routes/games';
+import rsvpsRouter from './routes/rsvps';
 import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
@@ -89,6 +90,7 @@ app.use(passport.session());
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/players', playersRouter);
+app.use('/api/games/:gameId/rsvps', rsvpsRouter);
 app.use('/api/games', gamesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/stats', statsRouter);

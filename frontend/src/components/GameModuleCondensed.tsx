@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import EditGameModal from './EditGameModal';
-import { updateGame, Goal } from '../api/games';
+import { updateGame, Goal, GameField } from '../api/games';
 
 interface GameModuleCondensedProps {
   gameId: string;
   date: string;
   gameNumber: number | null;
+  field?: GameField | null;
   goals?: Goal[];
   teamAssignments?: Record<string, 'color' | 'white'>;
   onClick: () => void;
@@ -15,7 +16,7 @@ interface GameModuleCondensedProps {
   showEditDate?: boolean;
 }
 
-export default function GameModuleCondensed({ gameId, date, gameNumber, goals, teamAssignments, onClick, onDelete, onDateUpdated, showDelete = true, showEditDate = true }: GameModuleCondensedProps) {
+export default function GameModuleCondensed({ gameId, date, gameNumber, field = null, goals, teamAssignments, onClick, onDelete, onDateUpdated, showDelete = true, showEditDate = true }: GameModuleCondensedProps) {
   const [showEditModal, setShowEditModal] = useState(false);
 
   const formatDate = (dateString: string) => {
@@ -27,9 +28,13 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, goals, t
   const whiteGoals = goals?.filter(g => g.team === 'white').length ?? 0;
   const playerCount = teamAssignments ? Object.keys(teamAssignments).length : 0;
 
-  const handleEdit = async (newDate: string, newGameNumber: number) => {
+  const handleEdit = async (updates: { dateIso: string; gameNumber: number; field: GameField | null }) => {
     try {
-      await updateGame(gameId, { createdAt: newDate, gameNumber: newGameNumber });
+      await updateGame(gameId, {
+        createdAt: updates.dateIso,
+        gameNumber: updates.gameNumber,
+        field: updates.field,
+      });
       if (onDateUpdated) onDateUpdated();
     } catch (err) {
       console.error('Error updating game:', err);
@@ -52,10 +57,14 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, goals, t
       >
         {/* Top row: Game number + date + actions */}
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <span className="text-gold text-xs font-bold tracking-wider">GAME #{gameNumber ?? '?'}</span>
             <span className="text-text-muted text-xs">•</span>
             <span className="text-text-tertiary text-xs">{formatDate(date)}</span>
+            <span className="text-text-muted text-xs">•</span>
+            <span className="text-text-tertiary text-xs uppercase tracking-wider truncate">
+              {field === 'stadium' ? 'Stadium' : field === 'grass' ? 'Grass' : field === 'cancelled' ? 'Cancelled' : 'N/A'}
+            </span>
           </div>
           {(showEditDate || showDelete) && (
             <div className="flex gap-1 flex-shrink-0">
@@ -102,6 +111,7 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, goals, t
         <EditGameModal
           currentDate={date}
           currentGameNumber={gameNumber}
+          currentField={field}
           onSelect={handleEdit}
           onClose={() => setShowEditModal(false)}
         />

@@ -17,6 +17,8 @@ model Player {
   team       String?  // "dark" or "white" or null
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  rsvps      GameRsvp[]
 }
 
 model Game {
@@ -40,6 +42,33 @@ model Game {
 
   // Sportsmanship points per player: { playerId: number }
   sportsmanship String? // JSON string of Record<string, number>
+
+  // Which field/turf the game was played on. "stadium" | "grass" | null.
+  // null = "N/A FIELD" in the UI.
+  field String?
+
+  rsvps GameRsvp[]
+}
+
+// Per-game RSVP from a player. Identity is the playerId (claimed via
+// localStorage on anonymous devices, or via a Google-authed user's linked
+// player). Unique on (gameId, playerId) so a player has at most one active
+// RSVP per game; subsequent submissions overwrite.
+model GameRsvp {
+  id          String   @id @default(uuid())
+  gameId      String
+  playerId    String
+  status      String   // "yes" | "maybe" | "no"
+  guestCount  Int      @default(0)
+  setByUserId String?  // null = self, or Google-authed admin user id when overridden
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, playerId])
+  @@index([gameId])
 }
 
 model AppSettings {

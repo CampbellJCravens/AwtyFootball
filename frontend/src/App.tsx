@@ -3,8 +3,12 @@ import { Player, fetchPlayers, deletePlayer } from './api/players';
 import { Game, fetchGames, createGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
 import { Achievement, fetchNewAchievements } from './api/stats';
 import { useAuth } from './contexts/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
+import { usePlayerIdentity } from './hooks/usePlayerIdentity';
+import { nextSaturdayKickoff, sameSlot } from './utils/gameSchedule';
 import PlayerForm from './components/PlayerForm';
+import PlayerPickerModal from './components/PlayerPickerModal';
+import NewGameConflictModal from './components/NewGameConflictModal';
+import PasswordGate, { PASSWORD_STORAGE_KEY } from './components/PasswordGate';
 import PlayerList from './components/PlayerList';
 import EditPlayerModal from './components/EditPlayerModal';
 import TopHeader from './components/TopHeader';
@@ -14,22 +18,35 @@ import GameModuleExpanded from './components/GameModuleExpanded';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import Stats from './components/Stats';
 import PlayerProfile from './components/PlayerProfile';
-import GameDetailReadOnly from './components/GameDetailReadOnly';
 import PlayerLinkSetup from './components/PlayerLinkSetup';
 import HomeTab from './components/HomeTab';
 import AchievementUnlockedModal from './components/AchievementUnlockedModal';
 
 function App() {
-  const { user, logout, refreshUser, isAdmin } = useAuth();
+  const { user, loading: authLoading, login, logout, refreshUser, isAdmin } = useAuth();
+  const [passwordGranted, setPasswordGranted] = useState<boolean>(() => {
+    try { return localStorage.getItem(PASSWORD_STORAGE_KEY) === 'granted'; } catch { return false; }
+  });
   const [players, setPlayers] = useState<Player[]>([]);
+  const [showProfilePicker, setShowProfilePicker] = useState(false);
+  // When creating a new game collides with an existing game's time slot, the
+  // existing game lands here and the conflict modal opens.
+  const [conflictGame, setConflictGame] = useState<Game | null>(null);
+  const [pendingKickoff, setPendingKickoff] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [activeTab, setActiveTab] = useState<string>('home');
   const [games, setGames] = useState<Game[]>([]);
-  const [gamesLoading, setGamesLoading] = useState(false);
+  // Initial `true` because `loadGames` is fired in a mount effect — without
+  // this, the boot-time invite-link effect would race against that load,
+  // see games=[] and clear the pending ?game=<id>.
+  const [gamesLoading, setGamesLoading] = useState(true);
   const [gamesError, setGamesError] = useState<string | null>(null);
   const [expandedGameId, setExpandedGameId] = useState<string | null>(null);
+  // Initial tab for the expanded game view. Invite links flip this to 'rsvp'
+  // so recipients land on the RSVP poll, not the score breakdown.
+  const [expandedGameInitialTab, setExpandedGameInitialTab] = useState<'game' | 'rsvp'>('game');
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [playerProfileReturnTab, setPlayerProfileReturnTab] = useState<string>('players');
   const [homeMonth, setHomeMonth] = useState<{ month: number; year: number } | null>(null);
@@ -47,6 +64,17 @@ function App() {
   const [openProfileToAchievements, setOpenProfileToAchievements] = useState(false);
   const playersFileInputRef = useRef<HTMLInputElement>(null);
   const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Capture the WhatsApp-invite ?game=<id> param at boot, then resolve it once
+  // the games list is loaded. Cleared after navigation so refresh doesn't loop.
+  const [pendingInviteGameId, setPendingInviteGameId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('game');
+  });
+
+  // Resolves "which player am I" for the Profile tab. Auth-linked player wins
+  // over localStorage; falls back to a "pick your player" prompt if neither.
+  const { player: identityPlayer, isFromAuth, clearIdentity, setIdentity } = usePlayerIdentity(players);
 
   const loadPlayers = async () => {
     try {
@@ -82,6 +110,23 @@ function App() {
     loadGames();
     document.documentElement.classList.add('dark');
   }, []);
+
+  // Resolve the ?game=<id> invite link once games are loaded. Land directly on
+  // the RSVP tab so the recipient sees the poll, not the score.
+  useEffect(() => {
+    if (!pendingInviteGameId) return;
+    if (gamesLoading) return;
+    const exists = games.some(g => g.id === pendingInviteGameId);
+    if (exists) {
+      setActiveTab('games');
+      setExpandedGameInitialTab('rsvp');
+      setExpandedGameId(pendingInviteGameId);
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('game');
+    window.history.replaceState({}, document.title, url.pathname + url.search);
+    setPendingInviteGameId(null);
+  }, [pendingInviteGameId, gamesLoading, games]);
 
   // Check for new achievements once per load, when the user is known to have
   // a linked player. The server atomically marks them as seen, so it's safe
@@ -146,17 +191,48 @@ function App() {
     setPlayerToDelete(null);
   };
 
-  const handleAddNewGame = async () => {
+  // Try to create a game at `when`. If another game already occupies that
+  // time slot, open the conflict modal instead of creating.
+  const tryCreateGameAt = async (when: Date) => {
+    const conflict = games.find(g => sameSlot(g.createdAt, when));
+    if (conflict) {
+      setConflictGame(conflict);
+      setPendingKickoff(when);
+      return;
+    }
     try {
-      const newGame = await createGame();
+      const newGame = await createGame(when.toISOString());
       setGames([newGame, ...games]);
+      setExpandedGameInitialTab('game');
       setExpandedGameId(newGame.id);
+      setConflictGame(null);
+      setPendingKickoff(null);
     } catch (err) {
       setGamesError(err instanceof Error ? err.message : 'Failed to create game');
     }
   };
 
+  const handleAddNewGame = () => tryCreateGameAt(nextSaturdayKickoff());
+
+  const handleConflictDeleteAndCreate = async () => {
+    if (!conflictGame || !pendingKickoff) return;
+    try {
+      await deleteGame(conflictGame.id);
+      const remaining = games.filter(g => g.id !== conflictGame.id);
+      setGames(remaining);
+      const newGame = await createGame(pendingKickoff.toISOString());
+      setGames([newGame, ...remaining]);
+      setExpandedGameInitialTab('game');
+      setExpandedGameId(newGame.id);
+      setConflictGame(null);
+      setPendingKickoff(null);
+    } catch (err) {
+      setGamesError(err instanceof Error ? err.message : 'Failed to replace game');
+    }
+  };
+
   const handleEditGame = (gameId: string) => {
+    setExpandedGameInitialTab('game');
     setExpandedGameId(gameId);
   };
 
@@ -267,25 +343,19 @@ function App() {
       const expandedGame = games.find(g => g.id === expandedGameId);
       if (!expandedGame) return null;
 
-      if (isAdmin) {
-        return (
-          <GameModuleExpanded
-            gameId={expandedGameId}
-            gameNumber={expandedGame.gameNumber}
-            gameDate={expandedGame.createdAt}
-            onClose={handleCloseExpandedGame}
-            onPlayerAdded={loadPlayers}
-            isAdmin={isAdmin}
-          />
-        );
-      }
-
+      // Non-admins get the same layout, just with editing affordances and
+      // admin-only sections (choose teams, half-time/game-over, report stats,
+      // edit pencil) hidden by the isAdmin gates inside the component.
       return (
-        <GameDetailReadOnly
+        <GameModuleExpanded
+          key={`${expandedGameId}-${expandedGameInitialTab}`}
           gameId={expandedGameId}
           gameNumber={expandedGame.gameNumber}
           gameDate={expandedGame.createdAt}
-          onBack={handleCloseExpandedGame}
+          onClose={handleCloseExpandedGame}
+          onPlayerAdded={loadPlayers}
+          isAdmin={isAdmin}
+          initialTab={expandedGameInitialTab}
         />
       );
     }
@@ -323,6 +393,7 @@ function App() {
                   gameId={game.id}
                   date={game.createdAt}
                   gameNumber={game.gameNumber}
+                  field={game.field}
                   goals={game.goals}
                   teamAssignments={game.teamAssignments}
                   onClick={() => handleEditGame(game.id)}
@@ -395,35 +466,20 @@ function App() {
   );
 
   const renderProfileTab = () => {
-    // If user has a linked player, show their profile with stats
-    if (user?.playerId) {
+    // Google-authed user without a linked player → existing link-setup flow.
+    if (user && !user.playerId) {
       return (
         <div className="h-full overflow-y-auto">
-          <PlayerProfile
-            key={openProfileToAchievements ? 'profile-achievements' : 'profile-main'}
-            playerId={user.playerId}
-            isOwnProfile
-            initialShowAchievements={openProfileToAchievements}
-            onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('profile'); setActiveTab('players'); }}
-            onNavigateToMonth={handleNavigateToMonth}
+          <PlayerLinkSetup
+            userEmail={user.email}
+            userName={user.name}
+            players={players}
+            onLinked={() => { refreshUser(); loadPlayers(); }}
           />
-          <div className="max-w-lg mx-auto px-4 pb-8 mt-6 space-y-3">
-            <button
-              onClick={async () => {
-                const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
-                await fetch(`${API_BASE_URL}/auth/unlink-player`, {
-                  method: 'POST',
-                  credentials: 'include',
-                });
-                refreshUser();
-              }}
-              className="w-full px-4 py-3 border-2 border-white/30 text-white/70 rounded-xl font-medium hover:bg-white/10 transition-colors"
-            >
-              Link to Different Player
-            </button>
+          <div className="max-w-lg mx-auto px-4 pb-8">
             <button
               onClick={logout}
-              className="w-full px-4 py-3 border-2 border-gold text-gold rounded-xl font-medium hover:bg-gold/10 transition-colors"
+              className="w-full px-4 py-3 border-2 border-gold text-gold rounded-xl font-medium hover:bg-gold/10 transition-colors mt-4"
             >
               Logout
             </button>
@@ -432,22 +488,95 @@ function App() {
       );
     }
 
-    // No linked player, show setup
+    // Have an identity (either Google-authed + linked, or anonymous + localStorage).
+    if (identityPlayer) {
+      return (
+        <div className="h-full overflow-y-auto">
+          <PlayerProfile
+            key={openProfileToAchievements ? 'profile-achievements' : 'profile-main'}
+            playerId={identityPlayer.id}
+            isOwnProfile
+            initialShowAchievements={openProfileToAchievements}
+            onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('profile'); setActiveTab('players'); }}
+            onNavigateToMonth={handleNavigateToMonth}
+          />
+          <div className="max-w-lg mx-auto px-4 pb-8 mt-6 space-y-3">
+            {isFromAuth ? (
+              <>
+                <button
+                  onClick={async () => {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+                    await fetch(`${API_BASE_URL}/auth/unlink-player`, {
+                      method: 'POST',
+                      credentials: 'include',
+                    });
+                    refreshUser();
+                  }}
+                  className="w-full px-4 py-3 border-2 border-white/30 text-white/70 rounded-xl font-medium hover:bg-white/10 transition-colors"
+                >
+                  Link to Different Player
+                </button>
+                <button
+                  onClick={logout}
+                  className="w-full px-4 py-3 border-2 border-gold text-gold rounded-xl font-medium hover:bg-gold/10 transition-colors"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={login}
+                  className="w-full px-4 py-3 bg-gold text-text-on-accent rounded-xl font-semibold hover:bg-gold-hover transition-colors"
+                >
+                  Sign in with Google
+                </button>
+                <p className="text-xs text-text-tertiary text-center">
+                  Sign in to sync your player across devices and unlock admin tools (admins only).
+                </p>
+                <button
+                  onClick={() => { clearIdentity(); setShowProfilePicker(true); }}
+                  className="w-full px-4 py-3 border-2 border-white/30 text-white/70 rounded-xl font-medium hover:bg-white/10 transition-colors"
+                >
+                  Switch player
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Anonymous, no identity yet → invite them to pick.
     return (
       <div className="h-full overflow-y-auto">
-        <PlayerLinkSetup
-          userEmail={user?.email || ''}
-          userName={user?.name}
-          players={players}
-          onLinked={() => { refreshUser(); loadPlayers(); }}
-        />
-        <div className="max-w-lg mx-auto px-4 pb-8">
-          <button
-            onClick={logout}
-            className="w-full px-4 py-3 border-2 border-gold text-gold rounded-xl font-medium hover:bg-gold/10 transition-colors mt-4"
-          >
-            Logout
-          </button>
+        <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
+          <div className="bg-surface rounded-2xl border border-border p-6 text-center">
+            <h2 className="text-xl font-bold text-text-primary mb-2">Welcome</h2>
+            <p className="text-sm text-text-tertiary mb-5">
+              Pick your player to RSVP for games and see your stats.
+            </p>
+            <button
+              onClick={() => setShowProfilePicker(true)}
+              className="w-full px-4 py-3 bg-accent text-text-on-accent rounded-xl font-semibold hover:bg-accent-hover transition-colors"
+            >
+              Pick your player
+            </button>
+          </div>
+          <div className="bg-surface rounded-2xl border border-border p-6 text-center">
+            <p className="text-sm text-text-secondary mb-3">
+              Have a Google account?
+            </p>
+            <button
+              onClick={login}
+              className="w-full px-4 py-3 border-2 border-gold text-gold rounded-xl font-semibold hover:bg-gold/10 transition-colors"
+            >
+              Sign in with Google
+            </button>
+            <p className="text-xs text-text-tertiary mt-3">
+              Sign in if you want to sync your player across devices, or if you're an admin.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -480,12 +609,29 @@ function App() {
     }
   };
 
+  // Wait for auth to resolve before deciding whether to gate. Otherwise an
+  // already-signed-in admin would briefly flash the password screen on each
+  // page load while the session check is in flight.
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-base flex items-center justify-center">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold" />
+      </div>
+    );
+  }
+
+  // Casual gate. Bypassed by Google-authed users and by anyone who's typed
+  // the password on this device before.
+  if (!user && !passwordGranted) {
+    return <PasswordGate onUnlock={() => setPasswordGranted(true)} />;
+  }
+
   return (
-    <ProtectedRoute>
+    <>
       <div className="h-screen bg-base flex flex-col">
         <TopHeader
-          userPicture={user?.picture}
-          userName={user?.name || user?.email}
+          userPicture={user?.picture || identityPlayer?.pictureUrl}
+          userName={user?.name || user?.email || identityPlayer?.name}
           onMenuClick={() => setShowMenu(!showMenu)}
           onAvatarClick={() => handleTabChange('profile')}
         />
@@ -503,12 +649,21 @@ function App() {
                 </button>
               </>
             )}
-            <button
-              onClick={() => { logout(); setShowMenu(false); }}
-              className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-surface-hover rounded-lg transition-colors"
-            >
-              Logout
-            </button>
+            {user ? (
+              <button
+                onClick={() => { logout(); setShowMenu(false); }}
+                className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-surface-hover rounded-lg transition-colors"
+              >
+                Logout
+              </button>
+            ) : (
+              <button
+                onClick={() => { login(); setShowMenu(false); }}
+                className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-surface-hover rounded-lg transition-colors"
+              >
+                Sign in with Google
+              </button>
+            )}
           </div>
         )}
 
@@ -595,6 +750,29 @@ function App() {
             onConfirm={handleConfirmDeletePlayer}
             onCancel={handleCancelDeletePlayer}
             itemType="player"
+          />
+        )}
+
+        {/* Conflict modal when creating a new game at an already-booked slot */}
+        {conflictGame && pendingKickoff && (
+          <NewGameConflictModal
+            conflictingGame={conflictGame}
+            defaultKickoff={pendingKickoff}
+            onCancel={() => { setConflictGame(null); setPendingKickoff(null); }}
+            onCreateAt={(when) => tryCreateGameAt(when)}
+            onDeleteAndCreate={handleConflictDeleteAndCreate}
+          />
+        )}
+
+        {/* Profile-tab player picker (anonymous identity selection) */}
+        {showProfilePicker && (
+          <PlayerPickerModal
+            players={players}
+            onPick={(pid) => { setIdentity(pid); setShowProfilePicker(false); }}
+            onClose={() => setShowProfilePicker(false)}
+            onPlayerCreated={loadPlayers}
+            title="Pick your player"
+            subtitle="We'll remember this on this device. Sign in with Google to sync across devices."
           />
         )}
 
@@ -690,7 +868,7 @@ function App() {
           </div>
         )}
       </div>
-    </ProtectedRoute>
+    </>
   );
 }
 

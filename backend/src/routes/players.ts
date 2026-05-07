@@ -1,12 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { createPlayerSchema, updatePlayerSchema } from '../schemas/entry';
-import { requireRegularOrAdmin, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
+import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
-// POST /api/players - Create a new player (regular users and admins)
-router.post('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// POST /api/players - Create a new player (public; new RSVPers can self-register)
+router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     console.log('Received request body:', req.body);
     const validatedData = createPlayerSchema.parse(req.body);
@@ -26,8 +26,8 @@ router.post('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// GET /api/players - Get all players (authenticated users only)
-router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/players - Get all players (public)
+router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const players = await prisma.player.findMany({
       orderBy: {
@@ -40,8 +40,8 @@ router.get('/', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// GET /api/players/:id - Get a single player (authenticated users only)
-router.get('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/players/:id - Get a single player (public)
+router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const player = await prisma.player.findUnique({
@@ -58,8 +58,8 @@ router.get('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res:
   }
 });
 
-// PATCH /api/players/:id - Update a player (regular users can update images, admins can update anything)
-router.patch('/:id', requireRegularOrAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// PATCH /api/players/:id - Update a player (public; matches existing "any signed-in user can edit" behavior under the open-access model)
+router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const validatedData = updatePlayerSchema.parse(req.body);

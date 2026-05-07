@@ -13,6 +13,9 @@ export const env = {
   GOOGLE_SHEETS_SPREADSHEET_ID: process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '',
   GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
   GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY || '',
+  // Casual site-wide password gate. Default kept simple for dev; override
+  // in .env / production environment.
+  SITE_PASSWORD: process.env.SITE_PASSWORD || 'AWTY',
 };
 
 // Validate required environment variables

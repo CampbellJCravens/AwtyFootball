@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, GameEvent, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
-import { incrementGuestCount } from '../api/settings';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
 import ActivePlayersSection from './ActivePlayersSection';
@@ -10,7 +9,10 @@ import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TimePickerModal from './TimePickerModal';
 import EditGameModal from './EditGameModal';
+import GameRsvpSection from './GameRsvpSection';
 import Papa, { ParseResult } from 'papaparse';
+
+type GameViewTab = 'game' | 'rsvp';
 
 interface GameModuleExpandedProps {
   gameId: string;
@@ -19,9 +21,10 @@ interface GameModuleExpandedProps {
   onClose: () => void;
   onPlayerAdded?: () => void; // Callback to refresh players list
   isAdmin?: boolean; // Whether user is admin (can modify games)
+  initialTab?: GameViewTab;
 }
 
-export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded, isAdmin = false }: GameModuleExpandedProps) {
+export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded, isAdmin = false, initialTab = 'game' }: GameModuleExpandedProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -31,7 +34,11 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     });
   };
 
-  const gameTitle = `Game${gameNumber ?? '?'} - ${formatDate(gameDate)}`;
+  const formatTime = (dateString: string) =>
+    new Date(dateString).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const fieldLabel = (f: GameField | null) => (
+    f === 'stadium' ? 'Stadium' : f === 'grass' ? 'Grass' : f === 'cancelled' ? 'Cancelled' : 'N/A FIELD'
+  );
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,11 +67,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [selectedGameForImport, setSelectedGameForImport] = useState<string>('');
   const [csvFilesLoaded, setCsvFilesLoaded] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showGoals, setShowGoals] = useState<boolean>(true);
-  const [showTeamChanges, setShowTeamChanges] = useState<boolean>(true); // active by default
-  const [showGameEvents, setShowGameEvents] = useState<boolean>(true); // active by default
   const playersFileInputRef = useRef<HTMLInputElement>(null);
   const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<GameViewTab>(initialTab);
+  const [currentField, setCurrentField] = useState<GameField | null>(null);
+  const [currentDate, setCurrentDate] = useState<string>(gameDate);
+  const gameTitle = `${formatDate(currentDate)} - ${formatTime(currentDate)} - ${fieldLabel(currentField)}`;
 
   // Load game data and players
   const loadGameData = useCallback(async () => {
@@ -79,7 +87,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       ]);
       
       setPlayers(playersData);
-      
+
+      // Pull the persisted field + date into local state so the header title
+      // reflects whatever was last saved (rather than the stale prop).
+      setCurrentField(gameData.field ?? null);
+      setCurrentDate(gameData.createdAt);
+
       // Restore game state
       if (gameData.teamAssignments) {
         setPlayerTeams(gameData.teamAssignments);
@@ -375,18 +388,17 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     if (gameSummaryFileInputRef.current) gameSummaryFileInputRef.current.value = '';
   }, []);
 
-  // Handle editing game (date and game number)
-  const handleEditGame = useCallback(async (newDate: string, newGameNumber: number) => {
+  // Handle editing game (date, time, field, game number)
+  const handleEditGame = useCallback(async (updates: { dateIso: string; gameNumber: number; field: GameField | null }) => {
     try {
-      await updateGame(gameId, { 
-        createdAt: newDate,
-        gameNumber: newGameNumber 
+      await updateGame(gameId, {
+        createdAt: updates.dateIso,
+        gameNumber: updates.gameNumber,
+        field: updates.field,
       });
-      // Refresh game data
       await loadGameData();
       setShowEditModal(false);
       alert('Game updated successfully! Note: The game list will refresh when you close this view.');
-      // Close the expanded view to force parent to refresh the games list
       onClose();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update game';
@@ -400,16 +412,18 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }
   }, [gameId, loadGameData, onClose]);
 
-  // Auto-save when game data changes (debounced)
+  // Auto-save when game data changes (debounced). Only fires for admins —
+  // non-admin viewers can't change anything and the PUT route would 403.
   useEffect(() => {
-    if (loading) return; // Don't save while loading
-    
+    if (loading) return;
+    if (!isAdmin) return;
+
     const timeoutId = setTimeout(() => {
       saveGameData();
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, loading, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, loading, isAdmin, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -519,31 +533,38 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setTeamChanges(prev => prev.filter(entry => entry.player.id !== playerId));
   };
 
+  // Adds a guest to the team. We keep a fixed pool of recurring guest player
+  // records (Guest1, Guest2, …) and reuse them across games. The button picks
+  // the lowest-numbered guest not already in this game's roster. If all
+  // existing guests are already on a team in this game, a new GuestN+1 is
+  // created and added to the pool.
   const handleAddGuest = async (team: 'color' | 'white') => {
     try {
-      // Get the next guest number from the server
-      const guestNumber = await incrementGuestCount();
-      const guestName = `Guest${guestNumber} (Game${gameNumber ?? '?'})`;
-      
-      // Create the guest as a real player in the database
-      const newGuest = await createPlayer({
-        name: guestName,
-      });
-      
-      // Add the new player to the team
+      const inThisGame = new Set(Object.keys(playerTeams));
+      const guestRegex = /^Guest(\d+)$/;
+      const allGuests = players
+        .map(p => ({ p, match: p.name.match(guestRegex) }))
+        .filter((x): x is { p: Player; match: RegExpMatchArray } => !!x.match)
+        .map(({ p, match }) => ({ p, n: parseInt(match[1], 10) }))
+        .sort((a, b) => a.n - b.n);
+
+      const available = allGuests.find(g => !inThisGame.has(g.p.id));
+
+      if (available) {
+        setPlayerTeams(prev => ({ ...prev, [available.p.id]: team }));
+        return;
+      }
+
+      // All existing pooled guests are taken in this game — extend the pool.
+      const nextNumber = (allGuests[allGuests.length - 1]?.n ?? 0) + 1;
+      const newGuest = await createPlayer({ name: `Guest${nextNumber}` });
       setPlayerTeams(prev => ({ ...prev, [newGuest.id]: team }));
-      
-      // Refresh the players list to include the new guest
+
       const updatedPlayers = await fetchPlayers();
       setPlayers(updatedPlayers);
-      
-      // Notify parent to refresh players list
-      if (onPlayerAdded) {
-        onPlayerAdded();
-      }
+      onPlayerAdded?.();
     } catch (err) {
       console.error('Error adding guest:', err);
-      // Could show an error message to the user here
     }
   };
 
@@ -752,49 +773,31 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     <div className="h-full flex flex-col bg-surface max-w-lg mx-auto">
       {/* Header with Save and Close Buttons */}
             <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
-              <h2 className="text-xl font-semibold text-text-primary">{gameTitle}</h2>
+              <h2 className="text-base font-semibold text-text-primary truncate min-w-0 flex-1 mr-2">{gameTitle}</h2>
               <div className="flex items-center gap-2">
                 {isAdmin && (
-                  <>
-                    <button
-                      onClick={handleExportToSheets}
-                      disabled={exporting || loading}
-                      className="px-4 py-2 bg-gold text-text-on-accent text-sm font-medium rounded-xl hover:bg-gold-hover active:bg-gold-active disabled:bg-surface-active disabled:cursor-not-allowed transition-colors"
-                      data-tooltip="Export to Google Sheets"
+                  <button
+                    onClick={() => setShowEditModal(true)}
+                    disabled={loading}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                    aria-label="Edit game"
+                    data-tooltip="Edit Game"
+                  >
+                    <svg
+                      className="w-5 h-5 text-text-secondary"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
                     >
-                      {exporting ? 'Exporting...' : 'Report Stats'}
-                    </button>
-                    <button
-                      onClick={() => setShowImportModal(true)}
-                      disabled={importing || loading}
-                      className="px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover active:bg-accent-active disabled:bg-surface-active disabled:cursor-not-allowed transition-colors"
-                      data-tooltip="Import from CSV"
-                    >
-                      Import
-                    </button>
-                    <button
-                      onClick={() => setShowEditModal(true)}
-                      disabled={loading}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
-                      aria-label="Edit game"
-                      data-tooltip="Edit Game"
-                    >
-                      <svg
-                        className="w-5 h-5 text-text-secondary"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                  </>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
+                    </svg>
+                  </button>
                 )}
           <button
             onClick={onClose}
@@ -822,6 +825,34 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
+        {/* Game / RSVP Tabs */}
+        <div className="flex bg-surface rounded-xl p-1 mb-5 border border-border flex-shrink-0">
+          {(['game', 'rsvp'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                activeTab === t
+                  ? 'bg-gold text-text-on-accent shadow-glow-gold'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {t === 'game' ? 'Game' : 'RSVP'}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'rsvp' && (
+          <GameRsvpSection
+            gameId={gameId}
+            gameNumber={gameNumber}
+            gameDate={gameDate}
+            players={allPlayers}
+            onPlayersChanged={() => { onPlayerAdded?.(); }}
+          />
+        )}
+
+        {activeTab === 'game' && (<>
         {/* Score Module */}
         <div className="mb-6 flex-shrink-0">
           <div className="bg-surface rounded-xl border border-border relative h-20 overflow-hidden">
@@ -925,37 +956,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         {/* Game Summary Section */}
         {!loading && !error && (
           <div className="mb-6 flex-shrink-0">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <h3 className="text-lg font-semibold text-text-primary">Game Summary</h3>
-              <div className="flex gap-2 flex-wrap justify-end">
-                <button
-                  onClick={() => setShowGoals(prev => !prev)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    showGoals ? 'bg-accent text-text-on-accent' : 'bg-surface-raised text-text-primary hover:bg-surface-active'
-                  }`}
-                  data-tooltip="Toggle Goals"
-                >
-                  Goals
-                </button>
-                <button
-                  onClick={() => setShowTeamChanges(prev => !prev)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    showTeamChanges ? 'bg-accent text-text-on-accent' : 'bg-surface-raised text-text-primary hover:bg-surface-active'
-                  }`}
-                  data-tooltip="Toggle Team Changes"
-                >
-                  Team Changes
-                </button>
-                <button
-                  onClick={() => setShowGameEvents(prev => !prev)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    showGameEvents ? 'bg-accent text-text-on-accent' : 'bg-surface-raised text-text-primary hover:bg-surface-active'
-                  }`}
-                  data-tooltip="Toggle Game Events"
-                >
-                  Events
-                </button>
-              </div>
             </div>
 
             <div className="bg-surface rounded-xl p-4 border border-border max-h-[400px] overflow-y-auto space-y-3">
@@ -979,18 +981,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                     event,
                     eventIndex: index,
                   })),
-                ]
-                  .filter(item =>
-                    (item.type === 'goal' && showGoals) ||
-                    (item.type === 'teamChange' && showTeamChanges) ||
-                    (item.type === 'gameEvent' && showGameEvents)
-                  )
-                  .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()); // Sort by most recent first
+                ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()); // Most recent first
 
                 if (combined.length === 0) {
                   return (
                     <p className="text-text-tertiary text-sm text-center py-2">
-                      No events yet - adjust filters or record an event.
+                      {isAdmin
+                        ? 'No events yet — record a goal or team change above.'
+                        : 'No events yet — waiting on an admin to record game events.'}
                     </p>
                   );
                 }
@@ -1213,6 +1211,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               playerTeams={playerTeams}
               leftPlayers={leftPlayers}
               sportsmanship={sportsmanship}
+              goals={goals}
               onTeamSelect={handleTeamSelect}
               onAddGuest={handleAddGuest}
               onRemoveFromTeam={handleRemoveFromTeam}
@@ -1235,7 +1234,32 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             />
           </div>
         )}
+
+        </>)}
       </div>
+
+      {/* Sticky footer: Report Stats — always visible on the Game tab so it
+          stays one tap away regardless of scroll. */}
+      {isAdmin && activeTab === 'game' && (
+        <div className="flex-shrink-0 border-t border-border bg-surface/95 backdrop-blur-sm px-4 py-3">
+          <button
+            onClick={handleExportToSheets}
+            disabled={exporting || loading}
+            className="w-full px-4 py-3.5 bg-gold text-text-on-accent text-base font-bold rounded-2xl hover:bg-gold-hover active:bg-gold-active disabled:bg-surface-active disabled:text-text-tertiary disabled:cursor-not-allowed transition-colors shadow-glow-gold flex items-center justify-center gap-2"
+          >
+            {exporting ? (
+              'Reporting…'
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12" />
+                </svg>
+                Report Stats
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Goal Assist Modal */}
       {goalScorer && editingGoalIndex === null && (
@@ -1406,10 +1430,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       {/* Edit Game Modal */}
       {showEditModal && (
         <EditGameModal
-          currentDate={gameDate}
+          currentDate={currentDate}
           currentGameNumber={gameNumber}
+          currentField={currentField}
           onSelect={handleEditGame}
           onClose={() => setShowEditModal(false)}
+          onTriggerImport={isAdmin ? () => { setShowEditModal(false); setShowImportModal(true); } : undefined}
         />
       )}
     </div>

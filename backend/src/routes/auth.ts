@@ -23,6 +23,24 @@ async function suppressAchievementPopupForNewLink(userId: string, playerId: stri
 const router = Router();
 
 /**
+ * POST /api/auth/site-password
+ * Casual site-wide password gate. Public — does NOT require auth. Compares
+ * against SITE_PASSWORD env var so the password isn't shipped in the JS
+ * bundle. Returns 200 on match, 401 on miss. Frontend persists a localStorage
+ * flag on success so each device only types the password once.
+ */
+router.post('/site-password', async (req: Request, res: Response) => {
+  const submitted = (req.body as { password?: unknown })?.password;
+  if (typeof submitted !== 'string') {
+    return res.status(400).json({ error: 'password required' });
+  }
+  if (submitted === env.SITE_PASSWORD) {
+    return res.json({ ok: true });
+  }
+  return res.status(401).json({ error: 'wrong password' });
+});
+
+/**
  * GET /api/auth/google
  * Initiates Google OAuth flow
  */
