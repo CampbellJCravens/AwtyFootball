@@ -46,6 +46,7 @@ export default function PasswordGate({ onUnlock }: PasswordGateProps) {
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-gold italic">Awty Football</h1>
           <p className="text-text-tertiary text-sm mt-2">Enter the password to continue</p>
+          <p className="text-text-tertiary text-xs mt-2">Text Campbell or message the WhatsApp group to get the password</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
