@@ -8,14 +8,17 @@ import {
   adminSetRsvp,
   clearRsvp,
 } from '../api/rsvps';
+import { GameField } from '../api/games';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayerIdentity } from '../hooks/usePlayerIdentity';
 import PlayerPickerModal from './PlayerPickerModal';
+import { renderRsvpImage } from '../utils/renderRsvpImage';
 
 interface GameRsvpSectionProps {
   gameId: string;
   gameNumber: number | null;
   gameDate: string;
+  field?: GameField | null;
   players: Player[];
   onPlayersChanged?: () => void;
 }
@@ -362,7 +365,8 @@ function AttendeeRow({
 export default function GameRsvpSection({
   gameId,
   gameNumber: _gameNumber,
-  gameDate: _gameDate,
+  gameDate,
+  field = null,
   players,
   onPlayersChanged,
 }: GameRsvpSectionProps) {
@@ -382,7 +386,7 @@ export default function GameRsvpSection({
   const [showNoResponses, setShowNoResponses] = useState(false);
 
   const [justVoted, setJustVoted] = useState<RsvpStatus | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
+  const [shareState, setShareState] = useState<'idle' | 'preparing' | 'shared' | 'fallback' | 'error'>('idle');
 
   const [guestCount, setGuestCount] = useState(0);
 
@@ -544,14 +548,71 @@ export default function GameRsvpSection({
     }
   };
 
-  const handleCopyInvite = async () => {
-    const url = `${window.location.origin}/?game=${gameId}`;
+  // Build the WhatsApp text + an image of the current RSVP state and share via
+  // the Web Share API. Desktop browsers without file-share fall back to copy +
+  // download so the admin can manually drop both into WhatsApp.
+  const handleSendToWhatsApp = async () => {
+    setShareState('preparing');
     try {
-      await navigator.clipboard.writeText(url);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 1800);
-    } catch {
-      window.prompt('Copy this invite link:', url);
+      const url = `${window.location.origin}/?game=${gameId}`;
+      const dt = new Date(gameDate);
+      const datePart = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const timePart = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      const fieldPart = field === 'stadium' ? 'Stadium' : field === 'grass' ? 'Grass' : field === 'cancelled' ? 'Cancelled' : 'TBD';
+      const title = `${datePart} · ${timePart} · ${fieldPart}`;
+      const text = `${datePart} - ${timePart} - ${fieldPart}\nRSVP here: ${url}\nPassword: AWTY`;
+
+      const inList = grouped.yes
+        .map(r => ({ rsvp: r, p: playerMap.get(r.playerId) }))
+        .filter((x): x is { rsvp: Rsvp; p: Player } => !!x.p)
+        .sort((a, b) => a.p.name.localeCompare(b.p.name))
+        .map(({ rsvp, p }) => ({ name: p.name, guests: rsvp.guestCount }));
+      const maybeList = grouped.maybe
+        .map(r => playerMap.get(r.playerId))
+        .filter((p): p is Player => !!p)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(p => ({ name: p.name }));
+      const outList = grouped.no
+        .map(r => playerMap.get(r.playerId))
+        .filter((p): p is Player => !!p)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(p => ({ name: p.name }));
+
+      const blob = await renderRsvpImage({ title, inList, maybeList, outList });
+      const file = new File([blob], 'awty-rsvp.png', { type: 'image/png' });
+
+      const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
+      if (nav.canShare && nav.canShare({ files: [file] })) {
+        try {
+          await nav.share({ text, files: [file] });
+          setShareState('shared');
+          setTimeout(() => setShareState('idle'), 1800);
+          return;
+        } catch (err: any) {
+          if (err?.name === 'AbortError') {
+            setShareState('idle');
+            return;
+          }
+          // fall through to fallback
+        }
+      }
+
+      // Fallback: copy text + download image
+      try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = 'awty-rsvp.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+      setShareState('fallback');
+      setTimeout(() => setShareState('idle'), 3000);
+    } catch (err) {
+      console.error('Failed to share RSVP', err);
+      setShareState('error');
+      setTimeout(() => setShareState('idle'), 2500);
     }
   };
 
@@ -626,22 +687,39 @@ export default function GameRsvpSection({
       {isAdmin && (
         <div className="flex items-center gap-2">
           <button
-            onClick={handleCopyInvite}
-            className="flex-1 px-3 py-2 rounded-xl bg-surface border border-border text-[12px] font-semibold text-text-primary flex items-center justify-center gap-2 hover:bg-surface-hover transition-colors"
+            onClick={handleSendToWhatsApp}
+            disabled={shareState === 'preparing'}
+            className="flex-1 px-3 py-2 rounded-xl bg-surface border border-border text-[12px] font-semibold text-text-primary flex items-center justify-center gap-2 hover:bg-surface-hover transition-colors disabled:opacity-60"
           >
-            {copiedLink ? (
+            {shareState === 'preparing' ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v4m0 8v4m8-8h-4M8 12H4m13.66-5.66l-2.83 2.83M9.17 14.83l-2.83 2.83m0-11.32l2.83 2.83m5.66 5.66l2.83 2.83" />
+                </svg>
+                Preparing…
+              </>
+            ) : shareState === 'shared' ? (
               <>
                 <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-                Copied!
+                Shared!
               </>
+            ) : shareState === 'fallback' ? (
+              <>
+                <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Image saved + text copied
+              </>
+            ) : shareState === 'error' ? (
+              <>Failed — try again</>
             ) : (
               <>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.8 10.2a4 4 0 00-5.6 0l-4 4a4 4 0 105.6 5.6l1.1-1.1m-.7-4.9a4 4 0 005.6 0l4-4a4 4 0 00-5.6-5.6l-1.1 1.1" />
+                <svg className="w-3.5 h-3.5 text-green-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M19.05 4.91A9.82 9.82 0 0012.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 004.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.01zm-7.01 15.24h-.01a8.23 8.23 0 01-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.21 8.21 0 01-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24a8.2 8.2 0 015.83 2.41 8.18 8.18 0 012.42 5.83c0 4.55-3.7 8.24-8.25 8.24zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 00-.66.31c-.23.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.55.12.16 1.74 2.66 4.22 3.73.59.25 1.05.41 1.41.52.59.19 1.13.16 1.55.1.47-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.11-.22-.17-.47-.29z" />
                 </svg>
-                Copy invite
+                Send to WhatsApp
               </>
             )}
           </button>

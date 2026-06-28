@@ -51,6 +51,14 @@ frontend/.vite/
 coverage/
 *.test.js.snap
 
-# Local source material (screenshots used to author import scripts)
+# Local source material (screenshots/CSVs used to author import scripts)
 afc-screenshots/
+data/
+
+# Database dumps
+render.dump
+*.dump
+
+# Claude Code local settings
+.claude/
 

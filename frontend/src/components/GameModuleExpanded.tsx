@@ -846,7 +846,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           <GameRsvpSection
             gameId={gameId}
             gameNumber={gameNumber}
-            gameDate={gameDate}
+            gameDate={currentDate}
+            field={currentField}
             players={allPlayers}
             onPlayersChanged={() => { onPlayerAdded?.(); }}
           />
