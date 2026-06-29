@@ -393,7 +393,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
 
     // Compute per-player stats for this month
     const stats = new Map<string, PlayerStat>();
-    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number };
+    type PlayerStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number };
 
     for (const game of monthGames) {
       const colorGoals = game.goals.filter(g => g.team === 'color').length;
@@ -404,15 +404,15 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         const playerInfo = playerMap.get(pid)!;
         if (playerInfo.name.includes('Guest')) continue;
 
-        if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
         const s = stats.get(pid)!;
         s.games++;
         s.sportsmanship += game.sportsmanship[pid] || 0;
 
         const isTie = colorGoals === whiteGoals;
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
-        if (isWin) s.points += 3;
-        else if (isTie) s.points += 1;
+        if (isWin) { s.points += 3; s.wins++; }
+        else if (isTie) { s.points += 1; s.ties++; }
 
         const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
         s.goalsAllowed += opponentGoals;
@@ -459,7 +459,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
 
       return topIds.map(id => {
         const s = stats.get(id)!;
-        return { player: playerMap.get(id)!, value: topVal, games: s.games, goals: s.goals, assists: s.assists, goalsAllowed: s.goalsAllowed };
+        return { player: playerMap.get(id)!, value: topVal, games: s.games, wins: s.wins, ties: s.ties, goals: s.goals, assists: s.assists, goalsAllowed: s.goalsAllowed };
       });
     };
 

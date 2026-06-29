@@ -108,6 +108,8 @@ export interface MonthlyAward {
   player: PlayerStatsPlayer;
   value: number;
   games?: number;
+  wins?: number;
+  ties?: number;
   goals?: number;
   assists?: number;
   goalsAllowed?: number;

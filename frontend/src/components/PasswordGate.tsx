@@ -13,6 +13,7 @@ export default function PasswordGate({ onUnlock }: PasswordGateProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showHint, setShowHint] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -46,7 +47,19 @@ export default function PasswordGate({ onUnlock }: PasswordGateProps) {
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-gold italic">Awty Football</h1>
           <p className="text-text-tertiary text-sm mt-2">Enter the password to continue</p>
-          <p className="text-text-tertiary text-xs mt-2">Text Campbell or message the WhatsApp group to get the password</p>
+          {showHint ? (
+            <p className="text-text-tertiary text-xs mt-2">
+              The password is the name of the high school we play at, in all caps.
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowHint(true)}
+              className="text-accent text-xs mt-2 underline hover:no-underline"
+            >
+              Need a hint?
+            </button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">

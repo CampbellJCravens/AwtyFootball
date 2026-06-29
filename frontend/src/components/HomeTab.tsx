@@ -37,7 +37,7 @@ function AwardCard({ award, statLabel, showDetailedStats, onPlayerClick, onImage
         </p>
         {showDetailedStats && (
           <p className="text-[10px] text-text-tertiary font-medium tracking-wider uppercase mt-0.5">
-            {[award.games != null && `${award.games} Games`, award.goals != null && `${award.goals} Goals`, award.assists != null && `${award.assists} Assists`].filter(Boolean).join(' · ')}
+            {[award.games != null && `${award.games} Games`, award.wins != null && `${award.wins} Wins`, award.ties != null && `${award.ties} Ties`].filter(Boolean).join(' · ')}
           </p>
         )}
         {onPlayerClick && (
