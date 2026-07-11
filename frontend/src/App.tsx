@@ -672,8 +672,12 @@ function App() {
           <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
         )}
 
-        {/* Main Content */}
-        <main className="flex-1 overflow-hidden pb-16">
+        {/* Main Content. Bottom padding must clear the fixed BottomNav, whose
+            true height is h-16 (4rem) PLUS its safe-area-inset-bottom padding on
+            devices with a home indicator. Reserving a flat pb-16 left the safe
+            area uncovered, so pinned content (e.g. the Report Stats footer) was
+            clipped under the nav and couldn't be scrolled into view. */}
+        <main className="flex-1 overflow-hidden" style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' }}>
           <div className="h-full overflow-y-auto">
             {renderActiveTab()}
           </div>
