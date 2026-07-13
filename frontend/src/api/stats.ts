@@ -654,22 +654,63 @@ const HISTORICAL_FIELD_STATS: FieldGameRecord[] = [
   { year: 2025, date: '27-Sep', isoDate: '2025-09-27', played: 'yes', location: null, waIn: null, waPlus1: null, waPlus2: null, waMaybe: null, waOut: null, groupSize: 43, eviteResponse: 8, responseRate: 18.6, showUp: 7, attendanceRate: 16.28, trackedPlayers: null, turnoutVsRsvp: null, notes: null },
 ];
 
-// Field availability history has two sources: HISTORICAL_FIELD_STATS is the frozen
-// spreadsheet-era record (2018–2025); the backend serves the live WhatsApp-era data
-// (2026 onward). Merge them — historical for pre-2026, backend for 2026+ — so the full
-// timeline shows regardless of the backend's partial older rows. If the backend is
-// unreachable, fall back to the historical record alone.
+const GROUP_SIZE = 28;
+
+// Real field data for Oct 2025 - Jan 2026, recorded from WhatsApp RSVPs and hardcoded
+// here before the live backend existed. Part of the frozen pre-live record.
+function wa(waIn: number, waPlus1: number, waPlus2: number, waMaybe: number, waOut: number, year: number, month: number, day: number, location: 'stadium' | 'grass' | 'turf'): FieldGameRecord {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const showUp = waIn + waPlus1 * 2 + waPlus2 * 3;
+  const eviteResponse = waIn + waPlus1 + waPlus2 + waMaybe + waOut;
+  const isoDate = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  return {
+    year, date: `${day}-${MONTHS[month-1]}`, isoDate, played: 'yes', location,
+    waIn, waPlus1, waPlus2, waMaybe, waOut, groupSize: GROUP_SIZE,
+    eviteResponse,
+    responseRate: parseFloat((eviteResponse / GROUP_SIZE * 100).toFixed(2)),
+    showUp,
+    attendanceRate: parseFloat((showUp / GROUP_SIZE * 100).toFixed(2)),
+    trackedPlayers: null, turnoutVsRsvp: null, notes: null,
+  };
+}
+
+const RECENT_FIELD_STATS: FieldGameRecord[] = [
+  wa(10, 3, 0,  3,  7,  2025, 10,  4, 'stadium'),
+  wa(15, 2, 0,  4,  8,  2025, 10, 11, 'stadium'),
+  wa(11, 2, 0,  1, 10,  2025, 10, 18, 'grass'),
+  wa(10, 1, 0,  2, 15,  2025, 10, 25, 'stadium'),
+  wa(11, 0, 0,  5, 10,  2025, 11,  1, 'stadium'),
+  wa( 7, 1, 0,  2, 14,  2025, 11,  8, 'stadium'),
+  wa( 9, 1, 0,  5, 12,  2025, 11, 15, 'grass'),
+  wa( 5, 0, 0,  2, 19,  2025, 11, 22, 'stadium'),
+  wa(11, 2, 1,  1, 10,  2025, 11, 29, 'stadium'),
+  wa(12, 2, 0,  4,  9,  2025, 12,  6, 'stadium'),
+  wa(17, 3, 1,  5,  5,  2025, 12, 13, 'stadium'),
+  wa(14, 1, 0,  3,  8,  2025, 12, 20, 'stadium'),
+  wa(11, 0, 1,  1, 11,  2025, 12, 27, 'stadium'),
+  wa(12, 0, 2,  5,  9,  2026,  1,  3, 'stadium'),
+  wa(15, 1, 0,  2,  6,  2026,  1, 10, 'stadium'),
+  wa(23, 1, 0,  1,  2,  2026,  1, 17, 'stadium'),
+];
+
+// Field history has two sources: the frozen hardcoded record (HISTORICAL_FIELD_STATS
+// 2018-Sept 2025 + RECENT_FIELD_STATS Oct 2025-Jan 2026) and the live backend (2026 on).
+// Merge by date: keep every hardcoded row, and let live backend rows (2026+) win on any
+// overlapping week. Falls back to the hardcoded record if the backend is unreachable.
 export async function fetchFieldStats(): Promise<FieldGameRecord[]> {
-  const historical = HISTORICAL_FIELD_STATS.filter(r => r.year < 2026);
+  const hardcoded = [...HISTORICAL_FIELD_STATS, ...RECENT_FIELD_STATS];
   try {
     const response = await fetch(`${API_BASE_URL}/stats/field-stats`, {
       credentials: 'include',
     });
     if (!response.ok) throw new Error('not ok');
     const backend: FieldGameRecord[] = await response.json();
-    return [...historical, ...backend.filter(r => r.year >= 2026)];
+    const byDate = new Map<string, FieldGameRecord>();
+    for (const r of hardcoded) byDate.set(r.isoDate, r);
+    for (const r of backend) if (r.year >= 2026) byDate.set(r.isoDate, r);
+    return Array.from(byDate.values()).sort((a, b) => a.isoDate.localeCompare(b.isoDate));
   } catch {
-    return historical;
+    return hardcoded;
   }
 }
 
