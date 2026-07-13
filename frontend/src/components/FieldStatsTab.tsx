@@ -189,7 +189,7 @@ export default function FieldStatsTab() {
       <div className="grid grid-cols-3 gap-2 mb-3">
         {[
           { label: 'Awty',      count: awtyCount, color: 'text-emerald-400' },
-          { label: 'Alternate', count: altCount,  color: 'text-gold'        },
+          { label: 'Alternate', count: altCount,  color: 'text-blue-400'    },
           { label: 'Cancelled', count: cancelled, color: 'text-red-400'     },
         ].map(({ label, count, color }) => (
           <div key={label} className="bg-surface rounded-lg p-3 border border-border text-center">
@@ -231,10 +231,27 @@ export default function FieldStatsTab() {
         )}
       </div>
 
-      {/* Response vs Show-Up graph */}
-      {n > 1 && (
+      {/* Response vs Show-Up: overall averages + by-year graph in one card */}
+      {(rateStats.avgResponse > 0 || rateStats.avgAttendance > 0) && (
         <div className="bg-surface rounded-lg p-3 border border-border mb-3">
-          <p className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2">Avg Response vs Show-Up by Year</p>
+          <p className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2">Response vs Show-Up</p>
+          <div className="flex gap-6 flex-wrap mb-3">
+            <div>
+              <p className="text-xl font-bold text-gold">{rateStats.avgResponse.toFixed(1)}%</p>
+              <p className="text-[10px] text-text-tertiary">Response</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-emerald-400">{rateStats.avgAttendance.toFixed(1)}%</p>
+              <p className="text-[10px] text-text-tertiary">Show-Up Est.</p>
+            </div>
+            <div>
+              <p className={`text-xl font-bold ${rateStats.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {rateStats.diff >= 0 ? '+' : ''}{rateStats.diff.toFixed(1)}%
+              </p>
+              <p className="text-[10px] text-text-tertiary">Difference</p>
+            </div>
+          </div>
+          {n > 1 && (<>
           <div className="flex gap-4 mb-1.5">
             <span className="text-[10px] text-gold flex items-center gap-1.5">
               <span className="inline-block w-5 h-px bg-gold" />Resp%
@@ -266,6 +283,7 @@ export default function FieldStatsTab() {
               </g>
             ))}
           </svg>
+          </>)}
         </div>
       )}
 
@@ -295,27 +313,6 @@ export default function FieldStatsTab() {
             ))}
           </tbody>
         </table>
-      </div>
-
-      {/* Avg response vs show-up numbers */}
-      <div className="bg-surface rounded-lg p-3 border border-border mb-3">
-        <p className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2">Avg Response vs Show-Up</p>
-        <div className="flex gap-6 flex-wrap">
-          <div>
-            <p className="text-xl font-bold text-gold">{rateStats.avgResponse.toFixed(1)}%</p>
-            <p className="text-[10px] text-text-tertiary">Response</p>
-          </div>
-          <div>
-            <p className="text-xl font-bold text-emerald-400">{rateStats.avgAttendance.toFixed(1)}%</p>
-            <p className="text-[10px] text-text-tertiary">Show-Up Est.</p>
-          </div>
-          <div>
-            <p className={`text-xl font-bold ${rateStats.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {rateStats.diff >= 0 ? '+' : ''}{rateStats.diff.toFixed(1)}%
-            </p>
-            <p className="text-[10px] text-text-tertiary">Difference</p>
-          </div>
-        </div>
       </div>
 
       {/* WhatsApp RSVP averages (only when WA data in filtered set) */}
