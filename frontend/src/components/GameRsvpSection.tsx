@@ -37,7 +37,7 @@ const STATUS_TEXT: Record<RsvpStatus, string> = {
   no: 'text-red-400',
 };
 
-const GUEST_MAX = 2;
+const GUEST_MAX = 5;
 
 // Hash playerId → hue 0-360 so player avatars without a picture stay
 // recognisable across renders.

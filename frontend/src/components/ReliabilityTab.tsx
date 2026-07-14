@@ -40,6 +40,13 @@ export default function ReliabilityTab() {
     [players]
   );
 
+  const guestBoard = useMemo(
+    () => players.filter(p => p.guestsBrought > 0).sort((a, b) => b.guestsBrought - a.guestsBrought),
+    [players]
+  );
+  const totalGuests = useMemo(() => players.reduce((s, p) => s + p.guestsBrought, 0), [players]);
+  const maxGuests = guestBoard[0]?.guestsBrought ?? 0;
+
   const reliabilityRows = useMemo(() => {
     const filtered = qualifiedOnly ? players.filter(p => p.committed >= MIN_GAMES) : players;
     const sorted = [...filtered];
@@ -99,6 +106,33 @@ export default function ReliabilityTab() {
           </div>
         )}
       </div>
+
+      {/* ── Guests / Invites ── */}
+      {guestBoard.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-text-primary mb-0.5">Guests / Invites</h3>
+          <p className="text-[11px] text-text-tertiary mb-3">
+            <span className="text-gold font-semibold">{totalGuests}</span> guest head{totalGuests === 1 ? '' : 's'} invited.
+            Who brings extra people, and how often.
+          </p>
+          <div className="space-y-1">
+            {guestBoard.map(p => (
+              <div key={p.id} className="flex items-center gap-2">
+                <span className="text-[12px] text-text-primary truncate w-32 shrink-0">{p.name}</span>
+                <div className="flex-1 bg-surface-hover rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gold/80"
+                    style={{ width: `${maxGuests ? (p.guestsBrought / maxGuests) * 100 : 0}%` }}
+                  />
+                </div>
+                <span className="text-[11px] text-text-secondary w-24 text-right shrink-0 tabular-nums">
+                  {p.guestsBrought} · {p.gamesWithGuests} game{p.gamesWithGuests === 1 ? '' : 's'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Reliability (fills as in-app RSVPs accrue) ── */}
       <div>
