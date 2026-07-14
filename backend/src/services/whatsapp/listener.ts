@@ -24,7 +24,7 @@ import type { WASocket } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import { usePostgresAuthState } from './authState';
 import prisma from '../../prisma';
-import { capturePoll, ingestVoteUpdates, isPollCreation, noteContact } from './polls';
+import { capturePoll, handlePollUpdateMessage, isPollCreation, noteContact } from './polls';
 
 let sock: WASocket | null = null;
 let latestQr: string | null = null;
@@ -70,8 +70,10 @@ export async function startWhatsappListener(): Promise<void> {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Capture poll-creation messages (and note who's who for later attribution).
+    // Poll creations AND votes both arrive on messages.upsert. Baileys 7 no
+    // longer decrypts poll votes, so we handle pollUpdateMessage ourselves.
     sock.ev.on('messages.upsert', async ({ messages }) => {
+      const meId = sock?.user?.id;
       for (const msg of messages) {
         try {
           if (msg.pushName && msg.key?.participant) {
@@ -79,24 +81,11 @@ export async function startWhatsappListener(): Promise<void> {
           }
           if (isPollCreation(msg.message)) {
             await capturePoll(msg);
+          } else if ((msg.message as any)?.pollUpdateMessage) {
+            await handlePollUpdateMessage(msg, meId);
           }
         } catch (err) {
           console.error('[whatsapp] messages.upsert handler error:', err);
-        }
-      }
-    });
-
-    // Decode poll votes as they arrive.
-    sock.ev.on('messages.update', async (updates) => {
-      const meId = sock?.user?.id;
-      for (const { key, update } of updates) {
-        try {
-          const pollUpdates = (update as any)?.pollUpdates;
-          if (key?.id && pollUpdates?.length) {
-            await ingestVoteUpdates(key.id, pollUpdates, meId);
-          }
-        } catch (err) {
-          console.error('[whatsapp] messages.update handler error:', err);
         }
       }
     });

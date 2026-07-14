@@ -15,7 +15,13 @@
  *
  * See docs/whatsapp-poll-listener-spec.md.
  */
-import { getAggregateVotesInPollMessage, BufferJSON } from '@whiskeysockets/baileys';
+import {
+  getAggregateVotesInPollMessage,
+  decryptPollVote,
+  jidNormalizedUser,
+  getKeyAuthor,
+  BufferJSON,
+} from '@whiskeysockets/baileys';
 import prisma from '../../prisma';
 import { parsePollOption } from './options';
 import { findGameForPollTitle } from './gameMatch';
@@ -97,8 +103,69 @@ async function upsertContact(phone: string, pushName?: string | null): Promise<v
 }
 
 /**
- * Given raw pollUpdates for a poll message, accumulate them, re-decode the full
- * aggregate, persist it, and sync to RSVPs. `meId` is the linked account's JID.
+ * Handle an encrypted poll vote (arrives on messages.upsert as a
+ * pollUpdateMessage in Baileys 7 — the lib no longer decrypts polls itself).
+ * Decrypts it using the stored poll's messageSecret, then feeds the decrypted
+ * vote into ingestVoteUpdates. Follows Baileys' own (removed) blueprint.
+ *
+ * IMPORTANT: only works when the poll was created by a DIFFERENT account than
+ * the linked listener — WhatsApp only ships the messageSecret to the creator's
+ * own devices, so a poll the linked account created on its phone can't be
+ * decrypted here (messageSecret will be absent).
+ */
+export async function handlePollUpdateMessage(msg: any, meId: string | undefined): Promise<void> {
+  const pum = msg.message?.pollUpdateMessage;
+  const creationKey = pum?.pollCreationMessageKey;
+  if (!pum || !creationKey?.id) return;
+
+  const poll = await prisma.whatsappPoll.findUnique({ where: { pollMessageId: creationKey.id } });
+  if (!poll) {
+    console.warn(`[whatsapp] Vote for uncaptured poll ${creationKey.id} — ignored.`);
+    return;
+  }
+
+  const stored = dec(poll.pollMessage);
+  const pollEncKey = stored?.message?.messageContextInfo?.messageSecret;
+  if (!pollEncKey) {
+    console.warn(
+      `[whatsapp] Poll ${creationKey.id} has no messageSecret — can't decrypt votes. ` +
+        `This happens when the poll was created by the linked account itself; ` +
+        `it must be created by another member.`
+    );
+    return;
+  }
+
+  const meIdNorm = meId ? jidNormalizedUser(meId) : '';
+  const pollCreatorJid = getKeyAuthor(creationKey, meIdNorm);
+  const voterJid = getKeyAuthor(msg.key, meIdNorm);
+
+  let voteMsg;
+  try {
+    voteMsg = decryptPollVote(pum.vote, {
+      pollEncKey,
+      pollCreatorJid,
+      pollMsgId: creationKey.id,
+      voterJid,
+    });
+  } catch (err) {
+    console.error(`[whatsapp] Failed to decrypt poll vote for ${creationKey.id}:`, err);
+    return;
+  }
+
+  const pollUpdate = {
+    pollUpdateMessageKey: msg.key,
+    vote: voteMsg,
+    senderTimestampMs: Number(pum.senderTimestampMs) || 0,
+  };
+  console.log(
+    `[whatsapp] Decrypted vote from ${voterJid} on poll ${creationKey.id} (${voteMsg?.selectedOptions?.length ?? 0} option(s))`
+  );
+  await ingestVoteUpdates(creationKey.id, [pollUpdate], meId);
+}
+
+/**
+ * Given decrypted pollUpdates for a poll message, accumulate them, re-decode the
+ * full aggregate, persist it, and sync to RSVPs. `meId` is the linked account's JID.
  */
 export async function ingestVoteUpdates(
   pollMessageId: string,
@@ -148,11 +215,11 @@ export async function ingestVoteUpdates(
 }
 
 function dedupeUpdates(updates: any[]): any[] {
+  // Each vote message has a unique key id; keep them all and let
+  // getAggregateVotesInPollMessage resolve latest-per-voter by timestamp.
   const byKey = new Map<string, any>();
   for (const u of updates) {
-    const voter = u?.pollUpdateMessageKey?.participant || u?.pollUpdateMessageKey?.remoteJid || '';
-    const ts = String(u?.senderTimestampMs ?? u?.serverTimestampMs ?? '');
-    const k = `${voter}:${ts}`;
+    const k = u?.pollUpdateMessageKey?.id || JSON.stringify(u?.pollUpdateMessageKey ?? {});
     byKey.set(k, u);
   }
   return [...byKey.values()];
