@@ -325,6 +325,8 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
   const qualifiedStats = useMemo(() => sortedStats.filter(s => s.gamesPlayed >= MIN_QUALIFIED_GAMES), [sortedStats]);
   const unqualifiedStats = useMemo(() => sortedStats.filter(s => s.gamesPlayed < MIN_QUALIFIED_GAMES), [sortedStats]);
   const [showUnqualified, setShowUnqualified] = useState(true);
+  const [showQualified, setShowQualified] = useState(true);
+  const TOP_N = 20;
 
   // Measure header height for padding-top calculation (must be after sortedStats is defined)
   useLayoutEffect(() => {
@@ -465,7 +467,19 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                 </tr>
               ) : (
                 <>
-                  {qualifiedStats.map((stats, index) => {
+                  {qualifiedStats.length > 0 && (
+                    <tr>
+                      <td colSpan={columns.length} className="py-2 px-2 bg-base">
+                        <button
+                          onClick={() => setShowQualified(prev => !prev)}
+                          className="text-[11px] font-semibold text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                          {showQualified ? '▾' : '▸'} Qualified ({MIN_QUALIFIED_GAMES}+ games){qualifiedStats.length > TOP_N ? ` · top ${TOP_N} of ${qualifiedStats.length}` : ` · ${qualifiedStats.length}`}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {showQualified && qualifiedStats.slice(0, TOP_N).map((stats, index) => {
                     const isCurrentUser = stats.player.id === currentPlayerId;
                     return (
                       <tr key={stats.player.id} className={`border-b border-border ${isCurrentUser ? 'bg-gold/10' : 'hover:bg-surface-hover even:bg-surface-hover/50'}`}>
@@ -521,17 +535,17 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                   })}
                   {unqualifiedStats.length > 0 && (
                     <tr>
-                      <td colSpan={columns.length} className="py-2 px-2">
+                      <td colSpan={columns.length} className="py-2 px-2 bg-base">
                         <button
                           onClick={() => setShowUnqualified(prev => !prev)}
-                          className="text-[11px] text-text-tertiary hover:text-text-secondary transition-colors"
+                          className="text-[11px] font-semibold text-text-tertiary hover:text-text-secondary transition-colors"
                         >
-                          {showUnqualified ? 'Hide' : 'Show'} unqualified ({unqualifiedStats.length} player{unqualifiedStats.length !== 1 ? 's' : ''} with &lt;{MIN_QUALIFIED_GAMES} games)
+                          {showUnqualified ? '▾' : '▸'} Unqualified (&lt;{MIN_QUALIFIED_GAMES} games){unqualifiedStats.length > TOP_N ? ` · top ${TOP_N} of ${unqualifiedStats.length}` : ` · ${unqualifiedStats.length}`}
                         </button>
                       </td>
                     </tr>
                   )}
-                  {showUnqualified && unqualifiedStats.map((stats, index) => {
+                  {showUnqualified && unqualifiedStats.slice(0, TOP_N).map((stats, index) => {
                     const isCurrentUser = stats.player.id === currentPlayerId;
                     return (
                       <tr key={stats.player.id} className={`border-b border-border ${isCurrentUser ? 'bg-gold/10' : 'hover:bg-surface-hover even:bg-surface-hover/50'} opacity-50`}>
