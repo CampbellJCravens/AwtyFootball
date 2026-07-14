@@ -15,6 +15,7 @@ interface PlayerStats {
   goals: number;
   assists: number;
   cleanSheets: number; // games where the opponent scored 0
+  sportsmanship: number; // gold stars given during games
   score: number;
   form: ('W' | 'L' | 'T')[]; // Last 5 game results (oldest to newest, left to right)
   formWins: number; // Wins minus losses in the form array (for sorting)
@@ -27,7 +28,7 @@ interface OverallStatsTableProps {
   currentPlayerId?: string | null;
 }
 
-type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'cleanSheets' | 'formWins';
+type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'cleanSheets' | 'sportsmanship' | 'formWins';
 type SortDirection = 'asc' | 'desc';
 
 
@@ -103,6 +104,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         goals: 0,
         assists: 0,
         cleanSheets: 0,
+        sportsmanship: 0,
         score: 0,
         form: [],
         formWins: 0,
@@ -157,6 +159,8 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         if (opponentGoals === 0) {
           stats.cleanSheets++;
         }
+
+        stats.sportsmanship += (game.sportsmanship?.[playerId] || 0);
       });
 
       // Process goals and assists
@@ -291,6 +295,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         case 'goals': return perGame ? pg(stats.goals, gp) : stats.goals;
         case 'assists': return perGame ? pg(stats.assists, gp) : stats.assists;
         case 'cleanSheets': return perGame ? pg(stats.cleanSheets, gp) : stats.cleanSheets;
+        case 'sportsmanship': return perGame ? pg(stats.sportsmanship, gp) : stats.sportsmanship;
         case 'formWins': return stats.formWins;
       }
     };
@@ -305,6 +310,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
       goals: ['assists', 'points'],
       assists: ['goals', 'points'],
       cleanSheets: ['wins', 'points'],
+      sportsmanship: ['points', 'goalInvolvements'],
       formWins: ['points', 'goalInvolvements'],
     };
 
@@ -382,6 +388,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
     { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'goals' },
     { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'assists' },
     { key: 'cleanSheets', label: 'CS', tooltip: 'Clean Sheets', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'cleanSheets' },
+    { key: 'sportsmanship', label: 'SP', tooltip: 'Sportsmanship (gold stars)', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'sportsmanship' },
     { key: 'form', label: 'Form', tooltip: 'Form', width: 'w-28', widthPx: 112, sortable: true, sortKey: 'formWins' },
   ];
 
@@ -515,6 +522,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
+                        <td className="py-1.5 px-1 text-gold">{perGame ? pg(stats.sportsmanship, stats.gamesPlayed).toFixed(2) : stats.sportsmanship}</td>
                         <td className="py-1.5 px-1">
                           <div className="flex items-center gap-0.5">
                             {[0, 1, 2, 3, 4].map((i) => {
@@ -581,6 +589,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
+                        <td className="py-1.5 px-1 text-gold">{perGame ? pg(stats.sportsmanship, stats.gamesPlayed).toFixed(2) : stats.sportsmanship}</td>
                         <td className="py-1.5 px-1">
                           <div className="flex items-center gap-0.5">
                             {[0, 1, 2, 3, 4].map((i) => {
