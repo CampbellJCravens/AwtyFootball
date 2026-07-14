@@ -21,7 +21,10 @@ export default function TopHeader({ userPicture, userName, onMenuClick, onAvatar
         </button>
 
         {/* Branding */}
-        <h1 className="text-xl font-bold text-gold italic">Awty Football</h1>
+        <div className="flex items-center gap-2">
+          <img src="/afc-logo.png" alt="Awty Soccer Club" className="h-9 w-auto rounded-md" />
+          <h1 className="text-lg font-bold text-gold italic">Awty Football</h1>
+        </div>
 
         {/* User Avatar */}
         <button
