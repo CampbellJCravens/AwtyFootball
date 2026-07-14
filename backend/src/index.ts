@@ -41,6 +41,7 @@ import rsvpsRouter from './routes/rsvps';
 import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
+import whatsappRouter from './routes/whatsapp';
 import { startWhatsappListener } from './services/whatsapp/listener';
 
 const PgSession = pgSession(session);
@@ -101,6 +102,7 @@ app.use('/api/games/:gameId/rsvps', rsvpsRouter);
 app.use('/api/games', gamesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/whatsapp', whatsappRouter);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

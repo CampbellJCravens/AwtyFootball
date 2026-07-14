@@ -18,10 +18,13 @@
 import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
+  BufferJSON,
 } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import { usePostgresAuthState } from './authState';
+import prisma from '../../prisma';
+import { capturePoll, ingestVoteUpdates, isPollCreation, noteContact } from './polls';
 
 let sock: WASocket | null = null;
 let latestQr: string | null = null;
@@ -53,9 +56,50 @@ export async function startWhatsappListener(): Promise<void> {
       // Read-only posture: don't announce ourselves as the active device.
       markOnlineOnConnect: false,
       browser: ['AwtyFootball', 'Chrome', '1.0.0'],
+      // Baileys uses this to resolve the poll-creation message a vote refers to.
+      getMessage: async (key) => {
+        if (!key.id) return undefined;
+        const poll = await prisma.whatsappPoll.findUnique({
+          where: { pollMessageId: key.id },
+        });
+        if (!poll) return undefined;
+        const stored = JSON.parse(poll.pollMessage, BufferJSON.reviver);
+        return stored.message;
+      },
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // Capture poll-creation messages (and note who's who for later attribution).
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      for (const msg of messages) {
+        try {
+          if (msg.pushName && msg.key?.participant) {
+            await noteContact(msg.key.participant, msg.pushName);
+          }
+          if (isPollCreation(msg.message)) {
+            await capturePoll(msg);
+          }
+        } catch (err) {
+          console.error('[whatsapp] messages.upsert handler error:', err);
+        }
+      }
+    });
+
+    // Decode poll votes as they arrive.
+    sock.ev.on('messages.update', async (updates) => {
+      const meId = sock?.user?.id;
+      for (const { key, update } of updates) {
+        try {
+          const pollUpdates = (update as any)?.pollUpdates;
+          if (key?.id && pollUpdates?.length) {
+            await ingestVoteUpdates(key.id, pollUpdates, meId);
+          }
+        } catch (err) {
+          console.error('[whatsapp] messages.update handler error:', err);
+        }
+      }
+    });
 
     sock.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;

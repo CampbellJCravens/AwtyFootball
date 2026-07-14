@@ -89,12 +89,14 @@ RSVPs are written with a sentinel so WhatsApp-sourced votes are distinguishable 
 
 ## Build plan (increments)
 
-1. **Foundation** (this PR): Prisma models above, `WHATSAPP_LISTENER_ENABLED` flag, Baileys dependency, Postgres auth-state adapter, flag-gated read-only connection with QR onboarding. Default off — no behavior change.
-2. **Vote decoding**: on `messages.update` poll events, aggregate votes (`getAggregateVotesInPollMessage`), decode option → `{status, guestCount}`.
-3. **Attribution**: phone → `Player` lookup; write `gameRsvp.upsert`; unmatched → `WhatsappUnmatchedVote`.
-4. **Poll → game linking**: capture poll-create messages, auto-match by date, admin manual-link endpoint.
-5. **Admin UI**: link a poll to a game; resolve unmatched votes (assign phone → player, backfills `Player.phone`).
-6. **Resilience + live test**: reconnect/backoff, logout handling, QR re-link flow; dry-run against the real group.
+1. ✅ **Foundation**: Prisma models, `WHATSAPP_LISTENER_ENABLED` flag, Baileys dependency, Postgres auth-state adapter, flag-gated read-only connection with QR onboarding. Default off — no behavior change.
+2. ✅ **Vote decoding**: `messages.update` poll events accumulate raw updates, re-aggregate (`getAggregateVotesInPollMessage`), decode option → `{status, guestCount}` (`options.ts`).
+3. ✅ **Attribution**: phone → `Player` lookup; `gameRsvp.upsert` with `setByUserId = "whatsapp"` (app/admin votes take precedence); unknown numbers surfaced as unmatched.
+4. ✅ **Poll → game linking**: capture poll-create messages, auto-match by title date (`gameMatch.ts`), admin manual-link endpoint.
+5. ✅ **Admin UI**: `WhatsappSyncModal` (menu → "WhatsApp Sync") — QR linking, link polls to games, resolve unmatched numbers (backfills `Player.phone`). API at `/api/whatsapp/*`.
+6. ⏳ **Resilience + live test**: reconnect/backoff and logout handling are in; the QR re-link flow and a dry-run against the real group are the remaining manual step.
+
+**Verified so far:** backend + frontend typecheck and build; backend boots with Baileys loaded; option/date parsing unit-tested. **Not yet verified (needs a live WhatsApp link):** the exact shape of Baileys 7 poll-vote events end-to-end. Defensive logging is in place to surface the real event shapes on the first live test.
 
 ## Operational notes
 

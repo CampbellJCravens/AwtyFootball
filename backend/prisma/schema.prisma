@@ -35,7 +35,7 @@ model Game {
   field           String?
 
   rsvps           GameRsvp[]
-  whatsappPolls   WhatsappPollLink[]
+  whatsappPolls   WhatsappPoll[]
 }
 
 // Per-game RSVP from a player. Identity is the playerId (claimed via
@@ -148,29 +148,31 @@ model WhatsappAuthState {
   updatedAt DateTime @updatedAt
 }
 
-// Maps a WhatsApp poll message to the game it collects RSVPs for.
-model WhatsappPollLink {
+// A captured WhatsApp poll. Stores the original creation message (needed to
+// decrypt votes, even after a restart) and the latest decoded aggregate so
+// syncing to RSVPs is idempotent. gameId is null until matched/linked.
+model WhatsappPoll {
   id            String   @id @default(uuid())
   pollMessageId String   @unique // WA message id of the poll
   remoteJid     String            // group chat id
-  gameId        String
-  question      String            // poll title, for auditing / re-matching
+  question      String            // poll title
+  pollMessage   String            // BufferJSON-encoded { key, message } for decryption
+  pollUpdates   String?           // BufferJSON-encoded proto.IPollUpdate[] (raw encrypted votes)
+  latestVotes   String?           // JSON { "<phone>": "<optionText>" } — latest decoded aggregate
+  gameId        String?           // matched game; null until linked
   linkedBy      String?           // null = auto-matched by date, else admin userId
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  game          Game?    @relation(fields: [gameId], references: [id], onDelete: SetNull)
 
   @@index([gameId])
 }
 
-// Votes whose sender phone doesn't map to a Player yet; an admin resolves these.
-model WhatsappUnmatchedVote {
-  id            String   @id @default(uuid())
-  phone         String            // sender phone / JID user part
-  displayName   String?           // WA pushName, to help the admin identify
-  pollMessageId String
-  optionText    String            // raw chosen option
-  createdAt     DateTime @default(now())
-
-  @@index([pollMessageId])
+// Directory of WhatsApp numbers we've seen, with their display name, so an
+// admin resolving an unmatched vote knows whose number it is.
+model WhatsappContact {
+  phone     String   @id // digits only (JID user part)
+  pushName  String?
+  updatedAt DateTime @updatedAt
 }

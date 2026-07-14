@@ -16,6 +16,7 @@ import BottomNav from './components/BottomNav';
 import GameModuleCondensed from './components/GameModuleCondensed';
 import GameModuleExpanded from './components/GameModuleExpanded';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
+import WhatsappSyncModal from './components/WhatsappSyncModal';
 import Stats from './components/Stats';
 import PlayerProfile from './components/PlayerProfile';
 import PlayerLinkSetup from './components/PlayerLinkSetup';
@@ -53,6 +54,7 @@ function App() {
   const [gameToDelete, setGameToDelete] = useState<string | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<Player | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showWhatsappModal, setShowWhatsappModal] = useState(false);
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
   const [availableGames, setAvailableGames] = useState<string[]>([]);
   const [selectedGameForImport, setSelectedGameForImport] = useState<string>('');
@@ -647,6 +649,12 @@ function App() {
                 >
                   Import from CSV
                 </button>
+                <button
+                  onClick={() => { setShowWhatsappModal(true); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-surface-hover rounded-lg transition-colors"
+                >
+                  WhatsApp Sync
+                </button>
               </>
             )}
             {user ? (
@@ -795,6 +803,15 @@ function App() {
               setNewAchievements([]);
             }}
             onDismiss={() => setNewAchievements([])}
+          />
+        )}
+
+        {/* WhatsApp Sync Modal (admin) */}
+        {showWhatsappModal && isAdmin && (
+          <WhatsappSyncModal
+            games={games}
+            players={players}
+            onClose={() => setShowWhatsappModal(false)}
           />
         )}
 
