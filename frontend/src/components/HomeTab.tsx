@@ -230,6 +230,11 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-lg mx-auto px-4 py-4 pb-8">
+        {/* Club crest */}
+        <div className="flex justify-center mb-4">
+          <img src="/afc-logo.png" alt="Awty Soccer Club" className="w-28 h-auto rounded-xl" />
+        </div>
+
         {/* Month/Year selector */}
         <div className="flex items-center justify-between mb-6">
           <button
