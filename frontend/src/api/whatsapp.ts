@@ -82,19 +82,24 @@ export async function getWhatsappGroups(): Promise<WhatsappGroup[]> {
   return res.json();
 }
 
-export async function getWhatsappScope(): Promise<string | null> {
-  const res = await fetch(`${API_BASE_URL}/whatsapp/scope`, opts());
-  if (!res.ok) throw new Error('Failed to fetch scope');
-  const data = await res.json();
-  return data.groupJid ?? null;
+export interface WhatsappSettings {
+  groupJid: string | null;
+  titleFilter: string | null;
 }
 
-export async function setWhatsappScope(groupJid: string | null): Promise<void> {
+export async function getWhatsappSettings(): Promise<WhatsappSettings> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/settings`, opts());
+  if (!res.ok) throw new Error('Failed to fetch settings');
+  return res.json();
+}
+
+export async function setWhatsappSettings(patch: Partial<WhatsappSettings>): Promise<WhatsappSettings> {
   const res = await fetch(
-    `${API_BASE_URL}/whatsapp/scope`,
-    opts({ method: 'POST', body: JSON.stringify({ groupJid }) })
+    `${API_BASE_URL}/whatsapp/settings`,
+    opts({ method: 'POST', body: JSON.stringify(patch) })
   );
-  if (!res.ok) throw new Error('Failed to set scope');
+  if (!res.ok) throw new Error('Failed to save settings');
+  return res.json();
 }
 
 export async function resolveUnmatched(phone: string, playerId: string): Promise<void> {

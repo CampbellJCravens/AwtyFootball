@@ -45,14 +45,22 @@ function toNames(v: unknown): string[] {
   return [];
 }
 
-// ── Scope: restrict capture to a single group chat ──────────────────────────
-// Cached so the per-message check doesn't hit the DB. Loaded at listener start
-// and updated whenever setScope runs.
+// ── Scope: restrict what the listener captures ──────────────────────────────
+// Cached so per-message checks don't hit the DB. Loaded at listener start and
+// refreshed whenever settings change. groupJid limits to one chat; titleFilter
+// limits to polls whose title contains the given text (e.g. "Soccer Saturday").
 let scopeGroupJid: string | null = null;
+let scopeTitleFilter: string | null = null;
+
+export interface WhatsappSettingsDTO {
+  groupJid: string | null;
+  titleFilter: string | null;
+}
 
 export async function refreshScope(): Promise<void> {
   const s = await prisma.whatsappSettings.findUnique({ where: { id: 'singleton' } });
   scopeGroupJid = s?.groupJid ?? null;
+  scopeTitleFilter = s?.titleFilter ?? null;
 }
 
 /** True if a message from this chat should be processed. Unscoped (no group set) = all. */
@@ -61,19 +69,33 @@ export function isInScope(remoteJid?: string | null): boolean {
   return remoteJid === scopeGroupJid;
 }
 
-export async function getScope(): Promise<string | null> {
-  await refreshScope();
-  return scopeGroupJid;
+/** True if a poll title should be captured. No filter set = any title. */
+export function titleInScope(title?: string | null): boolean {
+  if (!scopeTitleFilter) return true;
+  return (title || '').toLowerCase().includes(scopeTitleFilter.toLowerCase());
 }
 
-export async function setScope(groupJid: string | null): Promise<void> {
-  const jid = groupJid && groupJid.trim() ? groupJid.trim() : null;
+export async function getWhatsappSettings(): Promise<WhatsappSettingsDTO> {
+  await refreshScope();
+  return { groupJid: scopeGroupJid, titleFilter: scopeTitleFilter };
+}
+
+export async function setWhatsappSettings(patch: {
+  groupJid?: string | null;
+  titleFilter?: string | null;
+}): Promise<WhatsappSettingsDTO> {
+  const clean = (v: string | null | undefined) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const data: { groupJid?: string | null; titleFilter?: string | null } = {};
+  if (patch.groupJid !== undefined) data.groupJid = clean(patch.groupJid);
+  if (patch.titleFilter !== undefined) data.titleFilter = clean(patch.titleFilter);
+
   await prisma.whatsappSettings.upsert({
     where: { id: 'singleton' },
-    create: { id: 'singleton', groupJid: jid },
-    update: { groupJid: jid },
+    create: { id: 'singleton', ...data },
+    update: data,
   });
-  scopeGroupJid = jid;
+  await refreshScope();
+  return { groupJid: scopeGroupJid, titleFilter: scopeTitleFilter };
 }
 
 /** Pull the poll-creation content out of a message, across proto versions. */
@@ -104,6 +126,11 @@ export async function capturePoll(raw: any): Promise<void> {
   if (!pollMessageId || !remoteJid) return;
 
   const question: string = creation.name || '(untitled poll)';
+
+  if (!titleInScope(question)) {
+    console.log(`[whatsapp] Poll "${question}" skipped — title doesn't match filter.`);
+    return;
+  }
 
   const existing = await prisma.whatsappPoll.findUnique({ where: { pollMessageId } });
   if (existing) return; // already captured

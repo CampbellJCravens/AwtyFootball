@@ -16,8 +16,8 @@ import {
   linkPollToGame,
   getUnmatched,
   resolveContact,
-  getScope,
-  setScope,
+  getWhatsappSettings,
+  setWhatsappSettings,
 } from '../services/whatsapp/polls';
 
 const router = Router();
@@ -78,21 +78,25 @@ router.get('/groups', async (_req: AuthenticatedRequest, res: Response, next: Ne
   }
 });
 
-// Current capture scope (which group, or null = all chats).
-router.get('/scope', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// Capture settings: which group (null = all chats) and title filter (null = any).
+router.get('/settings', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    res.json({ groupJid: await getScope() });
+    res.json(await getWhatsappSettings());
   } catch (err) {
     next(err);
   }
 });
 
-// Set the capture scope. Pass { groupJid: null } to unscope.
-router.post('/scope', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// Update capture settings. Only provided fields change; pass null to clear one.
+router.post('/settings', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { groupJid } = req.body ?? {};
-    await setScope(typeof groupJid === 'string' ? groupJid : null);
-    res.json({ ok: true, groupJid: await getScope() });
+    const { groupJid, titleFilter } = req.body ?? {};
+    res.json(
+      await setWhatsappSettings({
+        groupJid: groupJid === undefined ? undefined : typeof groupJid === 'string' ? groupJid : null,
+        titleFilter: titleFilter === undefined ? undefined : typeof titleFilter === 'string' ? titleFilter : null,
+      })
+    );
   } catch (err) {
     next(err);
   }

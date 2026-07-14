@@ -9,8 +9,8 @@ import {
   getUnmatchedVotes,
   resolveUnmatched,
   getWhatsappGroups,
-  getWhatsappScope,
-  setWhatsappScope,
+  getWhatsappSettings,
+  setWhatsappSettings,
   type WhatsappStatus,
   type WhatsappPoll,
   type UnmatchedVote,
@@ -35,6 +35,7 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
   const [unmatched, setUnmatched] = useState<UnmatchedVote[]>([]);
   const [groups, setGroups] = useState<WhatsappGroup[]>([]);
   const [scopeJid, setScopeJid] = useState<string | null>(null);
+  const [titleFilter, setTitleFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -44,18 +45,19 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
     try {
       const s = await getWhatsappStatus();
       setStatus(s);
-      const [p, u, q, g, sc] = await Promise.all([
+      const [p, u, q, g, settings] = await Promise.all([
         getWhatsappPolls(),
         getUnmatchedVotes(),
         s.linked ? Promise.resolve(null) : getWhatsappQr(),
         s.linked ? getWhatsappGroups().catch(() => []) : Promise.resolve([]),
-        getWhatsappScope().catch(() => null),
+        getWhatsappSettings().catch(() => ({ groupJid: null, titleFilter: null })),
       ]);
       setPolls(p);
       setUnmatched(u);
       setQr(q);
       setGroups(g);
-      setScopeJid(sc);
+      setScopeJid(settings.groupJid);
+      setTitleFilter(settings.titleFilter ?? '');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
@@ -66,10 +68,22 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
   const handleScopeChange = async (jid: string) => {
     setBusy('scope');
     try {
-      await setWhatsappScope(jid || null);
+      await setWhatsappSettings({ groupJid: jid || null });
       setScopeJid(jid || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to set scope');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleTitleFilterSave = async () => {
+    setBusy('title');
+    try {
+      const saved = await setWhatsappSettings({ titleFilter: titleFilter.trim() || null });
+      setTitleFilter(saved.titleFilter ?? '');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save title filter');
     } finally {
       setBusy(null);
     }
@@ -189,6 +203,27 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
                   {groups.length === 0 && (
                     <p className="mt-1 text-xs text-text-tertiary">No groups loaded yet — tap Refresh once linked.</p>
                   )}
+
+                  <p className="text-sm text-text-secondary mt-3 mb-2">
+                    Only capture polls whose title contains this text (leave blank for any).
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={titleFilter}
+                      onChange={(e) => setTitleFilter(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleTitleFilterSave(); }}
+                      placeholder="e.g. Soccer Saturday"
+                      className="flex-1 min-w-0 px-3 py-2 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent"
+                    />
+                    <button
+                      onClick={handleTitleFilterSave}
+                      disabled={busy === 'title'}
+                      className="px-3 py-2 bg-surface-raised text-text-primary text-sm font-medium rounded-lg hover:bg-surface-active transition-colors"
+                    >
+                      Save
+                    </button>
+                  </div>
                 </section>
               )}
 
