@@ -6,6 +6,7 @@ export interface Player {
   name: string;
   pictureUrl: string | null;
   team: 'dark' | 'white' | null;
+  phone: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -14,12 +15,14 @@ export interface CreatePlayerData {
   name: string;
   pictureUrl?: string;
   team?: 'dark' | 'white';
+  phone?: string;
 }
 
 export interface UpdatePlayerData {
   name?: string;
   pictureUrl?: string;
   team?: 'dark' | 'white';
+  phone?: string;
 }
 
 // Fetch all players

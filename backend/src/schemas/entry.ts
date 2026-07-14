@@ -20,16 +20,22 @@ const pictureUrlSchema = z
   .optional()
   .nullable();
 
+// WhatsApp phone number for RSVP poll attribution. Free-form input (may include
+// +, spaces, dashes); normalized to digits in the route. Empty string clears it.
+const phoneSchema = z.string().max(32, 'Phone number is too long').optional().nullable();
+
 export const createPlayerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(200, 'Name must be less than 200 characters'),
   pictureUrl: pictureUrlSchema,
   team: z.enum(['dark', 'white']).optional(),
+  phone: phoneSchema,
 });
 
 export const updatePlayerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(200, 'Name must be less than 200 characters').optional(),
   pictureUrl: pictureUrlSchema,
   team: z.enum(['dark', 'white']).optional(),
+  phone: phoneSchema,
 });
 
 export type CreatePlayerInput = z.infer<typeof createPlayerSchema>;

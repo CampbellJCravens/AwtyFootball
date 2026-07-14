@@ -5,6 +5,14 @@ import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
+// Normalize a free-form phone entry to digits only (matching how WhatsApp poll
+// votes are keyed). undefined = leave unchanged; empty/blank = clear (null).
+const normalizePhone = (raw: string | null | undefined): string | null | undefined => {
+  if (raw === undefined) return undefined;
+  const digits = (raw || '').replace(/\D/g, '');
+  return digits || null;
+};
+
 // POST /api/players - Create a new player (public; new RSVPers can self-register)
 router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -16,10 +24,14 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
         name: validatedData.name,
         pictureUrl: validatedData.pictureUrl && validatedData.pictureUrl !== '' ? validatedData.pictureUrl : null,
         team: validatedData.team || null,
+        phone: normalizePhone(validatedData.phone) ?? null,
       },
     });
     res.status(201).json(player);
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'That phone number is already linked to another player' });
+    }
     console.error('Error creating player:', error);
     // Let Zod errors propagate to error middleware
     next(error);
@@ -64,19 +76,25 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
     const { id } = req.params;
     const validatedData = updatePlayerSchema.parse(req.body);
     
+    const normalizedPhone = normalizePhone(validatedData.phone);
+
     const player = await prisma.player.update({
       where: { id },
       data: {
         ...(validatedData.name && { name: validatedData.name }),
         ...(validatedData.pictureUrl !== undefined && { pictureUrl: validatedData.pictureUrl || null }),
         ...(validatedData.team !== undefined && { team: validatedData.team || null }),
+        ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
       },
     });
-    
+
     res.json(player);
   } catch (error: any) {
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Player not found' });
+    }
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'That phone number is already linked to another player' });
     }
     next(error);
   }
