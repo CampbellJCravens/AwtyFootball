@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { createPlayerSchema, updatePlayerSchema } from '../schemas/entry';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
+import { resyncPollsForPhone } from '../services/whatsapp/polls';
 
 const router = Router();
 
@@ -87,6 +88,16 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
         ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
       },
     });
+
+    // If a number was just set, retroactively attribute any past poll votes
+    // from it (best-effort — don't fail the save if the re-sync hiccups).
+    if (typeof normalizedPhone === 'string' && normalizedPhone) {
+      try {
+        await resyncPollsForPhone(normalizedPhone);
+      } catch (e) {
+        console.error('[players] resync after phone update failed:', e);
+      }
+    }
 
     res.json(player);
   } catch (error: any) {

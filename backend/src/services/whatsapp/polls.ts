@@ -452,19 +452,28 @@ export async function getUnmatched(): Promise<UnmatchedVote[]> {
   return out;
 }
 
-/** Assign a phone to a player (backfills Player.phone) and re-sync all polls. */
-export async function resolveContact(phone: string, playerId: string): Promise<void> {
-  const digits = phone.replace(/\D/g, '');
-  await prisma.player.update({ where: { id: playerId }, data: { phone: digits } });
-
+/**
+ * Re-sync every linked poll that has a vote from this phone, so newly-linked
+ * numbers get their past votes attributed. Called both when resolving an
+ * unmatched vote and when an admin sets a number on a player's profile.
+ */
+export async function resyncPollsForPhone(digits: string): Promise<void> {
+  if (!digits) return;
   const polls = await prisma.whatsappPoll.findMany({
     where: { gameId: { not: null }, latestVotes: { not: null } },
     select: { pollMessageId: true, latestVotes: true },
   });
   for (const p of polls) {
-    const votes: Record<string, string> = JSON.parse(p.latestVotes!);
+    const votes: Record<string, unknown> = JSON.parse(p.latestVotes!);
     if (votes[digits] !== undefined) await syncPollToRsvps(p.pollMessageId);
   }
+}
+
+/** Assign a phone to a player (backfills Player.phone) and re-sync all polls. */
+export async function resolveContact(phone: string, playerId: string): Promise<void> {
+  const digits = phone.replace(/\D/g, '');
+  await prisma.player.update({ where: { id: playerId }, data: { phone: digits } });
+  await resyncPollsForPhone(digits);
 }
 
 /** Link (or re-link) a captured poll to a game and sync its votes. */
