@@ -726,3 +726,37 @@ export async function fetchLegacyStats(season?: string): Promise<LegacyStatsResp
   }
   return response.json();
 }
+
+export interface ReliabilityPlayer {
+  id: string;
+  name: string;
+  pictureUrl: string | null;
+  responded: number;
+  committed: number;
+  showed: number;
+  showedWhenCommitted: number;
+  noShow: number;
+  ghost: number;
+  guestsBrought: number;
+  gamesWithGuests: number;
+  responseRate: number | null;         // fractions 0-1, or null when denominator is 0
+  showWhenCommittedRate: number | null;
+  attendanceRate: number | null;
+  guestAttachRate: number | null;
+}
+
+export interface ReliabilityResponse {
+  totalTrackedGames: number;
+  players: ReliabilityPlayer[];
+}
+
+// Admin-only. 403s for non-admins.
+export async function fetchReliability(): Promise<ReliabilityResponse> {
+  const response = await fetch(`${API_BASE_URL}/stats/reliability`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch reliability stats');
+  }
+  return response.json();
+}
