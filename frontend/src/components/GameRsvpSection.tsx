@@ -7,11 +7,13 @@ import {
   submitRsvp,
   adminSetRsvp,
   clearRsvp,
+  resetRsvps,
 } from '../api/rsvps';
 import { GameField } from '../api/games';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayerIdentity } from '../hooks/usePlayerIdentity';
 import PlayerPickerModal from './PlayerPickerModal';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import { renderRsvpImage } from '../utils/renderRsvpImage';
 
 interface GameRsvpSectionProps {
@@ -384,6 +386,7 @@ export default function GameRsvpSection({
   const [adminMode, setAdminMode] = useState(false);
   const [adminEditingPlayerId, setAdminEditingPlayerId] = useState<string | null>(null);
   const [showNoResponses, setShowNoResponses] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const [justVoted, setJustVoted] = useState<RsvpStatus | null>(null);
   const [shareState, setShareState] = useState<'idle' | 'preparing' | 'shared' | 'fallback' | 'error'>('idle');
@@ -545,6 +548,22 @@ export default function GameRsvpSection({
       setError(err instanceof Error ? err.message : 'Failed to clear RSVP');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Admin: wipe every RSVP for this game (reset the poll).
+  const handleResetPoll = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await resetRsvps(gameId);
+      setRsvps([]);
+      setGuestCount(0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset poll');
+    } finally {
+      setSubmitting(false);
+      setShowResetConfirm(false);
     }
   };
 
@@ -739,6 +758,20 @@ export default function GameRsvpSection({
         </div>
       )}
 
+      {/* Reset poll — admin only, only meaningful when there are RSVPs to clear */}
+      {isAdmin && adminMode && (
+        <button
+          onClick={() => setShowResetConfirm(true)}
+          disabled={submitting || rsvps.length === 0}
+          className="w-full px-3 py-2 rounded-xl bg-surface border border-red-500/40 text-[12px] font-semibold text-red-400 flex items-center justify-center gap-2 hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Reset poll{rsvps.length > 0 ? ` · clears ${rsvps.length}` : ''}
+        </button>
+      )}
+
       {/* Attendee groups */}
       <div className="space-y-3">
         {(['yes', 'maybe', 'no'] as RsvpStatus[]).map(s => (
@@ -850,6 +883,14 @@ export default function GameRsvpSection({
           subtitle={pendingRsvp
             ? "We need to know which player to RSVP for. We'll remember on this device."
             : "We'll remember this on this device. Sign in from your profile to sync across devices."}
+        />
+      )}
+
+      {showResetConfirm && (
+        <DeleteConfirmationModal
+          onConfirm={handleResetPoll}
+          onCancel={() => setShowResetConfirm(false)}
+          message={`Clear all ${rsvps.length} RSVP${rsvps.length === 1 ? '' : 's'} for this game? This can't be undone.`}
         />
       )}
     </div>
