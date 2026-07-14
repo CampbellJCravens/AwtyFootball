@@ -12,6 +12,7 @@ model Player {
   name       String
   pictureUrl String?
   team       String?
+  phone      String?  @unique // E.164, used to attribute WhatsApp poll votes
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -34,6 +35,7 @@ model Game {
   field           String?
 
   rsvps           GameRsvp[]
+  whatsappPolls   WhatsappPollLink[]
 }
 
 // Per-game RSVP from a player. Identity is the playerId (claimed via
@@ -132,4 +134,43 @@ model user_sessions {
   expire DateTime @db.Timestamp(6)
 
   @@index([expire], map: "IDX_session_expire")
+}
+
+// ── WhatsApp poll listener ──
+// Read-only Baileys device syncs native WhatsApp poll votes into GameRsvp.
+// See docs/whatsapp-poll-listener-spec.md. All gated by WHATSAPP_LISTENER_ENABLED.
+
+// Persists Baileys auth state (creds + signal keys) across redeploys, since
+// Render wipes the filesystem. One row per key; creds live under id "creds".
+model WhatsappAuthState {
+  id        String   @id // "creds" | "<keyType>-<keyId>"
+  value     String   // JSON, BufferJSON-encoded (may contain Buffers)
+  updatedAt DateTime @updatedAt
+}
+
+// Maps a WhatsApp poll message to the game it collects RSVPs for.
+model WhatsappPollLink {
+  id            String   @id @default(uuid())
+  pollMessageId String   @unique // WA message id of the poll
+  remoteJid     String            // group chat id
+  gameId        String
+  question      String            // poll title, for auditing / re-matching
+  linkedBy      String?           // null = auto-matched by date, else admin userId
+  createdAt     DateTime @default(now())
+
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+}
+
+// Votes whose sender phone doesn't map to a Player yet; an admin resolves these.
+model WhatsappUnmatchedVote {
+  id            String   @id @default(uuid())
+  phone         String            // sender phone / JID user part
+  displayName   String?           // WA pushName, to help the admin identify
+  pollMessageId String
+  optionText    String            // raw chosen option
+  createdAt     DateTime @default(now())
+
+  @@index([pollMessageId])
 }

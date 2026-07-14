@@ -41,6 +41,7 @@ import rsvpsRouter from './routes/rsvps';
 import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
+import { startWhatsappListener } from './services/whatsapp/listener';
 
 const PgSession = pgSession(session);
 
@@ -134,5 +135,14 @@ const PORT = env.PORT;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📡 API available at http://localhost:${PORT}/api`);
+
+  // Read-only WhatsApp poll listener. Off unless WHATSAPP_LISTENER_ENABLED=true,
+  // so this is inert in every environment until we explicitly link the device.
+  if (env.WHATSAPP_LISTENER_ENABLED) {
+    console.log('📱 WhatsApp listener enabled — starting (read-only)…');
+    startWhatsappListener().catch((err) =>
+      console.error('[whatsapp] Listener failed to start:', err)
+    );
+  }
 });
 
