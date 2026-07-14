@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { fetchReliability, ReliabilityPlayer } from '../api/stats';
+import { fetchReliability, ReliabilityPlayer, ReliabilitySummary } from '../api/stats';
 
 const MIN_GAMES = 5; // "In" votes needed before the reliability % is meaningful
 
@@ -43,6 +43,7 @@ function Section({
 export default function ReliabilityTab() {
   const [players, setPlayers] = useState<ReliabilityPlayer[]>([]);
   const [totalTracked, setTotalTracked] = useState(0);
+  const [summary, setSummary] = useState<ReliabilitySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qualifiedOnly, setQualifiedOnly] = useState(true);
@@ -54,7 +55,7 @@ export default function ReliabilityTab() {
 
   useEffect(() => {
     fetchReliability()
-      .then(data => { setPlayers(data.players); setTotalTracked(data.totalTrackedGames); })
+      .then(data => { setPlayers(data.players); setTotalTracked(data.totalTrackedGames); setSummary(data.summary); })
       .catch(() => setError('Could not load reliability stats.'))
       .finally(() => setLoading(false));
   }, []);
@@ -109,6 +110,31 @@ export default function ReliabilityTab() {
 
   return (
     <div className="space-y-3">
+      {summary && (
+        <div className="border border-border rounded-xl bg-surface/40 p-3">
+          <h3 className="text-sm font-bold text-text-primary mb-2">Turnout vs Response</h3>
+          <div className="flex gap-5 flex-wrap mb-2">
+            <div>
+              <p className="text-2xl font-bold text-gold tabular-nums leading-none">{summary.avgResponses.toFixed(1)}</p>
+              <p className="text-[10px] text-text-tertiary mt-1">avg responded / game</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-emerald-400 tabular-nums leading-none">{summary.avgTurnout.toFixed(1)}</p>
+              <p className="text-[10px] text-text-tertiary mt-1">avg turned out / game</p>
+            </div>
+            <div>
+              <p className={`text-2xl font-bold tabular-nums leading-none ${summary.avgTurnout >= summary.avgResponses ? 'text-emerald-400' : 'text-red-400'}`}>
+                {summary.avgTurnout >= summary.avgResponses ? '+' : ''}{(summary.avgTurnout - summary.avgResponses).toFixed(1)}
+              </p>
+              <p className="text-[10px] text-text-tertiary mt-1">show w/o responding</p>
+            </div>
+          </div>
+          <p className="text-[11px] text-text-tertiary">
+            More people turn out than respond — the gap is players who show without RSVPing (<span className="text-blue-400">ghosts</span>), plus guests.
+          </p>
+        </div>
+      )}
+
       <Section
         title="Attendance"
         subtitle={`Who shows up, from rosters across ${totalTracked} game${totalTracked === 1 ? '' : 's'}. Admin-only.`}
@@ -141,6 +167,14 @@ export default function ReliabilityTab() {
           open={open.guests}
           onToggle={() => toggle('guests')}
         >
+          {summary && (
+            <p className="text-[11px] text-text-tertiary mb-2">
+              Poll flagged <span className="text-gold font-semibold">{summary.guestsIndicated}</span> guests;{' '}
+              <span className="text-emerald-400 font-semibold">{summary.guestsShown}</span> actually showed on rosters
+              {summary.guestsIndicated > 0 && ` (${Math.round((summary.guestsShown / summary.guestsIndicated) * 100)}%)`}.
+              Below is who flags them in the poll.
+            </p>
+          )}
           <div className="space-y-1">
             {guestBoard.map(p => (
               <div key={p.id} className="flex items-center gap-2">
@@ -159,7 +193,7 @@ export default function ReliabilityTab() {
 
       <Section
         title="Reliability"
-        subtitle="Rely% = showed ÷ said-In · No-show = said In, no-show · Ghost = came without saying In."
+        subtitle="Rely% = showed in the games they said In. No-show = said In but didn't come. Ghost = showed up without saying In. Tap a column to sort (again to flip)."
         open={open.reliability}
         onToggle={() => toggle('reliability')}
       >

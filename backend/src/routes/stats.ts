@@ -968,7 +968,30 @@ router.get('/reliability', requireAdmin, async (_req: AuthenticatedRequest, res:
         };
       });
 
-    res.json({ totalTrackedGames, players: result });
+    // Season reconciliation: responses vs actual turnout, and indicated vs
+    // actual guests. Guests sit on the roster as "GuestN" entries, so a game's
+    // real turnout excludes them and guest slots = guests who actually showed.
+    const nameById = new Map(players.map(p => [p.id, p.name]));
+    let guestSlots = 0, realTurnout = 0, responsesTotal = 0, guestsIndicated = 0;
+    for (const [, roster] of rosterByGame) {
+      for (const pid of roster) {
+        if (isGuestPool(nameById.get(pid) || '')) guestSlots++; else realTurnout++;
+      }
+    }
+    for (const r of rsvps) {
+      if (rosterByGame.has(r.gameId)) {
+        responsesTotal++;
+        if (r.status === 'yes') guestsIndicated += r.guestCount;
+      }
+    }
+    const summary = {
+      avgResponses: totalTrackedGames ? responsesTotal / totalTrackedGames : 0,
+      avgTurnout: totalTrackedGames ? realTurnout / totalTrackedGames : 0,
+      guestsIndicated,
+      guestsShown: guestSlots,
+    };
+
+    res.json({ totalTrackedGames, summary, players: result });
   } catch (error) {
     console.error('Error computing reliability stats:', error);
     res.status(500).json({ error: 'Failed to compute reliability statistics' });

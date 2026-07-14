@@ -745,8 +745,16 @@ export interface ReliabilityPlayer {
   guestAttachRate: number | null;
 }
 
+export interface ReliabilitySummary {
+  avgResponses: number;   // avg poll responses per game
+  avgTurnout: number;     // avg real players who showed per game
+  guestsIndicated: number; // guests flagged in polls (season)
+  guestsShown: number;     // guest slots on rosters = guests who showed (season)
+}
+
 export interface ReliabilityResponse {
   totalTrackedGames: number;
+  summary: ReliabilitySummary;
   players: ReliabilityPlayer[];
 }
 
