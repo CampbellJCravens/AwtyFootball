@@ -15,15 +15,15 @@
  *
  * See docs/whatsapp-poll-listener-spec.md.
  */
+import { createHash } from 'crypto';
 import {
-  getAggregateVotesInPollMessage,
   decryptPollVote,
   jidNormalizedUser,
   getKeyAuthor,
   BufferJSON,
 } from '@whiskeysockets/baileys';
 import prisma from '../../prisma';
-import { parsePollOption } from './options';
+import { combineSelections } from './options';
 import { findGameForPollTitle } from './gameMatch';
 
 // Sentinel written to GameRsvp.setByUserId so listener-sourced votes are
@@ -36,6 +36,13 @@ const dec = (s: string | null | undefined) => (s ? JSON.parse(s, BufferJSON.revi
 /** Normalize a WhatsApp JID / phone to digits only (drop @server and :device). */
 export function phoneFromJid(jid: string): string {
   return jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
+/** Coerce a stored latestVotes value to string[] (tolerates the old string form). */
+function toNames(v: unknown): string[] {
+  if (Array.isArray(v)) return v as string[];
+  if (typeof v === 'string' && v) return [v];
+  return [];
 }
 
 /** Pull the poll-creation content out of a message, across proto versions. */
@@ -113,7 +120,56 @@ async function upsertContact(phone: string, pushName?: string | null): Promise<v
  * own devices, so a poll the linked account created on its phone can't be
  * decrypted here (messageSecret will be absent).
  */
-export async function handlePollUpdateMessage(msg: any, meId: string | undefined): Promise<void> {
+/**
+ * Coerce a proto bytes field into a raw Buffer. WhatsApp/Baileys hands these to
+ * us as base64 strings (not Uint8Arrays) in this message path — the messageSecret,
+ * the vote's encPayload and encIv are all base64. The crypto needs raw bytes;
+ * passing the base64 string derives the wrong key / ciphertext (GCM auth failure).
+ */
+function toBytes(s: any): Buffer | null {
+  if (!s) return null;
+  if (Buffer.isBuffer(s)) return s;
+  if (s instanceof Uint8Array) return Buffer.from(s);
+  if (typeof s === 'string') return Buffer.from(s, 'base64');
+  if (s.type === 'Buffer' && Array.isArray(s.data)) return Buffer.from(s.data);
+  return null;
+}
+
+const normJid = (j?: string | null): string | null => {
+  if (!j) return null;
+  try {
+    return jidNormalizedUser(j);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Candidate author JIDs for a message key. WhatsApp's LID addressing means the
+ * jid used to encrypt a poll vote may be the @lid or the @s.whatsapp.net (PN)
+ * form; we can't know which up front, so we return both and let decryption pick.
+ */
+function authorCandidates(key: any, meId?: string, meLid?: string): string[] {
+  const out = new Set<string>();
+  if (key?.fromMe) {
+    for (const j of [meId, meLid]) {
+      const n = normJid(j);
+      if (n) out.add(n);
+    }
+  } else {
+    for (const j of [key?.participant, key?.participantAlt, key?.remoteJid, key?.remoteJidAlt]) {
+      const n = normJid(j);
+      if (n) out.add(n);
+    }
+  }
+  return [...out];
+}
+
+export async function handlePollUpdateMessage(
+  msg: any,
+  meId: string | undefined,
+  meLid?: string
+): Promise<void> {
   const pum = msg.message?.pollUpdateMessage;
   const creationKey = pum?.pollCreationMessageKey;
   if (!pum || !creationKey?.id) return;
@@ -125,7 +181,7 @@ export async function handlePollUpdateMessage(msg: any, meId: string | undefined
   }
 
   const stored = dec(poll.pollMessage);
-  const pollEncKey = stored?.message?.messageContextInfo?.messageSecret;
+  const pollEncKey = toBytes(stored?.message?.messageContextInfo?.messageSecret);
   if (!pollEncKey) {
     console.warn(
       `[whatsapp] Poll ${creationKey.id} has no messageSecret — can't decrypt votes. ` +
@@ -134,21 +190,50 @@ export async function handlePollUpdateMessage(msg: any, meId: string | undefined
     );
     return;
   }
+  if (pollEncKey.length !== 32) {
+    console.warn(`[whatsapp] messageSecret is ${pollEncKey.length} bytes (expected 32) for ${creationKey.id}`);
+  }
 
-  const meIdNorm = meId ? jidNormalizedUser(meId) : '';
-  const pollCreatorJid = getKeyAuthor(creationKey, meIdNorm);
-  const voterJid = getKeyAuthor(msg.key, meIdNorm);
+  // WhatsApp encrypts the vote keyed on (pollMsgId, pollCreatorJid, voterJid).
+  // With LID addressing we don't know whether it used the @lid or PN form, so
+  // try each combination and keep the one that authenticates. Prefer the stored
+  // poll-creation key for the creator (it carries both @lid and PN alt fields).
+  const creatorCands = authorCandidates(stored?.key ?? creationKey, meId, meLid);
+  const voterCands = authorCandidates(msg.key, meId, meLid);
 
-  let voteMsg;
-  try {
-    voteMsg = decryptPollVote(pum.vote, {
-      pollEncKey,
-      pollCreatorJid,
-      pollMsgId: creationKey.id,
-      voterJid,
-    });
-  } catch (err) {
-    console.error(`[whatsapp] Failed to decrypt poll vote for ${creationKey.id}:`, err);
+  // Decode the encrypted vote bytes (also base64 strings in this path).
+  const encVote = {
+    encPayload: toBytes(pum.vote?.encPayload),
+    encIv: toBytes(pum.vote?.encIv),
+  };
+
+  let voteMsg: any = null;
+  let usedCreator = '';
+  let usedVoter = '';
+  for (const c of creatorCands) {
+    for (const v of voterCands) {
+      try {
+        voteMsg = decryptPollVote(encVote as any, {
+          pollEncKey,
+          pollCreatorJid: c,
+          pollMsgId: creationKey.id,
+          voterJid: v,
+        });
+        usedCreator = c;
+        usedVoter = v;
+        break;
+      } catch {
+        // wrong jid combination — try the next
+      }
+    }
+    if (voteMsg) break;
+  }
+
+  if (!voteMsg) {
+    console.error(
+      `[whatsapp] Could not decrypt vote for poll ${creationKey.id} with any jid combo. ` +
+        `creators=${JSON.stringify(creatorCands)} voters=${JSON.stringify(voterCands)}`
+    );
     return;
   }
 
@@ -158,7 +243,7 @@ export async function handlePollUpdateMessage(msg: any, meId: string | undefined
     senderTimestampMs: Number(pum.senderTimestampMs) || 0,
   };
   console.log(
-    `[whatsapp] Decrypted vote from ${voterJid} on poll ${creationKey.id} (${voteMsg?.selectedOptions?.length ?? 0} option(s))`
+    `[whatsapp] Decrypted vote (creator=${usedCreator} voter=${usedVoter}) on poll ${creationKey.id} — ${voteMsg?.selectedOptions?.length ?? 0} option(s)`
   );
   await ingestVoteUpdates(creationKey.id, [pollUpdate], meId);
 }
@@ -182,41 +267,73 @@ export async function ingestVoteUpdates(
     return;
   }
 
-  // Accumulate raw updates (dedupe by voter+timestamp), then re-aggregate.
+  // Append the new decrypted updates (dedupe by message id), then re-derive.
   const prior: any[] = dec(poll.pollUpdates) || [];
   const merged = dedupeUpdates([...prior, ...newUpdates]);
+  await prisma.whatsappPoll.update({
+    where: { pollMessageId },
+    data: { pollUpdates: enc(merged) },
+  });
 
+  await rederivePollVotes(pollMessageId, meId);
+}
+
+/**
+ * Recompute latestVotes for a poll from its accumulated raw updates, then sync
+ * to RSVPs. Separated so it can also be run as a one-off backfill. We do our own
+ * hash-matching (rather than getAggregateVotesInPollMessage) because Baileys
+ * compares option hashes with a .toString() that mismatches Uint8Array vs Buffer,
+ * and because these polls are multi-select (guest count comes from a "+N" option).
+ */
+export async function rederivePollVotes(pollMessageId: string, meId: string | undefined): Promise<void> {
+  const poll = await prisma.whatsappPoll.findUnique({ where: { pollMessageId } });
+  if (!poll || !poll.pollUpdates) return;
+
+  const merged: any[] = dec(poll.pollUpdates) || [];
   const stored = dec(poll.pollMessage);
-  let aggregated: Array<{ name: string; voters: string[] }> = [];
-  try {
-    aggregated = getAggregateVotesInPollMessage(
-      { message: stored.message, pollUpdates: merged },
-      meId
-    ) as any;
-  } catch (err) {
-    console.error(`[whatsapp] Failed to decode votes for poll ${pollMessageId}:`, err);
-    return;
+  const options = getPollCreation(stored?.message)?.options || [];
+  const hashToName = new Map<string, string>();
+  for (const o of options) {
+    const name = o.optionName || '';
+    const hash = createHash('sha256').update(Buffer.from(name, 'utf8')).digest('hex');
+    hashToName.set(hash, name);
   }
 
-  // phone -> chosen option text (last write wins; polls here are single-select)
-  const votes: Record<string, string> = {};
-  for (const opt of aggregated) {
-    for (const voterJid of opt.voters || []) {
-      votes[phoneFromJid(voterJid)] = opt.name;
+  const meIdNorm = meId ? jidNormalizedUser(meId) : '';
+  // Each vote message is a full snapshot of that voter's current selection, so
+  // keep the latest per voter (by timestamp).
+  const latestByPhone = new Map<string, { ts: number; names: string[] }>();
+  for (const u of merged) {
+    const phone = phoneFromJid(getKeyAuthor(u.pollUpdateMessageKey, meIdNorm));
+    if (!phone) continue;
+    const ts = Number(u.senderTimestampMs) || 0;
+    const names: string[] = [];
+    for (const sel of u.vote?.selectedOptions || []) {
+      // selectedOptions are base64 strings in this path — decode to raw bytes
+      // before comparing to the option-name hashes.
+      const bytes = toBytes(sel);
+      if (!bytes) continue;
+      const name = hashToName.get(bytes.toString('hex'));
+      if (name) names.push(name);
     }
+    const existing = latestByPhone.get(phone);
+    if (!existing || ts >= existing.ts) latestByPhone.set(phone, { ts, names });
   }
+
+  const votes: Record<string, string[]> = {};
+  for (const [phone, v] of latestByPhone) votes[phone] = v.names;
 
   await prisma.whatsappPoll.update({
     where: { pollMessageId },
-    data: { pollUpdates: enc(merged), latestVotes: JSON.stringify(votes) },
+    data: { latestVotes: JSON.stringify(votes) },
   });
 
   await syncPollToRsvps(pollMessageId);
 }
 
 function dedupeUpdates(updates: any[]): any[] {
-  // Each vote message has a unique key id; keep them all and let
-  // getAggregateVotesInPollMessage resolve latest-per-voter by timestamp.
+  // Each vote message has a unique key id; keep them all and resolve
+  // latest-per-voter later by timestamp.
   const byKey = new Map<string, any>();
   for (const u of updates) {
     const k = u?.pollUpdateMessageKey?.id || JSON.stringify(u?.pollUpdateMessageKey ?? {});
@@ -234,7 +351,7 @@ export async function syncPollToRsvps(pollMessageId: string): Promise<void> {
   const poll = await prisma.whatsappPoll.findUnique({ where: { pollMessageId } });
   if (!poll || !poll.gameId || !poll.latestVotes) return;
 
-  const votes: Record<string, string> = JSON.parse(poll.latestVotes);
+  const votes: Record<string, string[]> = JSON.parse(poll.latestVotes);
   const phones = Object.keys(votes);
   if (phones.length === 0) return;
 
@@ -248,8 +365,8 @@ export async function syncPollToRsvps(pollMessageId: string): Promise<void> {
     const playerId = byPhone.get(phone);
     if (!playerId) continue; // unmatched — resolved by admin later
 
-    const parsed = parsePollOption(votes[phone]);
-    if (!parsed) continue; // unrecognized option
+    const parsed = combineSelections(toNames(votes[phone]));
+    if (!parsed) continue; // unrecognized / cleared vote
 
     // Precedence: a vote set in the app (self, setByUserId null) or by an admin
     // override wins over the WhatsApp poll. Only create new rows or refresh ones
@@ -297,9 +414,9 @@ export async function getUnmatched(): Promise<UnmatchedVote[]> {
   });
 
   const allPhones = new Set<string>();
-  const perPoll: Array<{ pollMessageId: string; question: string; gameId: string | null; votes: Record<string, string> }> = [];
+  const perPoll: Array<{ pollMessageId: string; question: string; gameId: string | null; votes: Record<string, string[]> }> = [];
   for (const p of polls) {
-    const votes: Record<string, string> = JSON.parse(p.latestVotes!);
+    const votes: Record<string, string[]> = JSON.parse(p.latestVotes!);
     perPoll.push({ pollMessageId: p.pollMessageId, question: p.question, gameId: p.gameId, votes });
     Object.keys(votes).forEach((ph) => allPhones.add(ph));
   }
@@ -318,15 +435,17 @@ export async function getUnmatched(): Promise<UnmatchedVote[]> {
 
   const out: UnmatchedVote[] = [];
   for (const p of perPoll) {
-    for (const [phone, optionText] of Object.entries(p.votes)) {
+    for (const [phone, rawNames] of Object.entries(p.votes)) {
       if (knownSet.has(phone)) continue;
+      const names = toNames(rawNames);
+      if (!names.length) continue; // vote was cleared
       out.push({
         phone,
         pushName: nameByPhone.get(phone) ?? null,
         pollMessageId: p.pollMessageId,
         question: p.question,
         gameId: p.gameId,
-        optionText,
+        optionText: names.join(' + '),
       });
     }
   }
@@ -367,14 +486,15 @@ export async function listPolls() {
     include: { game: { select: { id: true, gameNumber: true, createdAt: true } } },
   });
   return polls.map((p) => {
-    const votes: Record<string, string> = p.latestVotes ? JSON.parse(p.latestVotes) : {};
+    const votes: Record<string, string[]> = p.latestVotes ? JSON.parse(p.latestVotes) : {};
+    const voteCount = Object.values(votes).filter((names) => names.length > 0).length;
     return {
       pollMessageId: p.pollMessageId,
       question: p.question,
       gameId: p.gameId,
       game: p.game,
       linkedBy: p.linkedBy,
-      voteCount: Object.keys(votes).length,
+      voteCount,
       createdAt: p.createdAt.toISOString(),
     };
   });

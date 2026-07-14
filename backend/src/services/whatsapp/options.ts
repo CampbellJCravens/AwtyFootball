@@ -50,3 +50,39 @@ export function parsePollOption(raw: string): ParsedOption | null {
 
   return null;
 }
+
+/**
+ * Combine a voter's *set* of selected labels (multi-select polls) into one RSVP.
+ * The real group poll uses standalone "In / Maybe / Out" plus separate "+1"/"+2",
+ * so "in with one guest" arrives as ["In", "+1"]. Collapse rule:
+ *   - any Out/No       -> no  (guest count irrelevant)
+ *   - else any In/Yes OR any "+N" -> yes, guestCount = max N (capped)
+ *   - else any Maybe   -> maybe
+ *   - else             -> null (nothing recognizable / vote cleared)
+ */
+export function combineSelections(labels: string[]): ParsedOption | null {
+  let hasYes = false;
+  let hasMaybe = false;
+  let hasNo = false;
+  let guestCount = 0;
+
+  for (const raw of labels) {
+    const text = (raw || '').trim().toLowerCase();
+    if (!text) continue;
+
+    const plus = text.match(/(?:\+|\bplus\b)\s*(\d+)/);
+    if (plus) {
+      const n = parseInt(plus[1], 10);
+      if (Number.isFinite(n)) guestCount = Math.max(guestCount, Math.min(GUEST_CAP, n));
+    }
+
+    if (NO_WORDS.some((w) => text.includes(w))) hasNo = true;
+    else if (MAYBE_WORDS.some((w) => text.includes(w))) hasMaybe = true;
+    else if (YES_WORDS.some((w) => text.includes(w))) hasYes = true;
+  }
+
+  if (hasNo) return { status: 'no', guestCount: 0 };
+  if (hasYes || guestCount > 0) return { status: 'yes', guestCount };
+  if (hasMaybe) return { status: 'maybe', guestCount: 0 };
+  return null;
+}

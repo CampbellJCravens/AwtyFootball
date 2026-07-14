@@ -74,6 +74,7 @@ export async function startWhatsappListener(): Promise<void> {
     // longer decrypts poll votes, so we handle pollUpdateMessage ourselves.
     sock.ev.on('messages.upsert', async ({ messages }) => {
       const meId = sock?.user?.id;
+      const meLid = (sock?.user as any)?.lid;
       for (const msg of messages) {
         try {
           if (msg.pushName && msg.key?.participant) {
@@ -82,7 +83,7 @@ export async function startWhatsappListener(): Promise<void> {
           if (isPollCreation(msg.message)) {
             await capturePoll(msg);
           } else if ((msg.message as any)?.pollUpdateMessage) {
-            await handlePollUpdateMessage(msg, meId);
+            await handlePollUpdateMessage(msg, meId, meLid);
           }
         } catch (err) {
           console.error('[whatsapp] messages.upsert handler error:', err);
