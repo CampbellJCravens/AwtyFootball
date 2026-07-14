@@ -654,20 +654,22 @@ const HISTORICAL_FIELD_STATS: FieldGameRecord[] = [
   { year: 2025, date: '27-Sep', isoDate: '2025-09-27', played: 'yes', location: null, waIn: null, waPlus1: null, waPlus2: null, waMaybe: null, waOut: null, groupSize: 43, eviteResponse: 8, responseRate: 18.6, showUp: 7, attendanceRate: 16.28, trackedPlayers: null, turnoutVsRsvp: null, notes: null },
 ];
 
-const GROUP_SIZE = 28;
+const GROUP_SIZE = 44;
 
 // Real field data for Oct 2025 - Jan 2026, recorded from WhatsApp RSVPs and hardcoded
 // here before the live backend existed. Part of the frozen pre-live record.
-function wa(waIn: number, waPlus1: number, waPlus2: number, waMaybe: number, waOut: number, year: number, month: number, day: number, location: 'stadium' | 'grass' | 'turf'): FieldGameRecord {
+// Response rate uses the current formula: ceil(In + +1 + +2 + 0.5*Maybe) over the roster.
+// showUp is the actual game turnout where a game record exists, else the poll body estimate.
+function wa(waIn: number, waPlus1: number, waPlus2: number, waMaybe: number, waOut: number, year: number, month: number, day: number, location: 'stadium' | 'grass' | 'turf', actualPlayers?: number): FieldGameRecord {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const showUp = waIn + waPlus1 * 2 + waPlus2 * 3;
-  const eviteResponse = waIn + waPlus1 + waPlus2 + waMaybe + waOut;
+  const showUp = actualPlayers ?? (waIn + waPlus1 * 2 + waPlus2 * 3);
+  const respCount = Math.ceil(waIn + waPlus1 + waPlus2 + 0.5 * waMaybe);
   const isoDate = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
   return {
     year, date: `${day}-${MONTHS[month-1]}`, isoDate, played: 'yes', location,
     waIn, waPlus1, waPlus2, waMaybe, waOut, groupSize: GROUP_SIZE,
-    eviteResponse,
-    responseRate: parseFloat((eviteResponse / GROUP_SIZE * 100).toFixed(2)),
+    eviteResponse: respCount,
+    responseRate: parseFloat((respCount / GROUP_SIZE * 100).toFixed(2)),
     showUp,
     attendanceRate: parseFloat((showUp / GROUP_SIZE * 100).toFixed(2)),
     trackedPlayers: null, turnoutVsRsvp: null, notes: null,
@@ -685,9 +687,9 @@ const RECENT_FIELD_STATS: FieldGameRecord[] = [
   wa( 5, 0, 0,  2, 19,  2025, 11, 22, 'stadium'),
   wa(11, 2, 1,  1, 10,  2025, 11, 29, 'stadium'),
   wa(12, 2, 0,  4,  9,  2025, 12,  6, 'stadium'),
-  wa(17, 3, 1,  5,  5,  2025, 12, 13, 'stadium'),
-  wa(14, 1, 0,  3,  8,  2025, 12, 20, 'stadium'),
-  wa(11, 0, 1,  1, 11,  2025, 12, 27, 'stadium'),
+  wa(17, 3, 1,  5,  5,  2025, 12, 13, 'stadium', 24),
+  wa(14, 1, 0,  3,  8,  2025, 12, 20, 'stadium', 18),
+  wa(11, 0, 1,  1, 11,  2025, 12, 27, 'stadium', 15),
   wa(12, 0, 2,  5,  9,  2026,  1,  3, 'stadium'),
   wa(15, 1, 0,  2,  6,  2026,  1, 10, 'stadium'),
   wa(23, 1, 0,  1,  2,  2026,  1, 17, 'stadium'),
