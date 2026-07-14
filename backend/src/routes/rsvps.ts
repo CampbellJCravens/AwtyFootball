@@ -116,6 +116,22 @@ router.put('/:playerId', requireAdmin, async (req: AuthenticatedRequest, res: Re
   }
 });
 
+// DELETE /api/games/:gameId/rsvps - Admin: reset the whole poll by clearing
+// every RSVP for this game. Used to wipe a game's poll (e.g. when re-syncing
+// from a fresh WhatsApp screenshot).
+router.delete('/', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { gameId } = req.params;
+    const game = await prisma.game.findUnique({ where: { id: gameId }, select: { id: true } });
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+
+    const result = await prisma.gameRsvp.deleteMany({ where: { gameId } });
+    res.json({ deleted: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/games/:gameId/rsvps/:playerId - Clear an RSVP (public; users can
 // clear their own vote by tapping the same option twice, admins can clear
 // anyone's via the row controls). Same trust model as POST.
