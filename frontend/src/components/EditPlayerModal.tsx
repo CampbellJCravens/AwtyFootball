@@ -6,9 +6,10 @@ interface EditPlayerModalProps {
   player: Player | null;
   onClose: () => void;
   onSuccess: () => void;
+  isAdmin?: boolean;
 }
 
-export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlayerModalProps) {
+export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = false }: EditPlayerModalProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [pictureFile, setPictureFile] = useState<File | null>(null);
@@ -109,8 +110,10 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
     try {
       const data: UpdatePlayerData = {
         name: name.trim(),
-        phone: phone.trim(),
       };
+
+      // Phone is an admin-only field (WhatsApp RSVP mapping).
+      if (isAdmin) data.phone = phone.trim();
 
       if (pictureFile) {
         const base64 = await applyImagePosition(pictureFile, imagePosition.x, imagePosition.y);
@@ -159,23 +162,25 @@ export default function EditPlayerModal({ player, onClose, onSuccess }: EditPlay
             />
           </div>
 
-          <div className="mb-4">
-            <label htmlFor="edit-phone" className="block text-sm font-medium text-text-secondary mb-2">
-              WhatsApp number <span className="text-text-tertiary font-normal">(optional)</span>
-            </label>
-            <input
-              id="edit-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary placeholder-text-muted"
-              placeholder="e.g. +1 832 867 3433"
-              disabled={isSubmitting}
-            />
-            <p className="mt-1 text-xs text-text-tertiary">
-              Links this player to their WhatsApp poll votes. Include the country code.
-            </p>
-          </div>
+          {isAdmin && (
+            <div className="mb-4">
+              <label htmlFor="edit-phone" className="block text-sm font-medium text-text-secondary mb-2">
+                WhatsApp number <span className="text-text-tertiary font-normal">(admin only)</span>
+              </label>
+              <input
+                id="edit-phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full px-4 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary placeholder-text-muted"
+                placeholder="e.g. +1 832 867 3433"
+                disabled={isSubmitting}
+              />
+              <p className="mt-1 text-xs text-text-tertiary">
+                Links this player to their WhatsApp poll votes. Include the country code.
+              </p>
+            </div>
+          )}
 
           <div className="mb-6">
             <label htmlFor="edit-picture-input" className="block text-sm font-medium text-text-secondary mb-2">

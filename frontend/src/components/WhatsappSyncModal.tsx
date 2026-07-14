@@ -8,9 +8,13 @@ import {
   linkPoll,
   getUnmatchedVotes,
   resolveUnmatched,
+  getWhatsappGroups,
+  getWhatsappScope,
+  setWhatsappScope,
   type WhatsappStatus,
   type WhatsappPoll,
   type UnmatchedVote,
+  type WhatsappGroup,
 } from '../api/whatsapp';
 
 interface Props {
@@ -29,6 +33,8 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
   const [qr, setQr] = useState<string | null>(null);
   const [polls, setPolls] = useState<WhatsappPoll[]>([]);
   const [unmatched, setUnmatched] = useState<UnmatchedVote[]>([]);
+  const [groups, setGroups] = useState<WhatsappGroup[]>([]);
+  const [scopeJid, setScopeJid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -38,20 +44,36 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
     try {
       const s = await getWhatsappStatus();
       setStatus(s);
-      const [p, u, q] = await Promise.all([
+      const [p, u, q, g, sc] = await Promise.all([
         getWhatsappPolls(),
         getUnmatchedVotes(),
         s.linked ? Promise.resolve(null) : getWhatsappQr(),
+        s.linked ? getWhatsappGroups().catch(() => []) : Promise.resolve([]),
+        getWhatsappScope().catch(() => null),
       ]);
       setPolls(p);
       setUnmatched(u);
       setQr(q);
+      setGroups(g);
+      setScopeJid(sc);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleScopeChange = async (jid: string) => {
+    setBusy('scope');
+    try {
+      await setWhatsappScope(jid || null);
+      setScopeJid(jid || null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to set scope');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -142,6 +164,33 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
                   <p className="text-sm text-text-secondary">Waiting for a QR code from the backend…</p>
                 )}
               </section>
+
+              {/* Scope: which group to read */}
+              {status?.linked && (
+                <section>
+                  <p className="text-text-tertiary text-xs font-semibold tracking-widest uppercase mb-2">Group Scope</p>
+                  <p className="text-sm text-text-secondary mb-2">
+                    Only read polls from this group. Leave as "All chats" to read everywhere.
+                  </p>
+                  <select
+                    value={scopeJid ?? ''}
+                    disabled={busy === 'scope'}
+                    onChange={(e) => handleScopeChange(e.target.value)}
+                    className="w-full px-3 py-2 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent"
+                  >
+                    <option value="">All chats (unscoped)</option>
+                    {scopeJid && !groups.some((g) => g.jid === scopeJid) && (
+                      <option value={scopeJid}>Current group ({scopeJid})</option>
+                    )}
+                    {groups.map((g) => (
+                      <option key={g.jid} value={g.jid}>{g.subject}</option>
+                    ))}
+                  </select>
+                  {groups.length === 0 && (
+                    <p className="mt-1 text-xs text-text-tertiary">No groups loaded yet — tap Refresh once linked.</p>
+                  )}
+                </section>
+              )}
 
               {/* Captured polls */}
               <section>

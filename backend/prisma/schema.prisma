@@ -176,3 +176,11 @@ model WhatsappContact {
   pushName  String?
   updatedAt DateTime @updatedAt
 }
+
+// Singleton config for the listener. groupJid scopes capture to one group
+// chat; when null, the listener captures polls from any chat (unscoped).
+model WhatsappSettings {
+  id        String   @id @default("singleton")
+  groupJid  String?
+  updatedAt DateTime @updatedAt
+}

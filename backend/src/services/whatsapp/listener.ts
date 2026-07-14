@@ -24,7 +24,14 @@ import type { WASocket } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import { usePostgresAuthState } from './authState';
 import prisma from '../../prisma';
-import { capturePoll, handlePollUpdateMessage, isPollCreation, noteContact } from './polls';
+import {
+  capturePoll,
+  handlePollUpdateMessage,
+  isPollCreation,
+  noteContact,
+  isInScope,
+  refreshScope,
+} from './polls';
 
 let sock: WASocket | null = null;
 let latestQr: string | null = null;
@@ -42,11 +49,26 @@ export function isWhatsappLinked(): boolean {
   return sock !== null && latestQr === null;
 }
 
+/** Groups the linked account participates in — for the admin to pick the scope. */
+export async function listWhatsappGroups(): Promise<Array<{ jid: string; subject: string }>> {
+  if (!sock) return [];
+  try {
+    const groups = await sock.groupFetchAllParticipating();
+    return Object.values(groups)
+      .map((g: any) => ({ jid: g.id as string, subject: (g.subject as string) || g.id }))
+      .sort((a, b) => a.subject.localeCompare(b.subject));
+  } catch (err) {
+    console.error('[whatsapp] Failed to fetch groups:', err);
+    return [];
+  }
+}
+
 export async function startWhatsappListener(): Promise<void> {
   if (starting) return;
   starting = true;
 
   try {
+    await refreshScope(); // load the group-scope setting before we start capturing
     const { state, saveCreds } = await usePostgresAuthState();
     const { version } = await fetchLatestBaileysVersion();
 
@@ -77,6 +99,8 @@ export async function startWhatsappListener(): Promise<void> {
       const meLid = (sock?.user as any)?.lid;
       for (const msg of messages) {
         try {
+          // Ignore anything outside the configured group (if one is set).
+          if (!isInScope(msg.key?.remoteJid)) continue;
           if (msg.pushName && msg.key?.participant) {
             await noteContact(msg.key.participant, msg.pushName);
           }

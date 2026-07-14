@@ -9,13 +9,15 @@ import { Router, Response, NextFunction } from 'express';
 import QRCode from 'qrcode';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { env } from '../env';
-import { getLatestWhatsappQr, isWhatsappLinked } from '../services/whatsapp/listener';
+import { getLatestWhatsappQr, isWhatsappLinked, listWhatsappGroups } from '../services/whatsapp/listener';
 import { clearPostgresAuthState } from '../services/whatsapp/authState';
 import {
   listPolls,
   linkPollToGame,
   getUnmatched,
   resolveContact,
+  getScope,
+  setScope,
 } from '../services/whatsapp/polls';
 
 const router = Router();
@@ -67,10 +69,40 @@ router.post('/polls/:pollMessageId/link', async (req: AuthenticatedRequest, res:
   }
 });
 
-// Votes from numbers not yet mapped to a player.
-router.get('/unmatched', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// Groups the linked account is in (for choosing the scope).
+router.get('/groups', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    res.json(await getUnmatched());
+    res.json(await listWhatsappGroups());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Current capture scope (which group, or null = all chats).
+router.get('/scope', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({ groupJid: await getScope() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Set the capture scope. Pass { groupJid: null } to unscope.
+router.post('/scope', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { groupJid } = req.body ?? {};
+    await setScope(typeof groupJid === 'string' ? groupJid : null);
+    res.json({ ok: true, groupJid: await getScope() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Votes from numbers not yet mapped to a player. Optional ?gameId= to scope to one game.
+router.get('/unmatched', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const gameId = typeof req.query.gameId === 'string' ? req.query.gameId : undefined;
+    res.json(await getUnmatched(gameId));
   } catch (err) {
     next(err);
   }

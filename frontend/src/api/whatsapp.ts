@@ -62,10 +62,39 @@ export async function linkPoll(pollMessageId: string, gameId: string): Promise<v
   if (!res.ok) throw new Error('Failed to link poll');
 }
 
-export async function getUnmatchedVotes(): Promise<UnmatchedVote[]> {
-  const res = await fetch(`${API_BASE_URL}/whatsapp/unmatched`, opts());
+export async function getUnmatchedVotes(gameId?: string): Promise<UnmatchedVote[]> {
+  const url = gameId
+    ? `${API_BASE_URL}/whatsapp/unmatched?gameId=${encodeURIComponent(gameId)}`
+    : `${API_BASE_URL}/whatsapp/unmatched`;
+  const res = await fetch(url, opts());
   if (!res.ok) throw new Error('Failed to fetch unmatched votes');
   return res.json();
+}
+
+export interface WhatsappGroup {
+  jid: string;
+  subject: string;
+}
+
+export async function getWhatsappGroups(): Promise<WhatsappGroup[]> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/groups`, opts());
+  if (!res.ok) throw new Error('Failed to fetch groups');
+  return res.json();
+}
+
+export async function getWhatsappScope(): Promise<string | null> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/scope`, opts());
+  if (!res.ok) throw new Error('Failed to fetch scope');
+  const data = await res.json();
+  return data.groupJid ?? null;
+}
+
+export async function setWhatsappScope(groupJid: string | null): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL}/whatsapp/scope`,
+    opts({ method: 'POST', body: JSON.stringify({ groupJid }) })
+  );
+  if (!res.ok) throw new Error('Failed to set scope');
 }
 
 export async function resolveUnmatched(phone: string, playerId: string): Promise<void> {

@@ -45,6 +45,37 @@ function toNames(v: unknown): string[] {
   return [];
 }
 
+// ── Scope: restrict capture to a single group chat ──────────────────────────
+// Cached so the per-message check doesn't hit the DB. Loaded at listener start
+// and updated whenever setScope runs.
+let scopeGroupJid: string | null = null;
+
+export async function refreshScope(): Promise<void> {
+  const s = await prisma.whatsappSettings.findUnique({ where: { id: 'singleton' } });
+  scopeGroupJid = s?.groupJid ?? null;
+}
+
+/** True if a message from this chat should be processed. Unscoped (no group set) = all. */
+export function isInScope(remoteJid?: string | null): boolean {
+  if (!scopeGroupJid) return true;
+  return remoteJid === scopeGroupJid;
+}
+
+export async function getScope(): Promise<string | null> {
+  await refreshScope();
+  return scopeGroupJid;
+}
+
+export async function setScope(groupJid: string | null): Promise<void> {
+  const jid = groupJid && groupJid.trim() ? groupJid.trim() : null;
+  await prisma.whatsappSettings.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', groupJid: jid },
+    update: { groupJid: jid },
+  });
+  scopeGroupJid = jid;
+}
+
 /** Pull the poll-creation content out of a message, across proto versions. */
 function getPollCreation(message: any): any | null {
   if (!message) return null;
@@ -406,10 +437,10 @@ export interface UnmatchedVote {
   optionText: string;
 }
 
-/** Phones that voted in a captured poll but don't map to any Player. */
-export async function getUnmatched(): Promise<UnmatchedVote[]> {
+/** Phones that voted in a captured poll but don't map to any Player. Optionally scoped to one game. */
+export async function getUnmatched(gameId?: string): Promise<UnmatchedVote[]> {
   const polls = await prisma.whatsappPoll.findMany({
-    where: { latestVotes: { not: null } },
+    where: { latestVotes: { not: null }, ...(gameId ? { gameId } : {}) },
     select: { pollMessageId: true, question: true, gameId: true, latestVotes: true },
   });
 

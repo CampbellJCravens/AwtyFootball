@@ -746,6 +746,7 @@ function App() {
             player={editingPlayer}
             onClose={handleCloseEdit}
             onSuccess={handlePlayerUpdate}
+            isAdmin={isAdmin}
           />
         )}
 

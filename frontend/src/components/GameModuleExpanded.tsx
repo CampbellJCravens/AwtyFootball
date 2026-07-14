@@ -10,6 +10,7 @@ import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TimePickerModal from './TimePickerModal';
 import EditGameModal from './EditGameModal';
 import GameRsvpSection from './GameRsvpSection';
+import WhatsappUnmatchedFlag from './WhatsappUnmatchedFlag';
 import Papa, { ParseResult } from 'papaparse';
 
 type GameViewTab = 'game' | 'rsvp';
@@ -843,14 +844,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         </div>
 
         {activeTab === 'rsvp' && (
-          <GameRsvpSection
-            gameId={gameId}
-            gameNumber={gameNumber}
-            gameDate={currentDate}
-            field={currentField}
-            players={allPlayers}
-            onPlayersChanged={() => { onPlayerAdded?.(); }}
-          />
+          <>
+            {isAdmin && (
+              <WhatsappUnmatchedFlag gameId={gameId} players={allPlayers} />
+            )}
+            <GameRsvpSection
+              gameId={gameId}
+              gameNumber={gameNumber}
+              gameDate={currentDate}
+              field={currentField}
+              players={allPlayers}
+              onPlayersChanged={() => { onPlayerAdded?.(); }}
+            />
+          </>
         )}
 
         {activeTab === 'game' && (<>
