@@ -45,6 +45,7 @@ export default function PasswordGate({ onUnlock }: PasswordGateProps) {
     <div className="min-h-screen bg-base flex items-center justify-center p-4">
       <div className="bg-surface rounded-2xl shadow-modal max-w-sm w-full p-6 border border-border">
         <div className="text-center mb-6">
+          <img src="/afc-logo.png" alt="Awty Soccer Club" className="w-40 h-auto mx-auto mb-4 rounded-xl" />
           <h1 className="text-3xl font-bold text-gold italic">Awty Football</h1>
           <p className="text-text-tertiary text-sm mt-2">Enter the password to continue</p>
           {showHint ? (
