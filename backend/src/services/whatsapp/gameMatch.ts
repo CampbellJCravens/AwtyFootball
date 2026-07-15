@@ -35,13 +35,15 @@ export function parseDateFromTitle(title: string, now = new Date()): Date | null
   let m = text.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return build(+m[1], +m[2] - 1, +m[3]);
 
-  // Month name + day: "jul 20", "july 20th"
-  m = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})/);
-  if (m) return build(year, MONTHS[m[1]], +m[2]);
-
-  // Day + month name: "20 july", "20th jul"
-  m = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  // Day + month name: "20 july", "20th jul", "18Jul" (no space). Checked before
+  // month-first so "18Jul" isn't mis-read, and \s* allows the no-space form the
+  // group actually uses.
+  m = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
   if (m) return build(year, MONTHS[m[2]], +m[1]);
+
+  // Month name + day: "jul 20", "july 20th", "Jul18" (no space).
+  m = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*(\d{1,2})/);
+  if (m) return build(year, MONTHS[m[1]], +m[2]);
 
   // Numeric M/D or M/D/Y (US ordering); if first field > 12 treat as D/M.
   m = text.match(/\b(\d{1,2})[\/.](\d{1,2})(?:[\/.](\d{2,4}))?\b/);
