@@ -158,6 +158,43 @@ export async function capturePoll(raw: any): Promise<void> {
   );
 }
 
+// Options for polls the app creates — matches the group's existing format
+// (multi-select: tick "In" plus "+1"/"+2" for guests).
+export const CREATED_POLL_OPTIONS = ['In 👍', 'Maybe 🤔', 'Out 👎', '+1', '+2'];
+
+/** Standard poll title: "Soccer Saturday - 18Jul - 845AM - Stadium". */
+export function buildPollTitle(game: { createdAt: Date; field: string | null }): string {
+  const tz = 'America/Chicago';
+  const day = game.createdAt.toLocaleString('en-US', { timeZone: tz, day: 'numeric' });
+  const month = game.createdAt.toLocaleString('en-US', { timeZone: tz, month: 'short' });
+  const field =
+    game.field === 'grass' ? 'Grass' : game.field === 'cancelled' ? 'Cancelled' : 'Stadium';
+  return `Soccer Saturday - ${day}${month} - 845AM - ${field}`;
+}
+
+/**
+ * Persist a poll the app just created via Baileys, pre-linked to its game. We
+ * store the SENT message (which carries the messageSecret Baileys generated) so
+ * every vote decrypts. Upsert so it wins over any secret-less copy the
+ * messages.upsert handler may have captured for our own outgoing message.
+ */
+export async function storeCreatedPoll(
+  sent: any,
+  remoteJid: string,
+  question: string,
+  gameId: string,
+  userId: string
+): Promise<void> {
+  const pollMessageId: string | undefined = sent?.key?.id;
+  if (!pollMessageId) throw new Error('Sent poll has no message id');
+  const pollMessage = enc({ key: sent.key, message: sent.message });
+  await prisma.whatsappPoll.upsert({
+    where: { pollMessageId },
+    create: { pollMessageId, remoteJid, question, pollMessage, gameId, linkedBy: userId },
+    update: { pollMessage, question, gameId, linkedBy: userId },
+  });
+}
+
 async function upsertContact(phone: string, pushName?: string | null): Promise<void> {
   if (!phone) return;
   await prisma.whatsappContact.upsert({

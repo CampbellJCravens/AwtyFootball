@@ -11,6 +11,7 @@ import TimePickerModal from './TimePickerModal';
 import EditGameModal from './EditGameModal';
 import GameRsvpSection from './GameRsvpSection';
 import WhatsappUnmatchedFlag from './WhatsappUnmatchedFlag';
+import { createGamePoll } from '../api/rsvps';
 import Papa, { ParseResult } from 'papaparse';
 
 type GameViewTab = 'game' | 'rsvp';
@@ -72,6 +73,22 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<GameViewTab>(initialTab);
   const [pollVersion, setPollVersion] = useState(0); // bump to refresh the RSVP poll view
+  const [creatingPoll, setCreatingPoll] = useState(false);
+  const [createPollMsg, setCreatePollMsg] = useState<string | null>(null);
+
+  const handleCreatePoll = useCallback(async () => {
+    setCreatingPoll(true);
+    setCreatePollMsg(null);
+    try {
+      const { title } = await createGamePoll(gameId);
+      setCreatePollMsg(`Posted: ${title}`);
+      setPollVersion((v) => v + 1);
+    } catch (e) {
+      setCreatePollMsg(e instanceof Error ? e.message : 'Failed to create poll');
+    } finally {
+      setCreatingPoll(false);
+    }
+  }, [gameId]);
   const [currentField, setCurrentField] = useState<GameField | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(gameDate);
   const gameTitle = `${formatDate(currentDate)} - ${formatTime(currentDate)} - ${fieldLabel(currentField)}`;
@@ -846,6 +863,23 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
         {activeTab === 'rsvp' && (
           <>
+            {isAdmin && (
+              <div className="mb-4">
+                <button
+                  onClick={handleCreatePoll}
+                  disabled={creatingPoll}
+                  className="w-full px-3 py-2.5 rounded-xl bg-surface border border-border text-[13px] font-semibold text-text-primary flex items-center justify-center gap-2 hover:bg-surface-hover transition-colors disabled:opacity-60"
+                >
+                  <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19.05 4.91A9.82 9.82 0 0012.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 004.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.01zm-7.01 15.24h-.01a8.23 8.23 0 01-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.21 8.21 0 01-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24a8.2 8.2 0 015.83 2.41 8.18 8.18 0 012.42 5.83c0 4.55-3.7 8.24-8.25 8.24z" />
+                  </svg>
+                  {creatingPoll ? 'Posting poll…' : 'Post WhatsApp poll for this game'}
+                </button>
+                {createPollMsg && (
+                  <p className="mt-1.5 text-[11px] text-text-secondary text-center">{createPollMsg}</p>
+                )}
+              </div>
+            )}
             {isAdmin && (
               <WhatsappUnmatchedFlag
                 gameId={gameId}
