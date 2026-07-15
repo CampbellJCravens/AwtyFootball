@@ -16,10 +16,14 @@ export const env = {
   // Casual site-wide password gate. Default kept simple for dev; override
   // in .env / production environment.
   SITE_PASSWORD: process.env.SITE_PASSWORD || 'AWTY',
-  // Read-only WhatsApp poll listener. Off unless explicitly enabled; when on,
-  // the backend links as a WhatsApp device and syncs poll votes into RSVPs.
+  // Read-only WhatsApp poll listener. When on, the backend links as a WhatsApp
+  // device and syncs poll votes into RSVPs. Defaults ON in production (so a
+  // deploy activates it without a manual env toggle) and OFF elsewhere; set
+  // WHATSAPP_LISTENER_ENABLED=true/false to override in any environment.
   // See docs/whatsapp-poll-listener-spec.md.
-  WHATSAPP_LISTENER_ENABLED: process.env.WHATSAPP_LISTENER_ENABLED === 'true',
+  WHATSAPP_LISTENER_ENABLED: process.env.WHATSAPP_LISTENER_ENABLED
+    ? process.env.WHATSAPP_LISTENER_ENABLED === 'true'
+    : process.env.NODE_ENV === 'production',
 };
 
 // Validate required environment variables
