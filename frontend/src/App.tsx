@@ -630,7 +630,7 @@ function App() {
 
   return (
     <>
-      <div className="h-screen bg-base flex flex-col">
+      <div className="h-[100dvh] bg-base flex flex-col">
         <TopHeader
           userPicture={user?.picture || identityPlayer?.pictureUrl}
           userName={user?.name || user?.email || identityPlayer?.name}

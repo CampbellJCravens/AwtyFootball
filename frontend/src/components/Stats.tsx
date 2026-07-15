@@ -5,6 +5,8 @@ import OverallStatsTable from './OverallStatsTable';
 import ChemistrySection from './ChemistrySection';
 import LegacyStatsTable from './LegacyStatsTable';
 import FieldStatsTab from './FieldStatsTab';
+import ReliabilityTab from './ReliabilityTab';
+import { useAuth } from '../contexts/AuthContext';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -15,9 +17,10 @@ interface StatsProps {
   currentPlayerId?: string | null;
 }
 
-type StatsView = 'players' | 'pairings' | 'groups' | 'legacy' | 'field';
+type StatsView = 'players' | 'pairings' | 'groups' | 'legacy' | 'field' | 'reliability';
 
 export default function Stats({ players, games, onPlayerClick, currentPlayerId }: StatsProps) {
+  const { isAdmin } = useAuth();
   const [filterMonth, setFilterMonth] = useState<number | null>(null);
   const [filterYear, setFilterYear] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<StatsView>('players');
@@ -58,6 +61,8 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
     { id: 'groups', label: 'Groups' },
     { id: 'legacy', label: 'Legacy' },
     { id: 'field', label: 'Field' },
+    // Admin-only: RSVP reliability (who says In and actually shows).
+    ...(isAdmin ? [{ id: 'reliability' as const, label: 'Reliability' }] : []),
   ];
 
   return (
@@ -162,6 +167,10 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
 
         {activeView === 'field' && (
           <FieldStatsTab />
+        )}
+
+        {activeView === 'reliability' && isAdmin && (
+          <ReliabilityTab />
         )}
       </div>
     </div>

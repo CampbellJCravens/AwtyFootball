@@ -61,3 +61,13 @@ export async function clearRsvp(gameId: string, playerId: string): Promise<void>
   });
   if (!res.ok && res.status !== 204) throw new Error('Failed to clear RSVP');
 }
+
+// Admin: reset the whole poll — clear every RSVP for a game.
+export async function resetRsvps(gameId: string): Promise<{ deleted: number }> {
+  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error('Failed to reset poll');
+  return res.json();
+}

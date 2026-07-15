@@ -38,6 +38,7 @@ export default function FieldStatsTab() {
   const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [collapsedYears, setCollapsedYears] = useState<Set<number> | null>(null);
 
   useEffect(() => {
     fetchFieldStats()
@@ -156,6 +157,18 @@ export default function FieldStatsTab() {
   const gpx = (i: number) => PL + (i / Math.max(n - 1, 1)) * plotW;
   const gpy = (v: number) => PT + plotH - Math.min(v / maxY, 1) * plotH;
 
+  // Per-game table is grouped by year (collapsible). Default: newest year open, older collapsed.
+  const filteredYears = [...new Set(validFiltered.map(r => r.year))].sort((a, b) => b - a);
+  const effectiveCollapsed = collapsedYears ?? new Set<number>(filteredYears.slice(1));
+  const countByYear: Record<number, number> = {};
+  for (const r of validFiltered) countByYear[r.year] = (countByYear[r.year] || 0) + 1;
+  const toggleYear = (y: number) => {
+    const base = collapsedYears ?? new Set<number>(filteredYears.slice(1));
+    const next = new Set(base);
+    if (next.has(y)) next.delete(y); else next.add(y);
+    setCollapsedYears(next);
+  };
+
   return (
     <div>
       {/* Year filter */}
@@ -189,7 +202,7 @@ export default function FieldStatsTab() {
       <div className="grid grid-cols-3 gap-2 mb-3">
         {[
           { label: 'Awty',      count: awtyCount, color: 'text-emerald-400' },
-          { label: 'Alternate', count: altCount,  color: 'text-gold'        },
+          { label: 'Alternate', count: altCount,  color: 'text-blue-400'    },
           { label: 'Cancelled', count: cancelled, color: 'text-red-400'     },
         ].map(({ label, count, color }) => (
           <div key={label} className="bg-surface rounded-lg p-3 border border-border text-center">
@@ -231,10 +244,27 @@ export default function FieldStatsTab() {
         )}
       </div>
 
-      {/* Response vs Show-Up graph */}
-      {n > 1 && (
+      {/* Response vs Show-Up: overall averages + by-year graph in one card */}
+      {(rateStats.avgResponse > 0 || rateStats.avgAttendance > 0) && (
         <div className="bg-surface rounded-lg p-3 border border-border mb-3">
-          <p className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2">Avg Response vs Show-Up by Year</p>
+          <p className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2">Response vs Show-Up</p>
+          <div className="flex gap-6 flex-wrap mb-3">
+            <div>
+              <p className="text-xl font-bold text-gold">{rateStats.avgResponse.toFixed(1)}%</p>
+              <p className="text-[10px] text-text-tertiary">Response</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-emerald-400">{rateStats.avgAttendance.toFixed(1)}%</p>
+              <p className="text-[10px] text-text-tertiary">Show-Up Est.</p>
+            </div>
+            <div>
+              <p className={`text-xl font-bold ${rateStats.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {rateStats.diff >= 0 ? '+' : ''}{rateStats.diff.toFixed(1)}%
+              </p>
+              <p className="text-[10px] text-text-tertiary">Difference</p>
+            </div>
+          </div>
+          {n > 1 && (<>
           <div className="flex gap-4 mb-1.5">
             <span className="text-[10px] text-gold flex items-center gap-1.5">
               <span className="inline-block w-5 h-px bg-gold" />Resp%
@@ -266,6 +296,7 @@ export default function FieldStatsTab() {
               </g>
             ))}
           </svg>
+          </>)}
         </div>
       )}
 
@@ -295,27 +326,6 @@ export default function FieldStatsTab() {
             ))}
           </tbody>
         </table>
-      </div>
-
-      {/* Avg response vs show-up numbers */}
-      <div className="bg-surface rounded-lg p-3 border border-border mb-3">
-        <p className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2">Avg Response vs Show-Up</p>
-        <div className="flex gap-6 flex-wrap">
-          <div>
-            <p className="text-xl font-bold text-gold">{rateStats.avgResponse.toFixed(1)}%</p>
-            <p className="text-[10px] text-text-tertiary">Response</p>
-          </div>
-          <div>
-            <p className="text-xl font-bold text-emerald-400">{rateStats.avgAttendance.toFixed(1)}%</p>
-            <p className="text-[10px] text-text-tertiary">Show-Up Est.</p>
-          </div>
-          <div>
-            <p className={`text-xl font-bold ${rateStats.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {rateStats.diff >= 0 ? '+' : ''}{rateStats.diff.toFixed(1)}%
-            </p>
-            <p className="text-[10px] text-text-tertiary">Difference</p>
-          </div>
-        </div>
       </div>
 
       {/* WhatsApp RSVP averages (only when WA data in filtered set) */}
@@ -366,86 +376,106 @@ export default function FieldStatsTab() {
             </tr>
           </thead>
           <tbody>
-            {[...validFiltered].reverse().map((r) => {
-              const key      = r.played.toLowerCase();
-              const info     = FIELD_STATUS[key] || { label: r.played, color: 'text-text-secondary', bg: '' };
-              const isPlayed = key === 'yes';
-              const tint     = ROW_TINT[key] ?? '';
-              const totalIn  = (r.waIn ?? 0) + (r.waPlus1 ?? 0) * 2 + (r.waPlus2 ?? 0) * 3;
-              const isExpanded   = expandedRow === r.isoDate;
-              const locDisplay   = effectiveLocation(r);
-              return [
-                <tr
-                  key={r.isoDate}
-                  onClick={() => setExpandedRow(isExpanded ? null : r.isoDate)}
-                  className={`border-b border-border cursor-pointer ${
-                    isPlayed ? 'hover:bg-surface-hover even:bg-surface-hover/50' : tint
-                  }`}
-                >
-                  <td className="py-1.5 px-1 text-text-secondary whitespace-nowrap">{r.year} {r.date}</td>
-                  <td className="py-1.5 px-1">
-                    {locDisplay ? (
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${LOCATION_BADGE[locDisplay] ?? 'bg-blue-900/40 text-blue-300'}`}>
-                        {locDisplay}
-                      </span>
-                    ) : key === 'alt' ? (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-900/40 text-blue-300">alt</span>
-                    ) : null}
-                  </td>
-                  <td className={`py-1.5 px-1 font-medium ${info.color}`}>{info.label}</td>
-                  <td className="py-1.5 px-1 text-right font-medium text-emerald-400">
-                    {isPlayed ? (r.waIn !== null ? totalIn : r.eviteResponse ?? null) : null}
-                  </td>
-                  <td className="py-1.5 px-1 text-text-secondary text-right">
-                    {isPlayed && r.responseRate > 0 ? `${r.responseRate.toFixed(1)}%` : null}
-                  </td>
-                  <td className="py-1.5 px-1 text-text-secondary text-right">
-                    {isPlayed && r.attendanceRate > 0 ? `${r.attendanceRate.toFixed(1)}%` : null}
-                  </td>
-                  <td className="py-1.5 px-1 text-right">
-                    {isPlayed && r.trackedPlayers !== null
-                      ? <span className="text-gold font-medium">{r.trackedPlayers}</span>
-                      : null}
-                  </td>
-                </tr>,
-                isExpanded && (
-                  <tr key={`${r.isoDate}-detail`} className="bg-surface-hover/70">
-                    <td colSpan={7} className="px-3 py-2">
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
-                        {r.waIn !== null ? <>
-                          <span className="text-emerald-400">In: {r.waIn}</span>
-                          {(r.waPlus1 ?? 0) > 0 && (
-                            <span className="text-blue-400">+1: {r.waPlus1} <span className="text-text-tertiary">({r.waPlus1! * 2} bodies)</span></span>
-                          )}
-                          {(r.waPlus2 ?? 0) > 0 && (
-                            <span className="text-blue-400">+2: {r.waPlus2} <span className="text-text-tertiary">({r.waPlus2! * 3} bodies)</span></span>
-                          )}
-                          <span className="text-yellow-400">Maybe: {r.waMaybe}</span>
-                          <span className="text-red-400">Out: {r.waOut}</span>
-                          <span className="text-text-tertiary">Est. bodies: <span className="text-white font-medium">{totalIn}</span></span>
-                        </> : <>
-                          {r.eviteResponse !== null && <span className="text-emerald-400">Evite responses: {r.eviteResponse}</span>}
-                          {r.showUp !== null && <span className="text-text-tertiary">Show up: <span className="text-white font-medium">{r.showUp}</span></span>}
-                        </>}
-                        {r.trackedPlayers !== null && (
-                          <span className="text-text-tertiary">
-                            Tracked in app: <span className="text-gold font-medium">{r.trackedPlayers}</span>
-                            {r.turnoutVsRsvp !== null && (
-                              <span className={`ml-1 ${r.turnoutVsRsvp >= 90 ? 'text-emerald-400' : r.turnoutVsRsvp >= 70 ? 'text-yellow-400' : 'text-red-400'}`}>
-                                ({r.turnoutVsRsvp}% of RSVP'd)
-                              </span>
-                            )}
-                          </span>
-                        )}
-                        {r.groupSize !== null && (
-                          <span className="text-text-tertiary">Group size: {r.groupSize}</span>
-                        )}
-                      </div>
+            {(() => {
+              const rows: JSX.Element[] = [];
+              let lastYear: number | null = null;
+              for (const r of [...validFiltered].reverse()) {
+                if (r.year !== lastYear) {
+                  lastYear = r.year;
+                  const yc = effectiveCollapsed.has(r.year);
+                  rows.push(
+                    <tr key={`yh-${r.year}`} onClick={() => toggleYear(r.year)} className="cursor-pointer bg-surface-hover/60 border-b border-gold/40">
+                      <td colSpan={7} className="py-1.5 px-1 text-[11px] font-bold text-gold">
+                        <span className="inline-block w-3 text-text-tertiary">{yc ? '▸' : '▾'}</span> {r.year}
+                        <span className="text-text-tertiary font-normal ml-2">{countByYear[r.year]} week{countByYear[r.year] !== 1 ? 's' : ''}</span>
+                      </td>
+                    </tr>
+                  );
+                }
+                if (effectiveCollapsed.has(r.year)) continue;
+                const key      = r.played.toLowerCase();
+                const info     = FIELD_STATUS[key] || { label: r.played, color: 'text-text-secondary', bg: '' };
+                const isPlayed = key === 'yes';
+                const tint     = ROW_TINT[key] ?? '';
+                const totalIn  = (r.waIn ?? 0) + (r.waPlus1 ?? 0) * 2 + (r.waPlus2 ?? 0) * 3;
+                const isExpanded   = expandedRow === r.isoDate;
+                const locDisplay   = effectiveLocation(r);
+                rows.push(
+                  <tr
+                    key={r.isoDate}
+                    onClick={() => setExpandedRow(isExpanded ? null : r.isoDate)}
+                    className={`border-b border-border cursor-pointer ${
+                      isPlayed ? 'hover:bg-surface-hover even:bg-surface-hover/50' : tint
+                    }`}
+                  >
+                    <td className="py-1.5 px-1 pl-4 text-text-secondary whitespace-nowrap">{r.date}</td>
+                    <td className="py-1.5 px-1">
+                      {locDisplay ? (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${LOCATION_BADGE[locDisplay] ?? 'bg-blue-900/40 text-blue-300'}`}>
+                          {locDisplay}
+                        </span>
+                      ) : key === 'alt' ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-900/40 text-blue-300">alt</span>
+                      ) : null}
+                    </td>
+                    <td className={`py-1.5 px-1 font-medium ${info.color}`}>{info.label}</td>
+                    <td className="py-1.5 px-1 text-right font-medium text-emerald-400">
+                      {isPlayed ? (r.waIn !== null ? totalIn : r.eviteResponse ?? null) : null}
+                    </td>
+                    <td className="py-1.5 px-1 text-text-secondary text-right">
+                      {isPlayed && r.responseRate > 0 ? `${r.responseRate.toFixed(1)}%` : null}
+                    </td>
+                    <td className="py-1.5 px-1 text-text-secondary text-right">
+                      {isPlayed && r.attendanceRate > 0 ? `${r.attendanceRate.toFixed(1)}%` : null}
+                    </td>
+                    <td className="py-1.5 px-1 text-right">
+                      {isPlayed && r.trackedPlayers !== null
+                        ? <span className="text-gold font-medium">{r.trackedPlayers}</span>
+                        : null}
                     </td>
                   </tr>
-                ),
-              ];
-            })}
+                );
+                if (isExpanded) {
+                  rows.push(
+                    <tr key={`${r.isoDate}-detail`} className="bg-surface-hover/70">
+                      <td colSpan={7} className="px-3 py-2">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                          {r.waIn !== null ? <>
+                            <span className="text-emerald-400">In: {r.waIn}</span>
+                            {(r.waPlus1 ?? 0) > 0 && (
+                              <span className="text-blue-400">+1: {r.waPlus1} <span className="text-text-tertiary">({r.waPlus1! * 2} bodies)</span></span>
+                            )}
+                            {(r.waPlus2 ?? 0) > 0 && (
+                              <span className="text-blue-400">+2: {r.waPlus2} <span className="text-text-tertiary">({r.waPlus2! * 3} bodies)</span></span>
+                            )}
+                            <span className="text-yellow-400">Maybe: {r.waMaybe}</span>
+                            <span className="text-red-400">Out: {r.waOut}</span>
+                            <span className="text-text-tertiary">Est. bodies: <span className="text-white font-medium">{totalIn}</span></span>
+                          </> : <>
+                            {r.eviteResponse !== null && <span className="text-emerald-400">Evite responses: {r.eviteResponse}</span>}
+                            {r.showUp !== null && <span className="text-text-tertiary">Show up: <span className="text-white font-medium">{r.showUp}</span></span>}
+                          </>}
+                          {r.trackedPlayers !== null && (
+                            <span className="text-text-tertiary">
+                              Tracked in app: <span className="text-gold font-medium">{r.trackedPlayers}</span>
+                              {r.turnoutVsRsvp !== null && (
+                                <span className={`ml-1 ${r.turnoutVsRsvp >= 90 ? 'text-emerald-400' : r.turnoutVsRsvp >= 70 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                  ({r.turnoutVsRsvp}% of RSVP'd)
+                                </span>
+                              )}
+                            </span>
+                          )}
+                          {r.groupSize !== null && (
+                            <span className="text-text-tertiary">Group size: {r.groupSize}</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+              }
+              return rows;
+            })()}
           </tbody>
         </table>
       </div>

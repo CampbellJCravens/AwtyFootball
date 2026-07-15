@@ -15,6 +15,7 @@ interface PlayerStats {
   goals: number;
   assists: number;
   cleanSheets: number; // games where the opponent scored 0
+  sportsmanship: number; // gold stars given during games
   score: number;
   form: ('W' | 'L' | 'T')[]; // Last 5 game results (oldest to newest, left to right)
   formWins: number; // Wins minus losses in the form array (for sorting)
@@ -27,7 +28,7 @@ interface OverallStatsTableProps {
   currentPlayerId?: string | null;
 }
 
-type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'cleanSheets' | 'formWins';
+type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'cleanSheets' | 'sportsmanship' | 'formWins';
 type SortDirection = 'asc' | 'desc';
 
 
@@ -103,6 +104,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         goals: 0,
         assists: 0,
         cleanSheets: 0,
+        sportsmanship: 0,
         score: 0,
         form: [],
         formWins: 0,
@@ -157,6 +159,8 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         if (opponentGoals === 0) {
           stats.cleanSheets++;
         }
+
+        stats.sportsmanship += (game.sportsmanship?.[playerId] || 0);
       });
 
       // Process goals and assists
@@ -291,6 +295,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         case 'goals': return perGame ? pg(stats.goals, gp) : stats.goals;
         case 'assists': return perGame ? pg(stats.assists, gp) : stats.assists;
         case 'cleanSheets': return perGame ? pg(stats.cleanSheets, gp) : stats.cleanSheets;
+        case 'sportsmanship': return perGame ? pg(stats.sportsmanship, gp) : stats.sportsmanship;
         case 'formWins': return stats.formWins;
       }
     };
@@ -305,6 +310,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
       goals: ['assists', 'points'],
       assists: ['goals', 'points'],
       cleanSheets: ['wins', 'points'],
+      sportsmanship: ['points', 'goalInvolvements'],
       formWins: ['points', 'goalInvolvements'],
     };
 
@@ -325,6 +331,8 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
   const qualifiedStats = useMemo(() => sortedStats.filter(s => s.gamesPlayed >= MIN_QUALIFIED_GAMES), [sortedStats]);
   const unqualifiedStats = useMemo(() => sortedStats.filter(s => s.gamesPlayed < MIN_QUALIFIED_GAMES), [sortedStats]);
   const [showUnqualified, setShowUnqualified] = useState(true);
+  const [showQualified, setShowQualified] = useState(true);
+  const TOP_N = 20;
 
   // Measure header height for padding-top calculation (must be after sortedStats is defined)
   useLayoutEffect(() => {
@@ -380,6 +388,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
     { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'goals' },
     { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'assists' },
     { key: 'cleanSheets', label: 'CS', tooltip: 'Clean Sheets', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'cleanSheets' },
+    { key: 'sportsmanship', label: 'SP', tooltip: 'Sportsmanship (gold stars)', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'sportsmanship' },
     { key: 'form', label: 'Form', tooltip: 'Form', width: 'w-28', widthPx: 112, sortable: true, sortKey: 'formWins' },
   ];
 
@@ -465,7 +474,19 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                 </tr>
               ) : (
                 <>
-                  {qualifiedStats.map((stats, index) => {
+                  {qualifiedStats.length > 0 && (
+                    <tr>
+                      <td colSpan={columns.length} className="py-2 px-2 bg-base">
+                        <button
+                          onClick={() => setShowQualified(prev => !prev)}
+                          className="text-[11px] font-semibold text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                          {showQualified ? '▾' : '▸'} Qualified ({MIN_QUALIFIED_GAMES}+ games){qualifiedStats.length > TOP_N ? ` · top ${TOP_N} of ${qualifiedStats.length}` : ` · ${qualifiedStats.length}`}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {showQualified && qualifiedStats.slice(0, TOP_N).map((stats, index) => {
                     const isCurrentUser = stats.player.id === currentPlayerId;
                     return (
                       <tr key={stats.player.id} className={`border-b border-border ${isCurrentUser ? 'bg-gold/10' : 'hover:bg-surface-hover even:bg-surface-hover/50'}`}>
@@ -501,6 +522,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
+                        <td className="py-1.5 px-1 text-gold">{perGame ? pg(stats.sportsmanship, stats.gamesPlayed).toFixed(2) : stats.sportsmanship}</td>
                         <td className="py-1.5 px-1">
                           <div className="flex items-center gap-0.5">
                             {[0, 1, 2, 3, 4].map((i) => {
@@ -521,17 +543,17 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                   })}
                   {unqualifiedStats.length > 0 && (
                     <tr>
-                      <td colSpan={columns.length} className="py-2 px-2">
+                      <td colSpan={columns.length} className="py-2 px-2 bg-base">
                         <button
                           onClick={() => setShowUnqualified(prev => !prev)}
-                          className="text-[11px] text-text-tertiary hover:text-text-secondary transition-colors"
+                          className="text-[11px] font-semibold text-text-tertiary hover:text-text-secondary transition-colors"
                         >
-                          {showUnqualified ? 'Hide' : 'Show'} unqualified ({unqualifiedStats.length} player{unqualifiedStats.length !== 1 ? 's' : ''} with &lt;{MIN_QUALIFIED_GAMES} games)
+                          {showUnqualified ? '▾' : '▸'} Unqualified (&lt;{MIN_QUALIFIED_GAMES} games){unqualifiedStats.length > TOP_N ? ` · top ${TOP_N} of ${unqualifiedStats.length}` : ` · ${unqualifiedStats.length}`}
                         </button>
                       </td>
                     </tr>
                   )}
-                  {showUnqualified && unqualifiedStats.map((stats, index) => {
+                  {showUnqualified && unqualifiedStats.slice(0, TOP_N).map((stats, index) => {
                     const isCurrentUser = stats.player.id === currentPlayerId;
                     return (
                       <tr key={stats.player.id} className={`border-b border-border ${isCurrentUser ? 'bg-gold/10' : 'hover:bg-surface-hover even:bg-surface-hover/50'} opacity-50`}>
@@ -567,6 +589,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
+                        <td className="py-1.5 px-1 text-gold">{perGame ? pg(stats.sportsmanship, stats.gamesPlayed).toFixed(2) : stats.sportsmanship}</td>
                         <td className="py-1.5 px-1">
                           <div className="flex items-center gap-0.5">
                             {[0, 1, 2, 3, 4].map((i) => {

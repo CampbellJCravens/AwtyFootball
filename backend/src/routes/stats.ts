@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../prisma';
-import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
 
 const router = Router();
@@ -889,6 +889,112 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
   } catch (error) {
     console.error('Error fetching field stats:', error);
     res.status(500).json({ error: 'Failed to fetch field statistics' });
+  }
+});
+
+// ── GET /api/stats/reliability ── (admin only)
+// Per-player RSVP reliability across *tracked* games (a game with a non-empty
+// Color/White roster = "who showed up"). Guests (the GuestN pool players) are
+// excluded — they aren't real members. Guest *headcounts* (guestCount on a
+// player's own "yes") are rolled up separately for the guest-frequency view.
+router.get('/reliability', requireAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [players, games, rsvps] = await Promise.all([
+      prisma.player.findMany({ select: { id: true, name: true, pictureUrl: true } }),
+      prisma.game.findMany({ select: { id: true, teamAssignments: true } }),
+      prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true, guestCount: true } }),
+    ]);
+
+    // Tracked game = one with at least one player on a team.
+    const rosterByGame = new Map<string, Set<string>>();
+    for (const g of games) {
+      const roster = Object.keys(safeParseJSON<Record<string, string>>(g.teamAssignments, {}));
+      if (roster.length > 0) rosterByGame.set(g.id, new Set(roster));
+    }
+    const totalTrackedGames = rosterByGame.size;
+
+    // RSVPs keyed by game+player, restricted to tracked games.
+    const rsvpByKey = new Map<string, { status: string; guestCount: number }>();
+    for (const r of rsvps) {
+      if (rosterByGame.has(r.gameId)) {
+        rsvpByKey.set(`${r.gameId}:${r.playerId}`, { status: r.status, guestCount: r.guestCount });
+      }
+    }
+
+    const isGuestPool = (name: string) => /^Guest\d+$/.test(name.trim());
+
+    const result = players
+      .filter(p => !isGuestPool(p.name))
+      .map(p => {
+        let responded = 0, committed = 0, showed = 0, showedWhenCommitted = 0;
+        let noShow = 0, ghost = 0, guestsBrought = 0, gamesWithGuests = 0;
+
+        for (const [gameId, roster] of rosterByGame) {
+          const r = rsvpByKey.get(`${gameId}:${p.id}`);
+          const onRoster = roster.has(p.id);
+          const committedThis = r?.status === 'yes';
+
+          if (r) responded++;
+          if (committedThis) {
+            committed++;
+            guestsBrought += r!.guestCount;
+            if (r!.guestCount > 0) gamesWithGuests++;
+          }
+          if (onRoster) showed++;
+          if (committedThis && onRoster) showedWhenCommitted++;
+          if (committedThis && !onRoster) noShow++;
+          if (!committedThis && onRoster) ghost++;
+        }
+
+        const frac = (num: number, den: number) => (den > 0 ? num / den : null);
+
+        return {
+          id: p.id,
+          name: p.name,
+          pictureUrl: p.pictureUrl,
+          responded,
+          committed,
+          showed,
+          showedWhenCommitted,
+          noShow,
+          ghost,
+          guestsBrought,
+          gamesWithGuests,
+          // Fractions 0-1 (or null when the denominator is 0). Frontend formats %.
+          responseRate: frac(responded, totalTrackedGames),
+          showWhenCommittedRate: frac(showedWhenCommitted, committed),
+          attendanceRate: frac(showed, totalTrackedGames),
+          guestAttachRate: frac(gamesWithGuests, committed),
+        };
+      });
+
+    // Season reconciliation: responses vs actual turnout, and indicated vs
+    // actual guests. Guests sit on the roster as "GuestN" entries, so a game's
+    // real turnout excludes them and guest slots = guests who actually showed.
+    const nameById = new Map(players.map(p => [p.id, p.name]));
+    let guestSlots = 0, realTurnout = 0, responsesTotal = 0, guestsIndicated = 0;
+    for (const [, roster] of rosterByGame) {
+      for (const pid of roster) {
+        if (isGuestPool(nameById.get(pid) || '')) guestSlots++; else realTurnout++;
+      }
+    }
+    for (const r of rsvps) {
+      if (rosterByGame.has(r.gameId)) {
+        responsesTotal++;
+        if (r.status === 'yes') guestsIndicated += r.guestCount;
+      }
+    }
+    const summary = {
+      avgResponses: totalTrackedGames ? responsesTotal / totalTrackedGames : 0,
+      avgTurnout: totalTrackedGames ? realTurnout / totalTrackedGames : 0,
+      guestsIndicated,
+      guestsShown: guestSlots,
+    };
+
+    res.json({ totalTrackedGames, summary, players: result });
+  } catch (error) {
+    console.error('Error computing reliability stats:', error);
+    res.status(500).json({ error: 'Failed to compute reliability statistics' });
   }
 });
 
