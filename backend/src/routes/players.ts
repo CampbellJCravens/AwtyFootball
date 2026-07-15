@@ -8,11 +8,30 @@ const router = Router();
 
 // Normalize a free-form phone entry to digits only (matching how WhatsApp poll
 // votes are keyed). undefined = leave unchanged; empty/blank = clear (null).
+// US assumption: a bare 10-digit number gets a leading "1" (country code), since
+// WhatsApp reports numbers with it and people won't type it themselves.
 const normalizePhone = (raw: string | null | undefined): string | null | undefined => {
   if (raw === undefined) return undefined;
-  const digits = (raw || '').replace(/\D/g, '');
-  return digits || null;
+  let digits = (raw || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length === 10) digits = '1' + digits;
+  return digits;
 };
+
+// Player is public, but phone numbers are not: everyone gets `hasPhone`, only
+// admins get the actual `phone` string.
+const serializePlayer = (p: any, isAdmin: boolean) => ({
+  id: p.id,
+  name: p.name,
+  pictureUrl: p.pictureUrl,
+  team: p.team,
+  createdAt: p.createdAt,
+  updatedAt: p.updatedAt,
+  hasPhone: !!p.phone,
+  ...(isAdmin ? { phone: p.phone ?? null } : {}),
+});
+
+const isReqAdmin = (req: AuthenticatedRequest) => req.user?.role === 'admin';
 
 // POST /api/players - Create a new player (public; new RSVPers can self-register)
 router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -28,7 +47,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
         phone: normalizePhone(validatedData.phone) ?? null,
       },
     });
-    res.status(201).json(player);
+    res.status(201).json(serializePlayer(player, isReqAdmin(req)));
   } catch (error: any) {
     if (error.code === 'P2002') {
       return res.status(409).json({ error: 'That phone number is already linked to another player' });
@@ -47,7 +66,8 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
         createdAt: 'desc',
       },
     });
-    res.json(players);
+    const admin = isReqAdmin(req);
+    res.json(players.map((p) => serializePlayer(p, admin)));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch players' });
   }
@@ -65,7 +85,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'Player not found' });
     }
 
-    res.json(player);
+    res.json(serializePlayer(player, isReqAdmin(req)));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch player' });
   }
@@ -99,7 +119,7 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
       }
     }
 
-    res.json(player);
+    res.json(serializePlayer(player, isReqAdmin(req)));
   } catch (error: any) {
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Player not found' });

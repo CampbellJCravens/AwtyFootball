@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { fetchPlayerStats, PlayerStatsResponse, fetchPlayerAwards, PlayerAward, fetchPlayerAchievements, Achievement } from '../api/stats';
-import { updatePlayer } from '../api/players';
+import { updatePlayer, fetchPlayer } from '../api/players';
 import GroupDetailModal from './GroupDetailModal';
 import ImageLightbox from './ImageLightbox';
+import ProfilePhoneBanner from './ProfilePhoneBanner';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -29,6 +30,8 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
   const [selectedGroup, setSelectedGroup] = useState<{ players: { id: string; name: string; pictureUrl: string | null }[]; stats: { label: string; value: string }[] } | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [perGame, setPerGame] = useState(false);
+  // null = unknown/not yet checked; only checked for your own profile.
+  const [hasPhone, setHasPhone] = useState<boolean | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -54,6 +57,16 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
     };
     load();
   }, [playerId]);
+
+  // For your own profile, check whether a WhatsApp number is linked (drives the banner).
+  useEffect(() => {
+    if (!isOwnProfile) { setHasPhone(null); return; }
+    let cancelled = false;
+    fetchPlayer(playerId)
+      .then((p) => { if (!cancelled) setHasPhone(!!p.hasPhone); })
+      .catch(() => { if (!cancelled) setHasPhone(null); });
+    return () => { cancelled = true; };
+  }, [playerId, isOwnProfile]);
 
   const handlePictureChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -167,6 +180,11 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           </svg>
           <span className="text-sm font-medium">Back</span>
         </button>
+      )}
+
+      {/* Prompt to link your WhatsApp number (own profile, none linked yet) */}
+      {isOwnProfile && hasPhone === false && (
+        <ProfilePhoneBanner playerId={playerId} onSaved={() => setHasPhone(true)} />
       )}
 
       {/* Hero */}

@@ -1,127 +1,63 @@
-import { CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
-import { Player } from '../api/players';
-import {
-  Rsvp,
-  RsvpStatus,
-  fetchRsvps,
-  submitRsvp,
-  adminSetRsvp,
-  clearRsvp,
-  resetRsvps,
-} from '../api/rsvps';
-import { GameField } from '../api/games';
-import { useAuth } from '../contexts/AuthContext';
-import { usePlayerIdentity } from '../hooks/usePlayerIdentity';
-import PlayerPickerModal from './PlayerPickerModal';
-import DeleteConfirmationModal from './DeleteConfirmationModal';
-import { renderRsvpImage } from '../utils/renderRsvpImage';
+import { CSSProperties, useCallback, useEffect, useState } from 'react';
+import { RsvpStatus, GamePoll, GamePollEntry, fetchGamePoll } from '../api/rsvps';
 
 interface GameRsvpSectionProps {
   gameId: string;
-  gameNumber: number | null;
-  gameDate: string;
-  field?: GameField | null;
-  players: Player[];
-  onPlayersChanged?: () => void;
+  // Bump to force a refetch (e.g. after an admin links a number to a player).
+  refreshSignal?: number;
 }
 
 const STATUS_LABEL: Record<RsvpStatus, string> = { yes: 'In', maybe: 'Maybe', no: 'Out' };
-const STATUS_COLOR: Record<RsvpStatus, string> = {
-  yes: '#22c55e',
-  maybe: '#f59e0b',
-  no: '#ef4444',
-};
-const STATUS_TEXT: Record<RsvpStatus, string> = {
-  yes: 'text-green-400',
-  maybe: 'text-gold',
-  no: 'text-red-400',
-};
+const STATUS_COLOR: Record<RsvpStatus, string> = { yes: '#22c55e', maybe: '#f59e0b', no: '#ef4444' };
+const STATUS_TEXT: Record<RsvpStatus, string> = { yes: 'text-green-400', maybe: 'text-gold', no: 'text-red-400' };
 
-const GUEST_MAX = 5;
-
-// Hash playerId → hue 0-360 so player avatars without a picture stay
-// recognisable across renders.
+// Hash a key → hue so avatars without a picture stay recognisable across renders.
 function toneFromId(id: string): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i);
   return Math.abs(hash) % 360;
 }
 
-interface AvatarSubject {
-  id: string;
-  name: string;
-  pictureUrl?: string | null;
-  isGuest?: boolean;
-}
-
-function PlayerAvatar({
-  subject,
-  size = 22,
-  ring,
-}: {
-  subject: AvatarSubject;
-  size?: number;
-  ring?: string;
-}) {
+function EntryAvatar({ entry, size = 22, ring }: { entry: GamePollEntry; size?: number; ring?: string }) {
   const baseStyle: CSSProperties = { width: size, height: size };
   if (ring) baseStyle.boxShadow = `0 0 0 2px ${ring}`;
 
-  if (!subject.isGuest && subject.pictureUrl) {
+  if (entry.pictureUrl) {
     return (
       <img
-        src={subject.pictureUrl}
-        alt={subject.name}
+        src={entry.pictureUrl}
+        alt={entry.name}
         className="rounded-full object-cover flex-shrink-0"
         style={baseStyle}
       />
     );
   }
-
-  const initial = subject.isGuest ? '+' : subject.name.charAt(0).toUpperCase();
-  const tone = subject.isGuest ? 60 : toneFromId(subject.id);
   return (
     <div
       className="rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0"
       style={{
         ...baseStyle,
         fontSize: Math.max(9, Math.floor(size * 0.42)),
-        background: subject.isGuest
-          ? 'rgba(245, 158, 11, 0.6)'
-          : `oklch(0.55 0.07 ${tone})`,
+        background: `oklch(0.55 0.07 ${toneFromId(entry.key)})`,
       }}
     >
-      {initial}
+      {entry.name.charAt(0).toUpperCase()}
     </div>
   );
 }
 
-function AvatarPile({
-  subjects,
-  max = 6,
-  size = 22,
-  ring = 'var(--color-bg-surface)',
-}: {
-  subjects: AvatarSubject[];
-  max?: number;
-  size?: number;
-  ring?: string;
+function AvatarPile({ entries, max = 6, size = 20, ring = 'var(--color-bg-surface)' }: {
+  entries: GamePollEntry[]; max?: number; size?: number; ring?: string;
 }) {
-  const shown = subjects.slice(0, max);
-  const extra = Math.max(0, subjects.length - max);
+  const shown = entries.slice(0, max);
+  const extra = Math.max(0, entries.length - max);
   return (
     <div className="flex items-center -space-x-2">
-      {shown.map(s => (
-        <PlayerAvatar key={s.id} subject={s} size={size} ring={ring} />
-      ))}
+      {shown.map((e) => <EntryAvatar key={e.key} entry={e} size={size} ring={ring} />)}
       {extra > 0 && (
         <div
           className="rounded-full flex items-center justify-center bg-surface-active text-text-primary font-semibold flex-shrink-0"
-          style={{
-            width: size,
-            height: size,
-            fontSize: Math.max(9, Math.floor(size * 0.36)),
-            boxShadow: `0 0 0 2px ${ring}`,
-          }}
+          style={{ width: size, height: size, fontSize: Math.max(9, Math.floor(size * 0.36)), boxShadow: `0 0 0 2px ${ring}` }}
         >
           +{extra}
         </div>
@@ -143,10 +79,7 @@ function TotalComingHero({ inCount, guestCount }: { inCount: number; guestCount:
           <p className="text-xs text-text-secondary mt-1.5">
             {inCount} in
             {guestCount > 0 && (
-              <>
-                {' · '}
-                <span className="text-gold">+{guestCount} guest{guestCount === 1 ? '' : 's'}</span>
-              </>
+              <>{' · '}<span className="text-gold">+{guestCount} guest{guestCount === 1 ? '' : 's'}</span></>
             )}
           </p>
         </div>
@@ -155,813 +88,128 @@ function TotalComingHero({ inCount, guestCount }: { inCount: number; guestCount:
   );
 }
 
-function IdentityPill({
-  player,
-  onPick,
-}: {
-  player: Player | null;
-  onPick: () => void;
-}) {
-  if (!player) {
-    return (
-      <button
-        onClick={onPick}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-surface border border-border-emphasis hover:bg-surface-hover transition-colors text-left"
-      >
-        <div className="w-9 h-9 rounded-full bg-surface-raised flex items-center justify-center text-text-tertiary text-lg font-bold">?</div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-text-tertiary font-semibold leading-none">You're voting as</p>
-          <p className="text-[14px] font-semibold text-text-primary leading-tight mt-1">Pick your player</p>
-        </div>
-        <span className="text-[11px] font-medium text-gold px-2.5 py-1.5 rounded-lg bg-gold/10 border border-gold/30">
-          Pick
-        </span>
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-surface border border-border">
-      <PlayerAvatar subject={player} size={32} />
-      <div className="flex-1 min-w-0">
-        <p className="text-[10px] uppercase tracking-wider text-text-tertiary font-semibold leading-none">You're voting as</p>
-        <p className="text-[14px] font-semibold text-text-primary leading-tight mt-0.5 truncate">{player.name}</p>
-      </div>
-      <button
-        onClick={onPick}
-        className="text-[11px] font-medium text-text-secondary px-2.5 py-1.5 rounded-lg bg-surface-raised hover:bg-surface-hover transition-colors flex-shrink-0"
-      >
-        Switch
-      </button>
-    </div>
-  );
-}
-
-function GuestStepper({
-  guests,
-  onChange,
-}: {
-  guests: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <div className="relative flex items-center justify-between px-3.5 py-2 bg-base/60 border-t border-border/60">
-      <span className="text-[12px] font-medium text-text-secondary">
-        {guests === 0 ? 'Bringing guests?' : `+ ${guests} guest${guests === 1 ? '' : 's'}`}
-      </span>
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={(e) => { e.stopPropagation(); onChange(Math.max(0, guests - 1)); }}
-          disabled={guests === 0}
-          className="w-7 h-7 rounded-full bg-surface-raised hover:bg-surface-active text-text-primary disabled:opacity-30 flex items-center justify-center font-bold text-[14px] transition-colors"
-          aria-label="Decrease guests"
-        >
-          −
-        </button>
-        <span className="min-w-[20px] text-center text-[14px] font-bold tabular-nums text-text-primary">{guests}</span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onChange(Math.min(GUEST_MAX, guests + 1)); }}
-          disabled={guests >= GUEST_MAX}
-          className="w-7 h-7 rounded-full bg-surface-raised hover:bg-surface-active text-text-primary disabled:opacity-30 flex items-center justify-center font-bold text-[14px] transition-colors"
-          aria-label="Increase guests"
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}
-
-interface PollBarProps {
-  status: RsvpStatus;
-  total: number;
-  voters: AvatarSubject[];
-  mine: boolean;
-  count: number;            // can differ from voters.length when ghost guests are added
-  onVote: () => void;
-  justVoted: boolean;
-  guestSuffix?: number;     // shown as "12+3" when mine is yes with guests
-}
-
-function PollBarFilled({ status, total, voters, mine, count, onVote, justVoted, guestSuffix }: PollBarProps) {
+function PollBar({ status, entries, total }: { status: RsvpStatus; entries: GamePollEntry[]; total: number }) {
   const color = STATUS_COLOR[status];
-  const baseCount = voters.length; // for percentage math, real RSVPs only
-  const pct = total > 0 ? (baseCount / total) * 100 : 0;
-  const minPct = baseCount > 0 ? Math.max(pct, 8) : 0;
-
+  const pct = total > 0 ? (entries.length / total) * 100 : 0;
+  const minPct = entries.length > 0 ? Math.max(pct, 8) : 0;
   return (
-    <button
-      onClick={onVote}
-      className="relative w-full text-left rounded-2xl overflow-hidden transition-all active:scale-[0.99]"
-      style={{
-        border: `${mine ? 2 : 1}px solid ${mine ? color : 'var(--color-border-default)'}`,
-        background: 'var(--color-bg-surface)',
-        boxShadow: mine ? `0 0 0 4px ${color}25` : 'none',
-      }}
+    <div
+      className="relative w-full rounded-2xl overflow-hidden"
+      style={{ border: '1px solid var(--color-border-default)', background: 'var(--color-bg-surface)' }}
     >
       <div
         className="absolute inset-y-0 left-0 transition-[width] duration-500 ease-out"
-        style={{
-          width: `${minPct}%`,
-          background: `linear-gradient(90deg, ${color}30, ${color}12)`,
-          animation: justVoted ? 'pulse 0.6s ease' : undefined,
-        }}
+        style={{ width: `${minPct}%`, background: `linear-gradient(90deg, ${color}30, ${color}12)` }}
       />
       <div className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
-
       <div className="relative px-3.5 py-3 flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`text-[15px] font-bold ${STATUS_TEXT[status]}`}>{STATUS_LABEL[status]}</span>
-            {mine && (
-              <span
-                className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
-                style={{ background: color, color: '#0a0a0a' }}
-              >
-                Your vote
-              </span>
-            )}
-          </div>
+          <span className={`text-[15px] font-bold ${STATUS_TEXT[status]}`}>{STATUS_LABEL[status]}</span>
           <div className="mt-1.5 min-h-[22px]">
-            {voters.length > 0 ? (
-              <AvatarPile subjects={voters} max={6} size={20} />
+            {entries.length > 0 ? (
+              <AvatarPile entries={entries} max={6} size={20} />
             ) : (
-              <span className="text-[11px] text-text-tertiary">No votes yet — be first</span>
+              <span className="text-[11px] text-text-tertiary">No votes yet</span>
             )}
           </div>
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-2xl font-bold text-text-primary tabular-nums leading-none">
-            {count}
-            {guestSuffix && guestSuffix > 0 ? (
-              <span className="text-base text-gold">+{guestSuffix}</span>
-            ) : null}
-          </div>
-        </div>
+        <div className="text-2xl font-bold text-text-primary tabular-nums leading-none shrink-0">{entries.length}</div>
       </div>
-    </button>
+    </div>
   );
 }
 
-function AttendeeRow({
-  player,
-  status,
-  guests,
-  mine,
-  adminMode,
-  setByAdmin,
-  onAdminEdit,
-  onAdminClear,
-}: {
-  player: Player;
-  status: RsvpStatus;
-  guests: number;
-  mine: boolean;
-  adminMode: boolean;
-  setByAdmin: boolean;
-  onAdminEdit: () => void;
-  onAdminClear: () => void;
-}) {
+function AttendeeRow({ entry, status }: { entry: GamePollEntry; status: RsvpStatus }) {
   const color = STATUS_COLOR[status];
   return (
-    <li
-      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface/60"
-      style={{ borderLeft: `2px solid ${color}` }}
-    >
-      <PlayerAvatar subject={player} size={28} />
+    <li className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface/60" style={{ borderLeft: `2px solid ${color}` }}>
+      <EntryAvatar entry={entry} size={28} />
       <span className="text-[13px] text-text-primary truncate flex-1">
-        {player.name}
-        {mine && <span className="text-[10px] text-text-tertiary ml-1">(you)</span>}
+        {entry.name}
+        {!entry.linked && <span className="text-[10px] text-text-tertiary ml-1">(unlinked)</span>}
       </span>
-      {status === 'yes' && guests > 0 && (
-        <span className="text-[10px] font-semibold text-gold bg-gold/15 px-1.5 py-0.5 rounded">
-          +{guests}
-        </span>
-      )}
-      {setByAdmin && (
-        <span className="text-[9px] uppercase tracking-wider text-text-tertiary" title="Set by an admin">
-          admin
-        </span>
-      )}
-      {adminMode && (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onAdminEdit}
-            className="text-[10px] px-1.5 py-0.5 rounded bg-surface-raised text-text-secondary hover:bg-surface-active transition-colors"
-          >
-            Edit
-          </button>
-          <button
-            onClick={onAdminClear}
-            className="text-[10px] px-1.5 py-0.5 rounded bg-surface-raised text-text-secondary hover:bg-surface-active transition-colors"
-            aria-label="Clear RSVP"
-          >
-            ×
-          </button>
-        </div>
+      {status === 'yes' && entry.guestCount > 0 && (
+        <span className="text-[10px] font-semibold text-gold bg-gold/15 px-1.5 py-0.5 rounded">+{entry.guestCount}</span>
       )}
     </li>
   );
 }
 
-export default function GameRsvpSection({
-  gameId,
-  gameNumber: _gameNumber,
-  gameDate,
-  field = null,
-  players,
-  onPlayersChanged,
-}: GameRsvpSectionProps) {
-  const { isAdmin } = useAuth();
-  const { player: identityPlayer, setIdentity, clearIdentity } = usePlayerIdentity(players);
-
-  const [rsvps, setRsvps] = useState<Rsvp[]>([]);
+export default function GameRsvpSection({ gameId, refreshSignal }: GameRsvpSectionProps) {
+  const [poll, setPoll] = useState<GamePoll | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
-  const [showPicker, setShowPicker] = useState(false);
-  const [pendingRsvp, setPendingRsvp] = useState<{ status: RsvpStatus; guestCount: number } | null>(null);
-
-  const [adminMode, setAdminMode] = useState(false);
-  const [adminEditingPlayerId, setAdminEditingPlayerId] = useState<string | null>(null);
-  const [showNoResponses, setShowNoResponses] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-
-  const [justVoted, setJustVoted] = useState<RsvpStatus | null>(null);
-  const [shareState, setShareState] = useState<'idle' | 'preparing' | 'shared' | 'fallback' | 'error'>('idle');
-
-  const [guestCount, setGuestCount] = useState(0);
-
-  const playerMap = useMemo(() => new Map(players.map(p => [p.id, p])), [players]);
-
-  const loadRsvps = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
-      const data = await fetchRsvps(gameId);
-      setRsvps(data);
+      setPoll(await fetchGamePoll(gameId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load RSVPs');
+      setError(err instanceof Error ? err.message : 'Failed to load poll');
     } finally {
       setLoading(false);
     }
   }, [gameId]);
 
-  useEffect(() => { loadRsvps(); }, [loadRsvps]);
+  useEffect(() => { load(); }, [load, refreshSignal]);
 
-  // Sync the local guest counter when our identity's RSVP appears/changes
-  useEffect(() => {
-    if (!identityPlayer) return;
-    const myRsvp = rsvps.find(r => r.playerId === identityPlayer.id);
-    setGuestCount(myRsvp?.guestCount ?? 0);
-  }, [identityPlayer, rsvps]);
-
-  const myRsvp = identityPlayer ? rsvps.find(r => r.playerId === identityPlayer.id) ?? null : null;
-
-  // Bucket RSVPs by status, keep insertion order for the avatar pile (oldest
-  // first feels right — first responders show first).
-  const grouped: Record<RsvpStatus, Rsvp[]> = { yes: [], maybe: [], no: [] };
-  for (const r of rsvps) {
-    if (r.status === 'yes' || r.status === 'maybe' || r.status === 'no') grouped[r.status].push(r);
+  if (loading && !poll) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gold" />
+      </div>
+    );
   }
 
-  const yesGuestsTotal = grouped.yes.reduce((s, r) => s + (r.guestCount || 0), 0);
-  const total = rsvps.length;
+  if (error) {
+    return <div className="p-3 bg-error-bg border border-error-border rounded-xl text-error text-sm">{error}</div>;
+  }
 
-  const respondedIds = new Set(rsvps.map(r => r.playerId));
-  const notResponded = players.filter(p => !respondedIds.has(p.id));
+  if (!poll) return null;
 
-  const subjectsFor = (status: RsvpStatus, opts?: { withMyGuests?: boolean }): AvatarSubject[] => {
-    const base = grouped[status]
-      .map(r => playerMap.get(r.playerId))
-      .filter((p): p is Player => !!p)
-      .map(p => ({ id: p.id, name: p.name, pictureUrl: p.pictureUrl }));
-    if (status === 'yes' && opts?.withMyGuests && identityPlayer && myRsvp?.status === 'yes' && guestCount > 0) {
-      const ghosts: AvatarSubject[] = Array.from({ length: guestCount }).map((_, i) => ({
-        id: `__guest-${identityPlayer.id}-${i}`,
-        name: `Guest ${i + 1}`,
-        isGuest: true,
-      }));
-      return [...base, ...ghosts];
-    }
-    return base;
-  };
-
-  const handleVote = async (status: RsvpStatus) => {
-    if (!identityPlayer) {
-      setPendingRsvp({ status, guestCount: status === 'yes' ? guestCount : 0 });
-      setShowPicker(true);
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    setJustVoted(status);
-    setTimeout(() => setJustVoted(null), 700);
-    try {
-      // Tapping the option you've already picked clears your vote entirely.
-      if (myRsvp?.status === status) {
-        await clearRsvp(gameId, identityPlayer.id);
-        setRsvps(prev => prev.filter(r => r.playerId !== identityPlayer.id));
-        setGuestCount(0);
-        return;
-      }
-      const guests = status === 'yes' ? guestCount : 0;
-      const updated = await submitRsvp(gameId, identityPlayer.id, status, guests);
-      setRsvps(prev => {
-        const idx = prev.findIndex(r => r.playerId === updated.playerId);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = updated;
-          return next;
-        }
-        return [...prev, updated];
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save RSVP');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleGuestChange = async (n: number) => {
-    setGuestCount(n);
-    if (!identityPlayer || myRsvp?.status !== 'yes') return;
-    setSubmitting(true);
-    try {
-      const updated = await submitRsvp(gameId, identityPlayer.id, 'yes', n);
-      setRsvps(prev => prev.map(r => r.playerId === updated.playerId ? updated : r));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update guests');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handlePickerPicked = async (playerId: string) => {
-    setIdentity(playerId);
-    setShowPicker(false);
-    if (pendingRsvp) {
-      const intent = pendingRsvp;
-      setPendingRsvp(null);
-      setSubmitting(true);
-      try {
-        const updated = await submitRsvp(gameId, playerId, intent.status, intent.guestCount);
-        setRsvps(prev => {
-          const idx = prev.findIndex(r => r.playerId === updated.playerId);
-          if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next; }
-          return [...prev, updated];
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to save RSVP');
-      } finally {
-        setSubmitting(false);
-      }
-    }
-  };
-
-  // Admin actions
-  const handleAdminSet = async (playerId: string, status: RsvpStatus, guests: number) => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const updated = await adminSetRsvp(gameId, playerId, status, guests);
-      setRsvps(prev => {
-        const idx = prev.findIndex(r => r.playerId === updated.playerId);
-        if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next; }
-        return [...prev, updated];
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to override RSVP');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleAdminClear = async (playerId: string) => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await clearRsvp(gameId, playerId);
-      setRsvps(prev => prev.filter(r => r.playerId !== playerId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clear RSVP');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Admin: wipe every RSVP for this game (reset the poll).
-  const handleResetPoll = async () => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await resetRsvps(gameId);
-      setRsvps([]);
-      setGuestCount(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset poll');
-    } finally {
-      setSubmitting(false);
-      setShowResetConfirm(false);
-    }
-  };
-
-  // Build the WhatsApp text + an image of the current RSVP state and share via
-  // the Web Share API. Desktop browsers without file-share fall back to copy +
-  // download so the admin can manually drop both into WhatsApp.
-  const handleSendToWhatsApp = async () => {
-    setShareState('preparing');
-    try {
-      const url = `${window.location.origin}/?game=${gameId}`;
-      const dt = new Date(gameDate);
-      const datePart = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      const timePart = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      const fieldPart = field === 'stadium' ? 'Stadium' : field === 'grass' ? 'Grass' : field === 'cancelled' ? 'Cancelled' : 'TBD';
-      const title = `${datePart} · ${timePart} · ${fieldPart}`;
-      const text = `${datePart} - ${timePart} - ${fieldPart}\nRSVP here: ${url}\nPassword: AWTY`;
-
-      const inList = grouped.yes
-        .map(r => ({ rsvp: r, p: playerMap.get(r.playerId) }))
-        .filter((x): x is { rsvp: Rsvp; p: Player } => !!x.p)
-        .sort((a, b) => a.p.name.localeCompare(b.p.name))
-        .map(({ rsvp, p }) => ({ name: p.name, guests: rsvp.guestCount }));
-      const maybeList = grouped.maybe
-        .map(r => playerMap.get(r.playerId))
-        .filter((p): p is Player => !!p)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(p => ({ name: p.name }));
-      const outList = grouped.no
-        .map(r => playerMap.get(r.playerId))
-        .filter((p): p is Player => !!p)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(p => ({ name: p.name }));
-
-      const blob = await renderRsvpImage({ title, inList, maybeList, outList });
-      const file = new File([blob], 'awty-rsvp.png', { type: 'image/png' });
-
-      const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
-      if (nav.canShare && nav.canShare({ files: [file] })) {
-        try {
-          await nav.share({ text, files: [file] });
-          setShareState('shared');
-          setTimeout(() => setShareState('idle'), 1800);
-          return;
-        } catch (err: any) {
-          if (err?.name === 'AbortError') {
-            setShareState('idle');
-            return;
-          }
-          // fall through to fallback
-        }
-      }
-
-      // Fallback: copy text + download image
-      try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
-      const objUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objUrl;
-      a.download = 'awty-rsvp.png';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objUrl);
-      setShareState('fallback');
-      setTimeout(() => setShareState('idle'), 3000);
-    } catch (err) {
-      console.error('Failed to share RSVP', err);
-      setShareState('error');
-      setTimeout(() => setShareState('idle'), 2500);
-    }
-  };
-
-  // Build the "In" block voters, optionally appending my ghost guests.
-  const yesVoters = subjectsFor('yes', { withMyGuests: true });
-  const maybeVoters = subjectsFor('maybe');
-  const noVoters = subjectsFor('no');
+  const buckets: { status: RsvpStatus; entries: GamePollEntry[] }[] = [
+    { status: 'yes', entries: poll.in },
+    { status: 'maybe', entries: poll.maybe },
+    { status: 'no', entries: poll.out },
+  ];
+  const total = poll.counts.in + poll.counts.maybe + poll.counts.out;
 
   return (
     <div className="space-y-4">
-      {/* Total players coming — front-and-center summary */}
-      <TotalComingHero inCount={grouped.yes.length} guestCount={yesGuestsTotal} />
+      <TotalComingHero inCount={poll.counts.in} guestCount={poll.guestTotal} />
 
-      {/* Identity */}
-      <IdentityPill
-        player={identityPlayer}
-        onPick={() => { clearIdentity(); setShowPicker(true); }}
-      />
+      <p className="text-[11px] text-text-tertiary text-center -mt-1">
+        Results from the WhatsApp poll · view only
+      </p>
 
-      {/* Poll bars */}
       <div className="space-y-2.5">
-        {/* In block (with optional inline guest stepper) */}
-        <div
-          className="relative rounded-2xl overflow-hidden"
-          style={{
-            border: `${myRsvp?.status === 'yes' ? 2 : 1}px solid ${myRsvp?.status === 'yes' ? STATUS_COLOR.yes : 'var(--color-border-default)'}`,
-            background: 'var(--color-bg-surface)',
-            boxShadow: myRsvp?.status === 'yes' ? `0 0 0 4px ${STATUS_COLOR.yes}25` : 'none',
-          }}
-        >
-          <PollBarFilled
-            status="yes"
-            total={total}
-            voters={yesVoters}
-            mine={myRsvp?.status === 'yes'}
-            count={grouped.yes.length}
-            onVote={() => handleVote('yes')}
-            justVoted={justVoted === 'yes'}
-            // No personal guest suffix here — the hero shows the total, and
-            // per-player +N badges in the attendee list cover individual guests.
-          />
-          {myRsvp?.status === 'yes' && (
-            <GuestStepper guests={guestCount} onChange={handleGuestChange} />
-          )}
-        </div>
-
-        <PollBarFilled
-          status="maybe"
-          total={total}
-          voters={maybeVoters}
-          mine={myRsvp?.status === 'maybe'}
-          count={grouped.maybe.length}
-          onVote={() => handleVote('maybe')}
-          justVoted={justVoted === 'maybe'}
-        />
-        <PollBarFilled
-          status="no"
-          total={total}
-          voters={noVoters}
-          mine={myRsvp?.status === 'no'}
-          count={grouped.no.length}
-          onVote={() => handleVote('no')}
-          justVoted={justVoted === 'no'}
-        />
+        {buckets.map((b) => <PollBar key={b.status} status={b.status} entries={b.entries} total={total} />)}
       </div>
 
-      {error && (
-        <div className="p-2 bg-error-bg border border-error-border rounded-lg text-error text-xs">{error}</div>
-      )}
-
-      {/* Admin row (hidden for non-admins) */}
-      {isAdmin && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSendToWhatsApp}
-            disabled={shareState === 'preparing'}
-            className="flex-1 px-3 py-2 rounded-xl bg-surface border border-border text-[12px] font-semibold text-text-primary flex items-center justify-center gap-2 hover:bg-surface-hover transition-colors disabled:opacity-60"
-          >
-            {shareState === 'preparing' ? (
-              <>
-                <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v4m0 8v4m8-8h-4M8 12H4m13.66-5.66l-2.83 2.83M9.17 14.83l-2.83 2.83m0-11.32l2.83 2.83m5.66 5.66l2.83 2.83" />
-                </svg>
-                Preparing…
-              </>
-            ) : shareState === 'shared' ? (
-              <>
-                <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                Shared!
-              </>
-            ) : shareState === 'fallback' ? (
-              <>
-                <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                Image saved + text copied
-              </>
-            ) : shareState === 'error' ? (
-              <>Failed — try again</>
-            ) : (
-              <>
-                <svg className="w-3.5 h-3.5 text-green-400" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19.05 4.91A9.82 9.82 0 0012.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 004.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.01zm-7.01 15.24h-.01a8.23 8.23 0 01-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.21 8.21 0 01-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24a8.2 8.2 0 015.83 2.41 8.18 8.18 0 012.42 5.83c0 4.55-3.7 8.24-8.25 8.24zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 00-.66.31c-.23.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.55.12.16 1.74 2.66 4.22 3.73.59.25 1.05.41 1.41.52.59.19 1.13.16 1.55.1.47-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.11-.22-.17-.47-.29z" />
-                </svg>
-                Send to WhatsApp
-              </>
-            )}
-          </button>
-          <button
-            onClick={() => { setAdminMode(m => !m); setAdminEditingPlayerId(null); }}
-            className={`px-3 py-2 rounded-xl border text-[12px] font-semibold flex items-center gap-1.5 transition-colors ${
-              adminMode
-                ? 'bg-gold border-gold text-text-on-accent'
-                : 'bg-surface border-border text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15H9v-2.8L17.6 3.6z" />
-            </svg>
-            {adminMode ? 'Done' : 'Admin'}
-          </button>
-        </div>
-      )}
-
-      {/* Reset poll — admin only, only meaningful when there are RSVPs to clear */}
-      {isAdmin && adminMode && (
-        <button
-          onClick={() => setShowResetConfirm(true)}
-          disabled={submitting || rsvps.length === 0}
-          className="w-full px-3 py-2 rounded-xl bg-surface border border-red-500/40 text-[12px] font-semibold text-red-400 flex items-center justify-center gap-2 hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-          Reset poll{rsvps.length > 0 ? ` · clears ${rsvps.length}` : ''}
-        </button>
-      )}
-
-      {/* Attendee groups */}
-      <div className="space-y-3">
-        {(['yes', 'maybe', 'no'] as RsvpStatus[]).map(s => (
-          grouped[s].length > 0 && (
-            <div key={s}>
+      {total === 0 ? (
+        <p className="text-xs text-text-tertiary text-center py-2">
+          No votes yet. Votes from the WhatsApp poll appear here automatically.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {buckets.map((b) => b.entries.length > 0 && (
+            <div key={b.status}>
               <div className="flex items-center justify-between px-1 mb-1.5">
                 <p className="text-[10px] uppercase tracking-wider text-text-tertiary font-semibold">
-                  {STATUS_LABEL[s]}
-                  <span className="text-text-tertiary"> · {grouped[s].length}</span>
-                  {s === 'yes' && yesGuestsTotal > 0 && (
-                    <span className="text-gold"> · +{yesGuestsTotal} guest{yesGuestsTotal === 1 ? '' : 's'}</span>
+                  {STATUS_LABEL[b.status]}
+                  <span className="text-text-tertiary"> · {b.entries.length}</span>
+                  {b.status === 'yes' && poll.guestTotal > 0 && (
+                    <span className="text-gold"> · +{poll.guestTotal} guest{poll.guestTotal === 1 ? '' : 's'}</span>
                   )}
                 </p>
               </div>
               <ul className="space-y-1">
-                {grouped[s]
-                  .map(r => ({ rsvp: r, p: playerMap.get(r.playerId) }))
-                  .filter((x): x is { rsvp: Rsvp; p: Player } => !!x.p)
-                  .sort((a, b) => a.p.name.localeCompare(b.p.name))
-                  .map(({ rsvp, p }) => (
-                    <AttendeeRow
-                      key={rsvp.id}
-                      player={p}
-                      status={s}
-                      guests={rsvp.guestCount}
-                      mine={!!identityPlayer && p.id === identityPlayer.id}
-                      adminMode={adminMode}
-                      setByAdmin={!!rsvp.setByUserId}
-                      onAdminEdit={() => setAdminEditingPlayerId(adminEditingPlayerId === p.id ? null : p.id)}
-                      onAdminClear={() => handleAdminClear(p.id)}
-                    />
-                  ))}
+                {b.entries.map((e) => <AttendeeRow key={e.key} entry={e} status={b.status} />)}
               </ul>
             </div>
-          )
-        ))}
-
-        {rsvps.length === 0 && !loading && (
-          <p className="text-xs text-text-tertiary text-center py-2">No RSVPs yet — be the first.</p>
-        )}
-
-        {/* No-response — admin mode only */}
-        {adminMode && notResponded.length > 0 && rsvps.length > 0 && (
-          <div>
-            <button
-              onClick={() => setShowNoResponses(v => !v)}
-              className="w-full flex items-center justify-between px-1 py-1 text-[10px] uppercase tracking-wider text-text-tertiary font-semibold hover:text-text-secondary transition-colors"
-            >
-              <span>No response · {notResponded.length}</span>
-              <svg
-                className={`w-3 h-3 transition-transform ${showNoResponses ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {showNoResponses && (
-              <ul className="space-y-1 mt-1">
-                {notResponded
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map(p => (
-                    <li
-                      key={p.id}
-                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface/60"
-                      style={{ borderLeft: '2px solid var(--color-border-default)' }}
-                    >
-                      <div className="opacity-60">
-                        <PlayerAvatar subject={p} size={28} />
-                      </div>
-                      <span className="text-[13px] text-text-tertiary truncate flex-1">{p.name}</span>
-                      <button
-                        onClick={() => setAdminEditingPlayerId(adminEditingPlayerId === p.id ? null : p.id)}
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-surface-raised text-text-secondary hover:bg-surface-active transition-colors"
-                      >
-                        Set
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Admin override panel */}
-      {isAdmin && adminMode && adminEditingPlayerId && playerMap.get(adminEditingPlayerId) && (
-        <AdminOverridePanel
-          player={playerMap.get(adminEditingPlayerId)!}
-          existing={rsvps.find(r => r.playerId === adminEditingPlayerId) || null}
-          submitting={submitting}
-          onSubmit={(status, guests) => {
-            handleAdminSet(adminEditingPlayerId, status, guests);
-            setAdminEditingPlayerId(null);
-          }}
-          onCancel={() => setAdminEditingPlayerId(null)}
-        />
-      )}
-
-      {showPicker && (
-        <PlayerPickerModal
-          players={players}
-          onPick={handlePickerPicked}
-          onClose={() => { setShowPicker(false); setPendingRsvp(null); }}
-          onPlayerCreated={() => { onPlayersChanged?.(); }}
-          title={pendingRsvp ? 'First — who are you?' : 'Pick your player'}
-          subtitle={pendingRsvp
-            ? "We need to know which player to RSVP for. We'll remember on this device."
-            : "We'll remember this on this device. Sign in from your profile to sync across devices."}
-        />
-      )}
-
-      {showResetConfirm && (
-        <DeleteConfirmationModal
-          onConfirm={handleResetPoll}
-          onCancel={() => setShowResetConfirm(false)}
-          message={`Clear all ${rsvps.length} RSVP${rsvps.length === 1 ? '' : 's'} for this game? This can't be undone.`}
-        />
-      )}
-    </div>
-  );
-}
-
-function AdminOverridePanel({
-  player,
-  existing,
-  submitting,
-  onSubmit,
-  onCancel,
-}: {
-  player: Player;
-  existing: Rsvp | null;
-  submitting: boolean;
-  onSubmit: (status: RsvpStatus, guests: number) => void;
-  onCancel: () => void;
-}) {
-  const [status, setStatus] = useState<RsvpStatus>(existing?.status ?? 'yes');
-  const [guests, setGuests] = useState<number>(existing?.guestCount ?? 0);
-
-  return (
-    <div className="p-3 rounded-xl border border-gold/40 bg-surface">
-      <p className="text-[11px] text-text-tertiary mb-2">
-        Set RSVP for <span className="text-text-primary font-semibold">{player.name}</span>
-      </p>
-      <div className="grid grid-cols-3 gap-2 mb-2">
-        {(['yes', 'maybe', 'no'] as RsvpStatus[]).map(s => (
-          <button
-            key={s}
-            onClick={() => setStatus(s)}
-            className="px-2 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors"
-            style={{
-              borderColor: status === s ? STATUS_COLOR[s] : 'var(--color-border-default)',
-              background: status === s ? `${STATUS_COLOR[s]}25` : 'var(--color-bg-surface-raised)',
-              color: status === s ? STATUS_COLOR[s] : 'var(--color-text-primary)',
-            }}
-          >
-            {STATUS_LABEL[s]}
-          </button>
-        ))}
-      </div>
-      {status === 'yes' && (
-        <div className="flex items-center gap-2 mb-2">
-          <label className="text-xs text-text-secondary">Guests:</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={String(guests)}
-            onChange={(e) => setGuests(Math.max(0, Math.min(GUEST_MAX, Number(e.target.value.replace(/[^0-9]/g, '')) || 0)))}
-            className="w-16 px-2 py-1 bg-surface-raised border border-border rounded-lg text-sm text-text-primary outline-none"
-          />
+          ))}
         </div>
       )}
-      <div className="flex gap-2">
-        <button
-          onClick={onCancel}
-          disabled={submitting}
-          className="flex-1 px-3 py-1.5 text-xs bg-surface-raised text-text-primary rounded-lg hover:bg-surface-active disabled:opacity-50 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => onSubmit(status, status === 'yes' ? guests : 0)}
-          disabled={submitting}
-          className="flex-1 px-3 py-1.5 text-xs bg-gold text-text-on-accent rounded-lg hover:bg-gold-hover disabled:opacity-50 transition-colors font-semibold"
-        >
-          Save
-        </button>
-      </div>
     </div>
   );
 }

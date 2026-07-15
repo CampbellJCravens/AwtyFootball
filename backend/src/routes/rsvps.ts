@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { upsertRsvpSchema, adminOverrideRsvpSchema } from '../schemas/rsvp';
+import { getGamePoll } from '../services/whatsapp/polls';
 
 // Mounted at /api/games/:gameId/rsvps. mergeParams lets handlers see :gameId.
 const router = Router({ mergeParams: true });
@@ -24,6 +25,19 @@ const serialize = (rsvp: {
   setByUserId: rsvp.setByUserId,
   createdAt: rsvp.createdAt.toISOString(),
   updatedAt: rsvp.updatedAt.toISOString(),
+});
+
+// GET /api/games/:gameId/rsvps/poll - Read-only poll view derived from WhatsApp
+// votes (public). Counts linked players AND unlinked numbers; no phone numbers.
+router.get('/poll', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { gameId } = req.params;
+    const game = await prisma.game.findUnique({ where: { id: gameId }, select: { id: true } });
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+    res.json(await getGamePoll(gameId));
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET /api/games/:gameId/rsvps - List all RSVPs for a game (public)

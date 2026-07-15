@@ -527,6 +527,91 @@ export async function resyncPollsForPhone(digits: string): Promise<void> {
   }
 }
 
+// ── Read-only poll view for the RSVP tab ────────────────────────────────────
+// Computed live from WhatsApp votes so it counts everyone — linked players AND
+// unlinked numbers — and reflects a new link immediately. Never exposes phone
+// numbers to the client (unlinked voters show their WhatsApp display name).
+
+export interface GamePollEntry {
+  key: string; // stable React key; never the phone number
+  name: string;
+  pictureUrl: string | null;
+  guestCount: number;
+  linked: boolean;
+  playerId: string | null;
+}
+
+export interface GamePoll {
+  in: GamePollEntry[];
+  maybe: GamePollEntry[];
+  out: GamePollEntry[];
+  counts: { in: number; maybe: number; out: number };
+  guestTotal: number;
+}
+
+export async function getGamePoll(gameId: string): Promise<GamePoll> {
+  const polls = await prisma.whatsappPoll.findMany({
+    where: { gameId, latestVotes: { not: null } },
+    orderBy: { createdAt: 'asc' },
+    select: { latestVotes: true },
+  });
+
+  // phone -> selected option labels (later polls override earlier for same phone)
+  const byPhone = new Map<string, string[]>();
+  for (const p of polls) {
+    const votes: Record<string, unknown> = JSON.parse(p.latestVotes!);
+    for (const [phone, names] of Object.entries(votes)) byPhone.set(phone, toNames(names));
+  }
+
+  const phones = [...byPhone.keys()];
+  const [players, contacts] = await Promise.all([
+    prisma.player.findMany({
+      where: { phone: { in: phones } },
+      select: { id: true, name: true, pictureUrl: true, phone: true },
+    }),
+    prisma.whatsappContact.findMany({ where: { phone: { in: phones } } }),
+  ]);
+  const playerByPhone = new Map(players.map((p) => [p.phone!, p]));
+  const nameByPhone = new Map(contacts.map((c) => [c.phone, c.pushName]));
+
+  const result: GamePoll = {
+    in: [],
+    maybe: [],
+    out: [],
+    counts: { in: 0, maybe: 0, out: 0 },
+    guestTotal: 0,
+  };
+
+  let anon = 0;
+  for (const [phone, names] of byPhone) {
+    const parsed = combineSelections(names);
+    if (!parsed) continue; // vote cleared / unrecognized
+
+    const player = playerByPhone.get(phone);
+    const entry: GamePollEntry = {
+      key: player ? player.id : `wa:${anon}`,
+      // Unlinked voters: use their WhatsApp display name if we have it, else a
+      // numbered "Guest" so multiple unlinked people stay distinguishable. Never
+      // the phone number.
+      name: player ? player.name : nameByPhone.get(phone) || `Guest ${++anon}`,
+      pictureUrl: player ? player.pictureUrl : null,
+      guestCount: parsed.status === 'yes' ? parsed.guestCount : 0,
+      linked: !!player,
+      playerId: player ? player.id : null,
+    };
+
+    const bucket = parsed.status === 'yes' ? 'in' : parsed.status === 'maybe' ? 'maybe' : 'out';
+    result[bucket].push(entry);
+    if (bucket === 'in') result.guestTotal += entry.guestCount;
+  }
+
+  result.in.sort((a, b) => a.name.localeCompare(b.name));
+  result.maybe.sort((a, b) => a.name.localeCompare(b.name));
+  result.out.sort((a, b) => a.name.localeCompare(b.name));
+  result.counts = { in: result.in.length, maybe: result.maybe.length, out: result.out.length };
+  return result;
+}
+
 /** Assign a phone to a player (backfills Player.phone) and re-sync all polls. */
 export async function resolveContact(phone: string, playerId: string): Promise<void> {
   const digits = phone.replace(/\D/g, '');

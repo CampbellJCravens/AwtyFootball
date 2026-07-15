@@ -71,6 +71,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const playersFileInputRef = useRef<HTMLInputElement>(null);
   const gameSummaryFileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<GameViewTab>(initialTab);
+  const [pollVersion, setPollVersion] = useState(0); // bump to refresh the RSVP poll view
   const [currentField, setCurrentField] = useState<GameField | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(gameDate);
   const gameTitle = `${formatDate(currentDate)} - ${formatTime(currentDate)} - ${fieldLabel(currentField)}`;
@@ -846,16 +847,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         {activeTab === 'rsvp' && (
           <>
             {isAdmin && (
-              <WhatsappUnmatchedFlag gameId={gameId} players={allPlayers} />
+              <WhatsappUnmatchedFlag
+                gameId={gameId}
+                players={allPlayers}
+                onResolved={() => setPollVersion((v) => v + 1)}
+              />
             )}
-            <GameRsvpSection
-              gameId={gameId}
-              gameNumber={gameNumber}
-              gameDate={currentDate}
-              field={currentField}
-              players={allPlayers}
-              onPlayersChanged={() => { onPlayerAdded?.(); }}
-            />
+            <GameRsvpSection gameId={gameId} refreshSignal={pollVersion} />
           </>
         )}
 

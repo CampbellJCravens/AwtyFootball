@@ -6,7 +6,8 @@ export interface Player {
   name: string;
   pictureUrl: string | null;
   team: 'dark' | 'white' | null;
-  phone: string | null;
+  hasPhone: boolean;         // whether a WhatsApp number is linked (safe to show)
+  phone?: string | null;     // actual number — only returned to admins
   createdAt: string;
   updatedAt: string;
 }

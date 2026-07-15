@@ -19,6 +19,31 @@ export async function fetchRsvps(gameId: string): Promise<Rsvp[]> {
   return res.json();
 }
 
+// Read-only poll view derived from WhatsApp votes (linked players + unlinked
+// numbers). No phone numbers are returned.
+export interface GamePollEntry {
+  key: string;
+  name: string;
+  pictureUrl: string | null;
+  guestCount: number;
+  linked: boolean;
+  playerId: string | null;
+}
+
+export interface GamePoll {
+  in: GamePollEntry[];
+  maybe: GamePollEntry[];
+  out: GamePollEntry[];
+  counts: { in: number; maybe: number; out: number };
+  guestTotal: number;
+}
+
+export async function fetchGamePoll(gameId: string): Promise<GamePoll> {
+  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps/poll`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to fetch poll');
+  return res.json();
+}
+
 export async function submitRsvp(
   gameId: string,
   playerId: string,
