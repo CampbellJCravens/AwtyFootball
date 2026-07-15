@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Player, fetchPlayers, deletePlayer } from './api/players';
-import { Game, fetchGames, createGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
+import { Game, GameField, fetchGames, createGame, updateGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
 import { Achievement, fetchNewAchievements } from './api/stats';
 import { useAuth } from './contexts/AuthContext';
 import { usePlayerIdentity } from './hooks/usePlayerIdentity';
@@ -17,6 +17,7 @@ import GameModuleCondensed from './components/GameModuleCondensed';
 import GameModuleExpanded from './components/GameModuleExpanded';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import WhatsappSyncModal from './components/WhatsappSyncModal';
+import FieldPickerModal from './components/FieldPickerModal';
 import Stats from './components/Stats';
 import PlayerProfile from './components/PlayerProfile';
 import PlayerLinkSetup from './components/PlayerLinkSetup';
@@ -55,6 +56,10 @@ function App() {
   const [playerToDelete, setPlayerToDelete] = useState<Player | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showWhatsappModal, setShowWhatsappModal] = useState(false);
+  // After creating a game, prompt for its field. Bumping gameModuleRefresh
+  // remounts the open game module so the newly-set field shows immediately.
+  const [fieldPromptGameId, setFieldPromptGameId] = useState<string | null>(null);
+  const [gameModuleRefresh, setGameModuleRefresh] = useState(0);
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
   const [availableGames, setAvailableGames] = useState<string[]>([]);
   const [selectedGameForImport, setSelectedGameForImport] = useState<string>('');
@@ -207,6 +212,7 @@ function App() {
       setGames([newGame, ...games]);
       setExpandedGameInitialTab('game');
       setExpandedGameId(newGame.id);
+      setFieldPromptGameId(newGame.id);
       setConflictGame(null);
       setPendingKickoff(null);
     } catch (err) {
@@ -226,6 +232,7 @@ function App() {
       setGames([newGame, ...remaining]);
       setExpandedGameInitialTab('game');
       setExpandedGameId(newGame.id);
+      setFieldPromptGameId(newGame.id);
       setConflictGame(null);
       setPendingKickoff(null);
     } catch (err) {
@@ -350,7 +357,7 @@ function App() {
       // edit pencil) hidden by the isAdmin gates inside the component.
       return (
         <GameModuleExpanded
-          key={`${expandedGameId}-${expandedGameInitialTab}`}
+          key={`${expandedGameId}-${expandedGameInitialTab}-${gameModuleRefresh}`}
           gameId={expandedGameId}
           gameNumber={expandedGame.gameNumber}
           gameDate={expandedGame.createdAt}
@@ -804,6 +811,24 @@ function App() {
               setNewAchievements([]);
             }}
             onDismiss={() => setNewAchievements([])}
+          />
+        )}
+
+        {/* Field prompt right after creating a game */}
+        {fieldPromptGameId && (
+          <FieldPickerModal
+            onSkip={() => setFieldPromptGameId(null)}
+            onSelect={async (field: GameField | null) => {
+              const id = fieldPromptGameId;
+              setFieldPromptGameId(null);
+              try {
+                const updated = await updateGame(id, { field });
+                setGames((prev) => prev.map((g) => (g.id === id ? updated : g)));
+                setGameModuleRefresh((n) => n + 1); // remount so the open game shows the field
+              } catch (err) {
+                setGamesError(err instanceof Error ? err.message : 'Failed to set field');
+              }
+            }}
           />
         )}
 

@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { upsertRsvpSchema, adminOverrideRsvpSchema } from '../schemas/rsvp';
-import { getGamePoll } from '../services/whatsapp/polls';
+import { getGamePoll, getGameLinkStatus } from '../services/whatsapp/polls';
 
 // Mounted at /api/games/:gameId/rsvps. mergeParams lets handlers see :gameId.
 const router = Router({ mergeParams: true });
@@ -35,6 +35,16 @@ router.get('/poll', async (req: AuthenticatedRequest, res: Response, next: NextF
     const game = await prisma.game.findUnique({ where: { id: gameId }, select: { id: true } });
     if (!game) return res.status(404).json({ error: 'Game not found' });
     res.json(await getGamePoll(gameId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/games/:gameId/rsvps/link-status - Whether a WhatsApp poll is linked to
+// this game + unlinked polls an admin could link (admin only).
+router.get('/link-status', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json(await getGameLinkStatus(req.params.gameId));
   } catch (err) {
     next(err);
   }

@@ -44,6 +44,18 @@ export async function fetchGamePoll(gameId: string): Promise<GamePoll> {
   return res.json();
 }
 
+export interface GameLinkStatus {
+  linkedPollId: string | null;
+  candidates: { pollMessageId: string; question: string; voteCount: number }[];
+}
+
+// Admin: is a WhatsApp poll linked to this game, and which unlinked polls could be.
+export async function fetchGameLinkStatus(gameId: string): Promise<GameLinkStatus> {
+  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps/link-status`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to fetch link status');
+  return res.json();
+}
+
 export async function submitRsvp(
   gameId: string,
   playerId: string,

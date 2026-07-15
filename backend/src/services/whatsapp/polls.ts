@@ -656,3 +656,29 @@ export async function listPolls() {
 export async function noteContact(jid: string, pushName?: string | null): Promise<void> {
   await upsertContact(phoneFromJid(jid), pushName);
 }
+
+/**
+ * Whether a game has a WhatsApp poll linked, plus the unlinked captured polls an
+ * admin could link to it (for the in-game "link a poll" banner).
+ */
+export async function getGameLinkStatus(gameId: string): Promise<{
+  linkedPollId: string | null;
+  candidates: Array<{ pollMessageId: string; question: string; voteCount: number }>;
+}> {
+  const [linked, unlinked] = await Promise.all([
+    prisma.whatsappPoll.findFirst({ where: { gameId }, select: { pollMessageId: true } }),
+    prisma.whatsappPoll.findMany({
+      where: { gameId: null },
+      orderBy: { createdAt: 'desc' },
+      select: { pollMessageId: true, question: true, latestVotes: true },
+    }),
+  ]);
+  return {
+    linkedPollId: linked?.pollMessageId ?? null,
+    candidates: unlinked.map((p) => {
+      const votes: Record<string, unknown> = p.latestVotes ? JSON.parse(p.latestVotes) : {};
+      const voteCount = Object.values(votes).filter((n) => toNames(n).length > 0).length;
+      return { pollMessageId: p.pollMessageId, question: p.question, voteCount };
+    }),
+  };
+}

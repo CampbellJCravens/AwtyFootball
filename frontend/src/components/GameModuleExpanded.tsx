@@ -11,9 +11,16 @@ import TimePickerModal from './TimePickerModal';
 import EditGameModal from './EditGameModal';
 import GameRsvpSection from './GameRsvpSection';
 import WhatsappUnmatchedFlag from './WhatsappUnmatchedFlag';
+import WhatsappLinkBanner from './WhatsappLinkBanner';
 import Papa, { ParseResult } from 'papaparse';
 
 type GameViewTab = 'game' | 'rsvp';
+
+const startOfToday = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
 
 interface GameModuleExpandedProps {
   gameId: string;
@@ -846,6 +853,11 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
         {activeTab === 'rsvp' && (
           <>
+            {/* Link-a-poll banner: admins, and only for games from today onward
+                (old games can't be linked to a captured poll). */}
+            {isAdmin && new Date(currentDate) >= startOfToday() && (
+              <WhatsappLinkBanner gameId={gameId} onLinked={() => setPollVersion((v) => v + 1)} />
+            )}
             {isAdmin && (
               <WhatsappUnmatchedFlag
                 gameId={gameId}
