@@ -2,8 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { upsertRsvpSchema, adminOverrideRsvpSchema } from '../schemas/rsvp';
-import { getGamePoll, buildPollTitle } from '../services/whatsapp/polls';
-import { createPollForGame } from '../services/whatsapp/listener';
+import { getGamePoll } from '../services/whatsapp/polls';
 
 // Mounted at /api/games/:gameId/rsvps. mergeParams lets handlers see :gameId.
 const router = Router({ mergeParams: true });
@@ -38,26 +37,6 @@ router.get('/poll', async (req: AuthenticatedRequest, res: Response, next: NextF
     res.json(await getGamePoll(gameId));
   } catch (err) {
     next(err);
-  }
-});
-
-// POST /api/games/:gameId/rsvps/create-poll - Post a standard-format poll to the
-// WhatsApp group for this game and auto-link it (admin only).
-router.post('/create-poll', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const { gameId } = req.params;
-    const game = await prisma.game.findUnique({
-      where: { id: gameId },
-      select: { id: true, createdAt: true, field: true },
-    });
-    if (!game) return res.status(404).json({ error: 'Game not found' });
-
-    const title = buildPollTitle(game);
-    const result = await createPollForGame(gameId, req.user!.id, title);
-    res.json(result);
-  } catch (err: any) {
-    // Surface friendly setup errors (not linked / no group) instead of 500.
-    return res.status(400).json({ error: err?.message || 'Failed to create poll' });
   }
 });
 

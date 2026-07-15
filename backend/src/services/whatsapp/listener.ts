@@ -31,9 +31,6 @@ import {
   noteContact,
   isInScope,
   refreshScope,
-  getWhatsappSettings,
-  storeCreatedPoll,
-  CREATED_POLL_OPTIONS,
 } from './polls';
 
 let sock: WASocket | null = null;
@@ -50,30 +47,6 @@ export function getLatestWhatsappQr(): string | null {
 
 export function isWhatsappLinked(): boolean {
   return sock !== null && latestQr === null;
-}
-
-/**
- * Create a poll in the configured group for a game and store it (pre-linked,
- * with its secret) so votes decrypt and no manual linking is needed. This is
- * the one place the listener SENDS a message.
- */
-export async function createPollForGame(
-  gameId: string,
-  userId: string,
-  title: string
-): Promise<{ pollMessageId: string; title: string }> {
-  if (!sock || latestQr) throw new Error('WhatsApp is not linked yet');
-  const { groupJid } = await getWhatsappSettings();
-  if (!groupJid) throw new Error('No WhatsApp group is configured (set the group scope first)');
-
-  const sent = await sock.sendMessage(groupJid, {
-    poll: { name: title, values: CREATED_POLL_OPTIONS, selectableCount: 0 }, // 0 = multi-select
-  });
-  if (!sent?.key?.id) throw new Error('Failed to send the poll');
-
-  await storeCreatedPoll(sent, groupJid, title, gameId, userId);
-  console.log(`[whatsapp] Created poll "${title}" (${sent.key.id}) for game ${gameId}`);
-  return { pollMessageId: sent.key.id, title };
 }
 
 /** Groups the linked account participates in — for the admin to pick the scope. */

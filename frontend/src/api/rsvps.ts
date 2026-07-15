@@ -44,20 +44,6 @@ export async function fetchGamePoll(gameId: string): Promise<GamePoll> {
   return res.json();
 }
 
-// Admin: post a standard-format poll to the WhatsApp group for this game.
-export async function createGamePoll(gameId: string): Promise<{ pollMessageId: string; title: string }> {
-  const res = await fetch(`${API_BASE_URL}/games/${gameId}/rsvps/create-poll`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error(e.error || 'Failed to create poll');
-  }
-  return res.json();
-}
-
 export async function submitRsvp(
   gameId: string,
   playerId: string,
