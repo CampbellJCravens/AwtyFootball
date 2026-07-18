@@ -34,6 +34,63 @@ export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w
   ctx.closePath();
 }
 
+// Sets ctx.font to the largest bold size (down to minSize) at which `text` fits
+// `maxWidth`, so multi-name ties shrink to fit instead of truncating. Returns
+// the chosen size. Caller still truncates as a last resort at the floor.
+export function fitFontSize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, baseSize: number, minSize: number): number {
+  for (let size = baseSize; size > minSize; size--) {
+    ctx.font = `bold ${size}px ${FONT_STACK}`;
+    if (ctx.measureText(text).width <= maxWidth) return size;
+  }
+  ctx.font = `bold ${minSize}px ${FONT_STACK}`;
+  return minSize;
+}
+
+// Shorten a name to initial(s) + surname: "James Okonkwo" → "J. Okonkwo",
+// "Morgan-Sean McCright" → "M-S. McCright". Surname is never abbreviated.
+export function abbreviateName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) return name;
+  const last = parts[parts.length - 1];
+  const firsts = parts.slice(0, -1)
+    .map(p => p.split('-').map(seg => seg.charAt(0).toUpperCase()).join('-') + '.')
+    .join(' ');
+  return `${firsts} ${last}`;
+}
+
+// Fit a list of tied names into <= maxLines lines within maxWidth, escalating:
+// full names shrunk → wrapped → abbreviated → abbreviated+wrapped → truncated.
+// Returns the lines to draw and the font size to draw them at.
+export function layoutNames(
+  ctx: CanvasRenderingContext2D,
+  names: string[],
+  maxWidth: number,
+  baseSize: number,
+  minSize: number,
+  maxLines: number,
+): { lines: string[]; fontSize: number } {
+  const pack = (tokens: string[], size: number): string[] | null => {
+    ctx.font = `bold ${size}px ${FONT_STACK}`;
+    const lines: string[] = [];
+    let cur = '';
+    for (const t of tokens) {
+      const trial = cur ? `${cur} · ${t}` : t;
+      if (!cur || ctx.measureText(trial).width <= maxWidth) cur = trial;
+      else { lines.push(cur); cur = t; }
+    }
+    if (cur) lines.push(cur);
+    return lines.length <= maxLines ? lines : null;
+  };
+  for (const tokens of [names, names.map(abbreviateName)]) {
+    for (let size = baseSize; size >= minSize; size--) {
+      const lines = pack(tokens, size);
+      if (lines) return { lines, fontSize: size };
+    }
+  }
+  ctx.font = `bold ${minSize}px ${FONT_STACK}`;
+  return { lines: [truncateToWidth(ctx, names.map(abbreviateName).join(' · '), maxWidth)], fontSize: minSize };
+}
+
 export function truncateToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let lo = 0, hi = text.length;

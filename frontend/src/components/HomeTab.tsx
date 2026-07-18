@@ -236,10 +236,8 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
     if (!data) return;
     try {
       setSharingReport(true);
-      const names = (aw: MonthlyAward[] | null | undefined) =>
-        aw && aw.length ? aw.map(a => a.player.name).join(' · ') : '';
       const item = (aw: MonthlyAward[] | null | undefined, label: string, fmt: (a: MonthlyAward) => string): MonthlyAwardItem | null =>
-        aw && aw.length ? { label, names: names(aw), value: fmt(aw[0]) } : null;
+        aw && aw.length ? { label, names: aw.map(a => a.player.name), value: fmt(aw[0]) } : null;
 
       const playerOfTheMonth = item(data.awards.playerOfTheMonth, 'PLAYER OF THE MONTH', a => `${a.value} pt${a.value === 1 ? '' : 's'}`);
       const awards = [
@@ -254,13 +252,13 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
       const hsg = data.highestScoringGame;
       if (hsg) {
         const d = new Date(hsg.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        awards.push({ label: 'HIGHEST-SCORING GAME', names: d, value: `${hsg.colorScore}–${hsg.whiteScore} · ${hsg.totalGoals} goals` });
+        awards.push({ label: 'HIGHEST-SCORING GAME', names: [d], value: `${hsg.colorScore}–${hsg.whiteScore} · ${hsg.totalGoals} goals` });
       }
 
       // Top Trio is deferred to the yearly report.
       const banners: MonthlyAwardItem[] = [];
       const duo = data.awards.topDuo?.[0];
-      if (duo) banners.push({ label: 'TOP DUO', names: `${duo.players[0].name} & ${duo.players[1].name}`, value: `${duo.value} goal combo${duo.value === 1 ? '' : 's'}` });
+      if (duo) banners.push({ label: 'TOP DUO', names: [`${duo.players[0].name} & ${duo.players[1].name}`], value: `${duo.value} goal combo${duo.value === 1 ? '' : 's'}` });
 
       const reportData: MonthlyReportData = {
         monthName: MONTH_NAMES[month], year, gamesPlayed: data.gamesPlayed,
