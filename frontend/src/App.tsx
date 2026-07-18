@@ -17,6 +17,7 @@ import GameModuleCondensed from './components/GameModuleCondensed';
 import GameModuleExpanded from './components/GameModuleExpanded';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import WhatsappSyncModal from './components/WhatsappSyncModal';
+import WhatsappStatusBanner from './components/WhatsappStatusBanner';
 import FieldPickerModal from './components/FieldPickerModal';
 import Stats from './components/Stats';
 import PlayerProfile from './components/PlayerProfile';
@@ -644,6 +645,9 @@ function App() {
           onMenuClick={() => setShowMenu(!showMenu)}
           onAvatarClick={() => handleTabChange('profile')}
         />
+
+        {/* Admin alert when the WhatsApp listener drops */}
+        {isAdmin && <WhatsappStatusBanner onOpenSync={() => setShowWhatsappModal(true)} />}
 
         {/* Menu Dropdown */}
         {showMenu && (

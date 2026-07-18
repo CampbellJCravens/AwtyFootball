@@ -42,7 +42,7 @@ import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
 import whatsappRouter from './routes/whatsapp';
-import { startWhatsappListener } from './services/whatsapp/listener';
+import { startWhatsappListener, isWhatsappLinked } from './services/whatsapp/listener';
 
 const PgSession = pgSession(session);
 
@@ -102,6 +102,18 @@ app.use('/api/games/:gameId/rsvps', rsvpsRouter);
 app.use('/api/games', gamesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/stats', statsRouter);
+// Public health check for the WhatsApp listener, for an external uptime monitor.
+// 200 when linked (or intentionally disabled); 503 when it SHOULD be up but is
+// disconnected — so a monitor only alerts on real outages. Registered before the
+// admin-gated whatsapp router so it stays public.
+app.get('/api/whatsapp/health', (req: Request, res: Response) => {
+  if (!env.WHATSAPP_LISTENER_ENABLED) {
+    return res.json({ status: 'disabled', linked: false });
+  }
+  const linked = isWhatsappLinked();
+  res.status(linked ? 200 : 503).json({ status: linked ? 'ok' : 'down', linked });
+});
+
 app.use('/api/whatsapp', whatsappRouter);
 
 // Health check endpoint
