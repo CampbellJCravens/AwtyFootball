@@ -22,7 +22,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
-import { usePostgresAuthState } from './authState';
+import { usePostgresAuthState, clearPostgresAuthState } from './authState';
 import prisma from '../../prisma';
 import {
   capturePoll,
@@ -47,6 +47,24 @@ export function getLatestWhatsappQr(): string | null {
 
 export function isWhatsappLinked(): boolean {
   return sock !== null && latestQr === null;
+}
+
+/**
+ * Force a fresh link: drop the current (likely dead) session, clear stored auth,
+ * and restart so a new QR is generated for the admin to scan. Lets an admin
+ * recover a logged-out listener from the panel without a redeploy.
+ */
+export async function relinkWhatsapp(): Promise<void> {
+  try {
+    (sock as any)?.end?.(undefined);
+  } catch {
+    /* ignore */
+  }
+  sock = null;
+  latestQr = null;
+  starting = false;
+  await clearPostgresAuthState();
+  await startWhatsappListener();
 }
 
 /** Groups the linked account participates in — for the admin to pick the scope. */
@@ -135,9 +153,14 @@ export async function startWhatsappListener(): Promise<void> {
         sock = null;
         starting = false;
         if (loggedOut) {
-          console.warn(
-            '[whatsapp] Logged out by WhatsApp. Clear WhatsappAuthState and restart to re-scan.'
-          );
+          // The session is dead. Clear it and restart so a FRESH QR is
+          // generated automatically — otherwise the listener sits idle forever
+          // and silently stops capturing votes until someone notices.
+          console.warn('[whatsapp] Logged out by WhatsApp — clearing session and restarting for a fresh QR.');
+          clearPostgresAuthState()
+            .then(() => new Promise((r) => setTimeout(r, 3000)))
+            .then(() => startWhatsappListener())
+            .catch((err) => console.error('[whatsapp] Auto-recovery after logout failed:', err));
           return;
         }
         console.log(

@@ -9,8 +9,7 @@ import { Router, Response, NextFunction } from 'express';
 import QRCode from 'qrcode';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { env } from '../env';
-import { getLatestWhatsappQr, isWhatsappLinked, listWhatsappGroups } from '../services/whatsapp/listener';
-import { clearPostgresAuthState } from '../services/whatsapp/authState';
+import { getLatestWhatsappQr, isWhatsappLinked, listWhatsappGroups, relinkWhatsapp } from '../services/whatsapp/listener';
 import {
   listPolls,
   linkPollToGame,
@@ -126,11 +125,12 @@ router.post('/unmatched/resolve', async (req: AuthenticatedRequest, res: Respons
   }
 });
 
-// Force a fresh link: wipe stored auth so the next (re)start shows a new QR.
+// Force a fresh link now: clear the (dead) session and restart the listener so
+// a new QR is generated to scan — no redeploy needed.
 router.post('/reset', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    await clearPostgresAuthState();
-    res.json({ ok: true, note: 'Auth cleared. Restart the backend to generate a new QR.' });
+    await relinkWhatsapp();
+    res.json({ ok: true, note: 'Session cleared and re-linking — a new QR should appear shortly.' });
   } catch (err) {
     next(err);
   }

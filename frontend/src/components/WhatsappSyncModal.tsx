@@ -11,6 +11,7 @@ import {
   getWhatsappGroups,
   getWhatsappSettings,
   setWhatsappSettings,
+  resetWhatsapp,
   type WhatsappStatus,
   type WhatsappPoll,
   type UnmatchedVote,
@@ -72,6 +73,20 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
       setScopeJid(jid || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to set scope');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRelink = async () => {
+    setBusy('relink');
+    setError(null);
+    try {
+      await resetWhatsapp();
+      // The backend needs a moment to drop the old session and emit a new QR.
+      setTimeout(refresh, 3500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to re-link');
     } finally {
       setBusy(null);
     }
@@ -176,6 +191,17 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
                   </div>
                 ) : (
                   <p className="text-sm text-text-secondary">Waiting for a QR code from the backend…</p>
+                )}
+
+                {/* Recovery: when not linked, force a fresh session + QR. */}
+                {status?.enabled && !status.linked && (
+                  <button
+                    onClick={handleRelink}
+                    disabled={busy === 'relink'}
+                    className="mt-3 w-full px-3 py-2 rounded-xl bg-surface-raised border border-border-emphasis text-sm font-semibold text-text-primary hover:bg-surface-active transition-colors disabled:opacity-60"
+                  >
+                    {busy === 'relink' ? 'Re-linking…' : qr ? 'Generate a new QR' : 'Re-link device (get QR)'}
+                  </button>
                 )}
               </section>
 

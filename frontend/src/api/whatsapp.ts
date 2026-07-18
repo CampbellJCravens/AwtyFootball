@@ -48,6 +48,12 @@ export async function getWhatsappQr(): Promise<string | null> {
   return data.dataUrl as string;
 }
 
+/** Clear the (dead) session and restart linking so a fresh QR is generated. */
+export async function resetWhatsapp(): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/reset`, opts({ method: 'POST' }));
+  if (!res.ok) throw new Error('Failed to re-link');
+}
+
 export async function getWhatsappPolls(): Promise<WhatsappPoll[]> {
   const res = await fetch(`${API_BASE_URL}/whatsapp/polls`, opts());
   if (!res.ok) throw new Error('Failed to fetch polls');
