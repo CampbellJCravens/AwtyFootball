@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Player } from '../api/players';
 import { Game } from '../api/games';
 import OverallStatsTable from './OverallStatsTable';
@@ -7,6 +7,8 @@ import LegacyStatsTable from './LegacyStatsTable';
 import FieldStatsTab from './FieldStatsTab';
 import ReliabilityTab from './ReliabilityTab';
 import { useAuth } from '../contexts/AuthContext';
+import { fetchYearlyStats, MonthlyAward } from '../api/stats';
+import { renderYearlyReportImage, YearlyReportData, YearlyAwardItem, YearlyLeaderboard } from '../utils/renderYearlyReportImage';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -43,6 +45,71 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
     return [...new Set(availableMonths.map(m => m.year))].sort((a, b) => b - a);
   }, [availableMonths]);
 
+  const [reportYear, setReportYear] = useState<number | null>(null);
+  const [sharingYear, setSharingYear] = useState(false);
+  const effReportYear = reportYear ?? availableYears[0] ?? new Date().getFullYear();
+
+  // Build + share the yearly "Season in Review" PNG (core+attacking, top 5).
+  const handleShareYearly = useCallback(async (year: number) => {
+    try {
+      setSharingYear(true);
+      const data = await fetchYearlyStats(year, 5);
+      if (data.gamesPlayed === 0) {
+        alert(`No games recorded in ${year}.`);
+        return;
+      }
+      const names = (aw: MonthlyAward[] | null | undefined) => aw && aw.length ? aw.map(a => a.player.name).join(' · ') : '';
+      const tile = (aw: MonthlyAward[] | null | undefined, label: string, fmt: (a: MonthlyAward) => string): YearlyAwardItem | null =>
+        aw && aw.length ? { label, names: names(aw), value: fmt(aw[0]) } : null;
+
+      const playerOfTheYear = tile(data.awards.playerOfTheYear, 'PLAYER OF THE YEAR', a => `${a.value} pt${a.value === 1 ? '' : 's'}`);
+      const awardTiles = [
+        tile(data.awards.goldenBoot, 'GOLDEN BOOT', a => `${a.value} goal${a.value === 1 ? '' : 's'}`),
+        tile(data.awards.playmaker, 'PLAYMAKER', a => `${a.value} assist${a.value === 1 ? '' : 's'}`),
+        tile(data.awards.ironMan, 'IRON MAN', a => `${a.value} game${a.value === 1 ? '' : 's'}`),
+      ].filter((x): x is YearlyAwardItem => x !== null);
+
+      const lb = (title: string, entries: { player: { name: string }; value: number }[]): YearlyLeaderboard =>
+        ({ title, rows: entries.map((e, i) => ({ rank: i + 1, name: e.player.name, value: String(e.value) })) });
+      const leaderboards = [
+        lb('GOALS', data.leaderboards.goals),
+        lb('ASSISTS', data.leaderboards.assists),
+        lb('GOAL INVOLVEMENTS (G+A)', data.leaderboards.goalInvolvements),
+        lb('POINTS', data.leaderboards.points),
+        lb('APPEARANCES', data.leaderboards.appearances),
+      ].filter(l => l.rows.length > 0);
+
+      const banners: YearlyAwardItem[] = [];
+      const duo = data.bestDuo?.[0];
+      if (duo) banners.push({ label: 'BEST DUO', names: `${duo.players[0].name} & ${duo.players[1].name}`, value: `${duo.value} goal combo${duo.value === 1 ? '' : 's'}` });
+      const trio = data.bestTrio?.[0];
+      if (trio) banners.push({ label: 'BEST TRIO', names: trio.players.map(p => p.name).join(' · '), value: `${trio.value} PPG` });
+
+      const reportData: YearlyReportData = {
+        year: data.year, gamesPlayed: data.gamesPlayed, totalGoals: data.totalGoals,
+        playerOfTheYear, awardTiles, leaderboards, banners,
+      };
+
+      const blob = await renderYearlyReportImage(reportData);
+      const file = new File([blob], `awty-${data.year}-season.png`, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${data.year} Season in Review` });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      alert(`Couldn't create the yearly report: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setSharingYear(false);
+    }
+  }, []);
+
   const filteredGames = useMemo(() => {
     if (filterMonth === null && filterYear === null) return games;
     return games.filter(g => {
@@ -68,9 +135,40 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-lg mx-auto px-4 py-4">
-        <div className="mb-2">
-          <h2 className="text-2xl font-bold text-gold italic">STATS HUB</h2>
-          <p className="text-text-tertiary text-sm">Performance Data</p>
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-2xl font-bold text-gold italic">STATS HUB</h2>
+            <p className="text-text-tertiary text-sm">Performance Data</p>
+          </div>
+          {isAdmin && availableYears.length > 0 && (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <select
+                value={effReportYear}
+                onChange={(e) => setReportYear(parseInt(e.target.value))}
+                className="bg-surface border border-border text-text-primary text-xs font-medium rounded-lg px-2 py-1.5 outline-none cursor-pointer"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => handleShareYearly(effReportYear)}
+                disabled={sharingYear}
+                className="px-3 py-1.5 bg-surface-raised text-text-primary text-xs font-bold rounded-lg border border-gold/60 hover:bg-surface-active active:bg-surface-active disabled:text-text-tertiary disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+              >
+                {sharingYear ? (
+                  'Rendering…'
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                    Yearly
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* View toggle */}

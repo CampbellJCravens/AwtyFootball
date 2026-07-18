@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward, LeaderboardEntry } from '../api/stats';
+import { useAuth } from '../contexts/AuthContext';
+import { renderMonthlyReportImage, MonthlyReportData, MonthlyAwardItem } from '../utils/renderMonthlyReportImage';
 import ImageLightbox from './ImageLightbox';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -173,8 +175,10 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
       onMonthViewed?.();
     }
   }, [initialMonth]);
+  const { isAdmin } = useAuth();
   const [data, setData] = useState<MonthlyStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sharingReport, setSharingReport] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [showDefenderInfo, setShowDefenderInfo] = useState(false);
   const [leaderboardModal, setLeaderboardModal] = useState<{ title: string; emoji: string; unit: string; entries: LeaderboardEntry[]; showFormula?: boolean } | null>(null);
@@ -227,6 +231,62 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
     else setMonth(month + 1);
   };
 
+  // Build + share a compact monthly-highlights PNG for the group chat.
+  const handleShareMonthly = useCallback(async () => {
+    if (!data) return;
+    try {
+      setSharingReport(true);
+      const names = (aw: MonthlyAward[] | null | undefined) =>
+        aw && aw.length ? aw.map(a => a.player.name).join(' · ') : '';
+      const item = (aw: MonthlyAward[] | null | undefined, label: string, fmt: (a: MonthlyAward) => string): MonthlyAwardItem | null =>
+        aw && aw.length ? { label, names: names(aw), value: fmt(aw[0]) } : null;
+
+      const playerOfTheMonth = item(data.awards.playerOfTheMonth, 'PLAYER OF THE MONTH', a => `${a.value} pt${a.value === 1 ? '' : 's'}`);
+      const awards = [
+        item(data.awards.topScorer, 'TOP SCORER', a => `${a.value} goal${a.value === 1 ? '' : 's'}`),
+        item(data.awards.topAssister, 'TOP ASSISTER', a => `${a.value} assist${a.value === 1 ? '' : 's'}`),
+        item(data.awards.topGoalContributor, 'TOP GOAL CONTRIBUTOR', a => `${a.value} G+A`),
+        item(data.awards.topDefender, 'TOP DEFENDER', a => `${a.goalsAllowed ?? 0} GA · ${a.games ?? 0} GP`),
+        item(data.awards.sportsmanOfTheMonth, 'SPORTSMAN OF THE MONTH', a => `${a.value} SP`),
+      ].filter((x): x is MonthlyAwardItem => x !== null);
+
+      // Highest-scoring game rides in the tile grid so it fills the odd cell.
+      const hsg = data.highestScoringGame;
+      if (hsg) {
+        const d = new Date(hsg.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        awards.push({ label: 'HIGHEST-SCORING GAME', names: d, value: `${hsg.colorScore}–${hsg.whiteScore} · ${hsg.totalGoals} goals` });
+      }
+
+      // Top Trio is deferred to the yearly report.
+      const banners: MonthlyAwardItem[] = [];
+      const duo = data.awards.topDuo?.[0];
+      if (duo) banners.push({ label: 'TOP DUO', names: `${duo.players[0].name} & ${duo.players[1].name}`, value: `${duo.value} goal combo${duo.value === 1 ? '' : 's'}` });
+
+      const reportData: MonthlyReportData = {
+        monthName: MONTH_NAMES[month], year, gamesPlayed: data.gamesPlayed,
+        playerOfTheMonth, awards, banners,
+      };
+
+      const blob = await renderMonthlyReportImage(reportData);
+      const file = new File([blob], `awty-${MONTH_NAMES[month].toLowerCase()}-${year}.png`, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${MONTH_NAMES[month]} ${year} Report` });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      alert(`Couldn't create the report: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setSharingReport(false);
+    }
+  }, [data, month, year]);
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-lg mx-auto px-4 py-4 pb-8">
@@ -275,6 +335,27 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
             </svg>
           </button>
         </div>
+
+        {isAdmin && !loading && data && data.gamesPlayed > 0 && (
+          <div className="flex justify-center mb-4">
+            <button
+              onClick={handleShareMonthly}
+              disabled={sharingReport}
+              className="px-4 py-2 bg-surface-raised text-text-primary text-sm font-bold rounded-xl border border-gold/60 hover:bg-surface-active active:bg-surface-active disabled:text-text-tertiary disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            >
+              {sharingReport ? (
+                'Rendering…'
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  Share Report
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12">

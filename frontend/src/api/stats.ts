@@ -120,6 +120,7 @@ export interface MonthlyStatsResponse {
   year: number;
   gamesPlayed: number;
   availableMonths: { month: number; year: number }[];
+  highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null;
   awards: {
     playerOfTheMonth: MonthlyAward[] | null;
     topGoalContributor: MonthlyAward[] | null;
@@ -128,6 +129,7 @@ export interface MonthlyStatsResponse {
     topDefender: MonthlyAward[] | null;
     sportsmanOfTheMonth: MonthlyAward[] | null;
     topDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
+    topTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;
   };
   leaderboards: {
     points: LeaderboardEntry[];
@@ -153,6 +155,54 @@ export async function fetchMonthlyStats(month: number, year: number): Promise<Mo
   });
   if (!response.ok) {
     throw new Error('Failed to fetch monthly stats');
+  }
+  return response.json();
+}
+
+export interface YearlyLeaderEntry {
+  player: PlayerStatsPlayer;
+  value: number;
+  games?: number;
+  wins?: number;
+  goalsAllowed?: number;
+}
+
+export interface YearlyStatsResponse {
+  year: number;
+  gamesPlayed: number;
+  totalGoals: number;
+  availableYears: number[];
+  highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null;
+  awards: {
+    playerOfTheYear: MonthlyAward[] | null;
+    goldenBoot: MonthlyAward[] | null;
+    playmaker: MonthlyAward[] | null;
+    ironMan: MonthlyAward[] | null;
+    topDefender: MonthlyAward[] | null;
+    sportsman: MonthlyAward[] | null;
+  };
+  bestDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
+  bestTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;
+  leaderboards: {
+    points: YearlyLeaderEntry[];
+    goals: YearlyLeaderEntry[];
+    assists: YearlyLeaderEntry[];
+    goalInvolvements: YearlyLeaderEntry[];
+    appearances: YearlyLeaderEntry[];
+    ppg: YearlyLeaderEntry[];
+    winRate: YearlyLeaderEntry[];
+    sportsmanship: YearlyLeaderEntry[];
+    defensiveRating: YearlyLeaderEntry[];
+  };
+}
+
+export async function fetchYearlyStats(year: number, limit = 10): Promise<YearlyStatsResponse> {
+  const params = new URLSearchParams({ year: String(year), limit: String(limit) });
+  const response = await fetch(`${API_BASE_URL}/stats/yearly?${params}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch yearly stats');
   }
   return response.json();
 }

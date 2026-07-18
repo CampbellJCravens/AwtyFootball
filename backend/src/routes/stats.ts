@@ -516,6 +516,62 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
           .map(d => ({ players: [playerMap.get(d.ids[0])!, playerMap.get(d.ids[1])!], value: d.contributions }))
       : null;
 
+    // Top Trio: best trio of teammates by points-per-game, min 2 games together
+    // this month. A goal has at most a scorer+assister, so a trio can't be a
+    // goal-combo like the duo — this is results-based (mirrors chemistry trios).
+    const trioTracker = new Map<string, { ids: string[]; games: number; wins: number; ties: number }>();
+    for (const game of monthGames) {
+      const c = game.goals.filter(g => g.team === 'color').length;
+      const w = game.goals.filter(g => g.team === 'white').length;
+      const isTie = c === w;
+      for (const team of ['color', 'white'] as const) {
+        const teamPlayers = Object.entries(game.teamAssignments)
+          .filter(([pid, t]) => t === team && playerMap.has(pid) && !playerMap.get(pid)!.name.includes('Guest'))
+          .map(([pid]) => pid)
+          .sort();
+        if (teamPlayers.length < 3) continue;
+        const isWin = (team === 'color' && c > w) || (team === 'white' && w > c);
+        for (const combo of getCombinations(teamPlayers, 3)) {
+          const key = combo.join('|');
+          if (!trioTracker.has(key)) trioTracker.set(key, { ids: combo, games: 0, wins: 0, ties: 0 });
+          const e = trioTracker.get(key)!;
+          e.games++;
+          if (isWin) e.wins++;
+          else if (isTie) e.ties++;
+        }
+      }
+    }
+    let bestTrioPpg = -1, bestTrioGames = 0;
+    for (const t of trioTracker.values()) {
+      if (t.games < 2) continue;
+      const ppg = (t.wins * 3 + t.ties) / t.games;
+      if (ppg > bestTrioPpg || (ppg === bestTrioPpg && t.games > bestTrioGames)) {
+        bestTrioPpg = ppg;
+        bestTrioGames = t.games;
+      }
+    }
+    const topTrio = bestTrioPpg >= 0
+      ? Array.from(trioTracker.values())
+          .filter(t => t.games >= 2 && (t.wins * 3 + t.ties) / t.games === bestTrioPpg && t.games === bestTrioGames)
+          .map(t => ({
+            players: t.ids.map(id => playerMap.get(id)!),
+            value: Math.round(bestTrioPpg * 100) / 100,
+            games: t.games,
+            wins: t.wins,
+          }))
+      : null;
+
+    // Highest-scoring game of the month (most total goals).
+    let highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null = null;
+    for (const game of monthGames) {
+      const c = game.goals.filter(g => g.team === 'color').length;
+      const w = game.goals.filter(g => g.team === 'white').length;
+      const total = c + w;
+      if (total > 0 && (!highestScoringGame || total > highestScoringGame.totalGoals)) {
+        highestScoringGame = { gameNumber: game.gameNumber, date: game.createdAt.toISOString(), colorScore: c, whiteScore: w, totalGoals: total };
+      }
+    }
+
     // Figure out which months have non-cancelled games. A month with only
     // cancelled games shouldn't show up in the month picker.
     const allMonths: { month: number; year: number }[] = [];
@@ -534,6 +590,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
       year,
       gamesPlayed: monthGames.length,
       availableMonths: allMonths,
+      highestScoringGame,
       awards: {
         playerOfTheMonth,
         topGoalContributor,
@@ -542,6 +599,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         topDefender,
         sportsmanOfTheMonth,
         topDuo,
+        topTrio,
       },
       leaderboards: {
         points: getLeaderboard(s => s.points),
@@ -555,6 +613,159 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
   } catch (error) {
     console.error('Error fetching monthly stats:', error);
     res.status(500).json({ error: 'Failed to fetch monthly stats' });
+  }
+});
+
+// ── GET /api/stats/yearly?year=2026&limit=10 ──
+// Season summary: marquee awards + top-N leaderboards across categories.
+router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const now = new Date();
+    const year = parseInt(req.query.year as string) || now.getFullYear();
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 25);
+    const startDate = new Date(year, 0, 1);
+    const endDate = new Date(year + 1, 0, 1);
+
+    const allGames = await loadAllGames();
+    const yearGames = allGames.filter(g =>
+      g.createdAt >= startDate && g.createdAt < endDate && g.field !== 'cancelled'
+    );
+
+    const allPlayers = await prisma.player.findMany();
+    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+
+    type YStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number };
+    const stats = new Map<string, YStat>();
+
+    for (const game of yearGames) {
+      const colorGoals = game.goals.filter(g => g.team === 'color').length;
+      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      for (const [pid, team] of Object.entries(game.teamAssignments)) {
+        if (!playerMap.has(pid)) continue;
+        if (playerMap.get(pid)!.name.includes('Guest')) continue;
+        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
+        const s = stats.get(pid)!;
+        s.games++;
+        s.sportsmanship += game.sportsmanship[pid] || 0;
+        const isTie = colorGoals === whiteGoals;
+        const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
+        if (isWin) { s.points += 3; s.wins++; }
+        else if (isTie) { s.points += 1; s.ties++; }
+        s.goalsAllowed += team === 'color' ? whiteGoals : colorGoals;
+      }
+      for (const goal of game.goals) {
+        if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
+        if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
+      }
+    }
+
+    const MIN_RATE_GAMES = 4; // qualifier for rate stats (PPG, win %)
+
+    const rankList = (metric: (s: YStat) => number, opts?: { min?: number; extra?: (s: YStat) => Record<string, number> }) =>
+      Array.from(stats.entries())
+        .filter(([, s]) => (opts?.min ? s.games >= opts.min : true))
+        .map(([pid, s]) => ({ player: playerMap.get(pid)!, value: metric(s), ...(opts?.extra?.(s) || {}) }))
+        .filter(e => e.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, limit);
+
+    // Marquee winner(s) = everyone tied at the top of a ranked list.
+    const marquee = <T extends { value: number }>(list: T[]): T[] | null =>
+      list.length > 0 && list[0].value > 0 ? list.filter(e => e.value === list[0].value) : null;
+
+    const points = rankList(s => s.points);
+    const goals = rankList(s => s.goals);
+    const assists = rankList(s => s.assists);
+    const goalInvolvements = rankList(s => s.goalInvolvements);
+    const appearances = rankList(s => s.games);
+    const ppg = rankList(s => Math.round((s.points / s.games) * 100) / 100, { min: MIN_RATE_GAMES });
+    const winRate = rankList(s => Math.round((s.wins / s.games) * 100), { min: MIN_RATE_GAMES, extra: s => ({ games: s.games, wins: s.wins }) });
+    const sportsmanship = rankList(s => s.sportsmanship);
+    const defensiveRating = rankList(s => (s.games * 3) - s.goalsAllowed, { min: 2, extra: s => ({ games: s.games, goalsAllowed: s.goalsAllowed }) });
+
+    // Best Duo (scorer-assister combos across the year)
+    const duoStats = new Map<string, { ids: [string, string]; contributions: number }>();
+    for (const game of yearGames) {
+      for (const goal of game.goals) {
+        if (!goal.assisterId) continue;
+        if (!stats.has(goal.scorerId) || !stats.has(goal.assisterId)) continue;
+        const [a, b] = [goal.scorerId, goal.assisterId].sort();
+        const key = `${a}:${b}`;
+        if (!duoStats.has(key)) duoStats.set(key, { ids: [a, b] as [string, string], contributions: 0 });
+        duoStats.get(key)!.contributions++;
+      }
+    }
+    const bestDuo = Array.from(duoStats.values())
+      .filter(d => d.contributions > 1)
+      .sort((a, b) => b.contributions - a.contributions)
+      .slice(0, limit)
+      .map(d => ({ players: [playerMap.get(d.ids[0])!, playerMap.get(d.ids[1])!], value: d.contributions }));
+
+    // Best Trio (teammates by PPG, min 3 games together across the year)
+    const trioTracker = new Map<string, { ids: string[]; games: number; wins: number; ties: number }>();
+    for (const game of yearGames) {
+      const c = game.goals.filter(g => g.team === 'color').length;
+      const w = game.goals.filter(g => g.team === 'white').length;
+      const isTie = c === w;
+      for (const team of ['color', 'white'] as const) {
+        const teamPlayers = Object.entries(game.teamAssignments)
+          .filter(([pid, t]) => t === team && playerMap.has(pid) && !playerMap.get(pid)!.name.includes('Guest'))
+          .map(([pid]) => pid)
+          .sort();
+        if (teamPlayers.length < 3) continue;
+        const isWin = (team === 'color' && c > w) || (team === 'white' && w > c);
+        for (const combo of getCombinations(teamPlayers, 3)) {
+          const key = combo.join('|');
+          if (!trioTracker.has(key)) trioTracker.set(key, { ids: combo, games: 0, wins: 0, ties: 0 });
+          const e = trioTracker.get(key)!;
+          e.games++;
+          if (isWin) e.wins++;
+          else if (isTie) e.ties++;
+        }
+      }
+    }
+    const bestTrio = Array.from(trioTracker.values())
+      .filter(t => t.games >= 3)
+      .map(t => ({ players: t.ids.map(id => playerMap.get(id)!), value: Math.round(((t.wins * 3 + t.ties) / t.games) * 100) / 100, games: t.games, wins: t.wins }))
+      .sort((a, b) => b.value - a.value || b.games - a.games)
+      .slice(0, limit);
+
+    // Highest-scoring game of the year
+    let highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null = null;
+    let totalGoals = 0;
+    for (const game of yearGames) {
+      const c = game.goals.filter(g => g.team === 'color').length;
+      const w = game.goals.filter(g => g.team === 'white').length;
+      totalGoals += c + w;
+      const total = c + w;
+      if (total > 0 && (!highestScoringGame || total > highestScoringGame.totalGoals)) {
+        highestScoringGame = { gameNumber: game.gameNumber, date: game.createdAt.toISOString(), colorScore: c, whiteScore: w, totalGoals: total };
+      }
+    }
+
+    const availableYears = [...new Set(allGames.filter(g => g.field !== 'cancelled').map(g => g.createdAt.getFullYear()))].sort((a, b) => b - a);
+
+    res.json({
+      year,
+      gamesPlayed: yearGames.length,
+      totalGoals,
+      availableYears,
+      highestScoringGame,
+      awards: {
+        playerOfTheYear: marquee(points),
+        goldenBoot: marquee(goals),
+        playmaker: marquee(assists),
+        ironMan: marquee(appearances),
+        topDefender: marquee(defensiveRating),
+        sportsman: marquee(sportsmanship),
+      },
+      bestDuo: bestDuo.length ? bestDuo : null,
+      bestTrio: bestTrio.length ? bestTrio : null,
+      leaderboards: { points, goals, assists, goalInvolvements, appearances, ppg, winRate, sportsmanship, defensiveRating },
+    });
+  } catch (error) {
+    console.error('Error fetching yearly stats:', error);
+    res.status(500).json({ error: 'Failed to fetch yearly statistics' });
   }
 });
 
