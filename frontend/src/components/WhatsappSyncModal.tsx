@@ -12,6 +12,7 @@ import {
   getWhatsappSettings,
   setWhatsappSettings,
   resetWhatsapp,
+  getWhatsappPairingCode,
   type WhatsappStatus,
   type WhatsappPoll,
   type UnmatchedVote,
@@ -37,6 +38,9 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
   const [groups, setGroups] = useState<WhatsappGroup[]>([]);
   const [scopeJid, setScopeJid] = useState<string | null>(null);
   const [titleFilter, setTitleFilter] = useState('');
+  const [pairPhone, setPairPhone] = useState('');
+  const [pairCode, setPairCode] = useState<string | null>(null);
+  const [showPair, setShowPair] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -73,6 +77,20 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
       setScopeJid(jid || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to set scope');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handlePairCode = async () => {
+    setBusy('pair');
+    setError(null);
+    setPairCode(null);
+    try {
+      const code = await getWhatsappPairingCode(pairPhone);
+      setPairCode(code);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to get a code');
     } finally {
       setBusy(null);
     }
@@ -195,13 +213,55 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
 
                 {/* Recovery: when not linked, force a fresh session + QR. */}
                 {status?.enabled && !status.linked && (
-                  <button
-                    onClick={handleRelink}
-                    disabled={busy === 'relink'}
-                    className="mt-3 w-full px-3 py-2 rounded-xl bg-surface-raised border border-border-emphasis text-sm font-semibold text-text-primary hover:bg-surface-active transition-colors disabled:opacity-60"
-                  >
-                    {busy === 'relink' ? 'Re-linking…' : qr ? 'Generate a new QR' : 'Re-link device (get QR)'}
-                  </button>
+                  <>
+                    <button
+                      onClick={handleRelink}
+                      disabled={busy === 'relink'}
+                      className="mt-3 w-full px-3 py-2 rounded-xl bg-surface-raised border border-border-emphasis text-sm font-semibold text-text-primary hover:bg-surface-active transition-colors disabled:opacity-60"
+                    >
+                      {busy === 'relink' ? 'Re-linking…' : qr ? 'Generate a new QR' : 'Re-link device (get QR)'}
+                    </button>
+
+                    {/* Phone-only linking: type a code into WhatsApp instead of scanning. */}
+                    {!showPair ? (
+                      <button
+                        onClick={() => setShowPair(true)}
+                        className="mt-2 w-full text-xs font-medium text-gold hover:underline"
+                      >
+                        No second screen? Link with a code instead
+                      </button>
+                    ) : (
+                      <div className="mt-3 rounded-xl border border-border-emphasis bg-surface-raised p-3">
+                        <p className="text-xs text-text-secondary mb-2">
+                          Enter the WhatsApp number you're linking, get a code, then in WhatsApp:
+                          <span className="text-text-primary"> Settings → Linked Devices → Link a Device → "Link with phone number instead"</span> and type the code.
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            type="tel"
+                            value={pairPhone}
+                            onChange={(e) => setPairPhone(e.target.value)}
+                            placeholder="e.g. +1 713 628 9439"
+                            className="flex-1 min-w-0 px-3 py-2 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent"
+                          />
+                          <button
+                            onClick={handlePairCode}
+                            disabled={busy === 'pair'}
+                            className="px-3 py-2 bg-gold text-text-on-accent text-sm font-bold rounded-lg hover:bg-gold-hover disabled:opacity-50 transition-colors"
+                          >
+                            {busy === 'pair' ? '…' : 'Get code'}
+                          </button>
+                        </div>
+                        {pairCode && (
+                          <div className="mt-3 text-center">
+                            <p className="text-[11px] uppercase tracking-wider text-text-tertiary">Your code</p>
+                            <p className="text-2xl font-bold tracking-[0.3em] text-text-primary mt-1">{pairCode}</p>
+                            <p className="text-[11px] text-text-tertiary mt-1">Type this into WhatsApp within a minute.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
 

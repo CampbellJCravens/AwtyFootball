@@ -54,6 +54,17 @@ export async function resetWhatsapp(): Promise<void> {
   if (!res.ok) throw new Error('Failed to re-link');
 }
 
+/** Get a pairing code to link by typing it into WhatsApp (phone-only, no scan). */
+export async function getWhatsappPairingCode(phone: string): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/pairing-code`, opts({ method: 'POST', body: JSON.stringify({ phone }) }));
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || 'Failed to get a pairing code');
+  }
+  const data = await res.json();
+  return data.code as string;
+}
+
 export async function getWhatsappPolls(): Promise<WhatsappPoll[]> {
   const res = await fetch(`${API_BASE_URL}/whatsapp/polls`, opts());
   if (!res.ok) throw new Error('Failed to fetch polls');

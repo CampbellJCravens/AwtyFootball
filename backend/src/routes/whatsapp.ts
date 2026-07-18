@@ -9,7 +9,7 @@ import { Router, Response, NextFunction } from 'express';
 import QRCode from 'qrcode';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { env } from '../env';
-import { getLatestWhatsappQr, isWhatsappLinked, listWhatsappGroups, relinkWhatsapp } from '../services/whatsapp/listener';
+import { getLatestWhatsappQr, isWhatsappLinked, listWhatsappGroups, relinkWhatsapp, requestWhatsappPairingCode } from '../services/whatsapp/listener';
 import {
   listPolls,
   linkPollToGame,
@@ -133,6 +133,21 @@ router.post('/reset', async (_req: AuthenticatedRequest, res: Response, next: Ne
     res.json({ ok: true, note: 'Session cleared and re-linking — a new QR should appear shortly.' });
   } catch (err) {
     next(err);
+  }
+});
+
+// Get a pairing code to link the account by typing it into WhatsApp (phone-only,
+// no QR scan). Body: { phone } — the account's own number.
+router.post('/pairing-code', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { phone } = req.body ?? {};
+    if (typeof phone !== 'string' || !phone.trim()) {
+      return res.status(400).json({ error: 'Your WhatsApp number is required' });
+    }
+    const code = await requestWhatsappPairingCode(phone);
+    res.json({ code });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to get a pairing code' });
   }
 });
 

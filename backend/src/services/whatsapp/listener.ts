@@ -67,6 +67,31 @@ export async function relinkWhatsapp(): Promise<void> {
   await startWhatsappListener();
 }
 
+/**
+ * Request an 8-char pairing code so the account can be linked by typing it into
+ * WhatsApp (Linked Devices → Link a Device → "Link with phone number instead")
+ * — no QR scan needed, so it works entirely from one phone. `phone` is the
+ * account's own number (digits, e.g. 17136289439).
+ */
+export async function requestWhatsappPairingCode(phone: string): Promise<string> {
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) throw new Error('A phone number is required');
+  if (isWhatsappLinked()) throw new Error('WhatsApp is already linked');
+
+  // Need a fresh, connecting, unregistered socket. Start one if needed.
+  if (!sock) await relinkWhatsapp();
+
+  // Wait until the socket is far enough along to talk to WhatsApp (a QR having
+  // been emitted means the websocket is open and the session is unregistered).
+  const start = Date.now();
+  while ((!sock || !latestQr) && Date.now() - start < 15000) {
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!sock) throw new Error('WhatsApp listener is not ready — try again in a few seconds');
+
+  return sock.requestPairingCode(digits);
+}
+
 /** Groups the linked account participates in — for the admin to pick the scope. */
 export async function listWhatsappGroups(): Promise<Array<{ jid: string; subject: string }>> {
   if (!sock) return [];
