@@ -22,7 +22,9 @@ const YES_WORDS = ['in', 'yes', 'yep', 'yeah', 'going', 'attending', 'present', 
 const MAYBE_WORDS = ['maybe', 'tentative', 'perhaps', 'possibly', 'unsure', 'depends', '🤷'];
 const NO_WORDS = ['out', 'no', 'nope', "can't", 'cant', 'cannot', 'not', 'absent', '❌', '👎'];
 
-const GUEST_CAP = 2;
+// Max guests we'll credit a single voter. The group's +1/+2 options are
+// additive (picking both = 3 guests), so this must be above 2.
+const GUEST_CAP = 5;
 
 /**
  * Parse a raw poll option label into { status, guestCount }, or null if it
@@ -56,7 +58,8 @@ export function parsePollOption(raw: string): ParsedOption | null {
  * The real group poll uses standalone "In / Maybe / Out" plus separate "+1"/"+2",
  * so "in with one guest" arrives as ["In", "+1"]. Collapse rule:
  *   - any Out/No       -> no  (guest count irrelevant)
- *   - else any In/Yes OR any "+N" -> yes, guestCount = max N (capped)
+ *   - else any In/Yes OR any "+N" -> yes, guestCount = SUM of the +N options
+ *     (the group's +1/+2 are additive, so picking both = 3 guests), capped.
  *   - else any Maybe   -> maybe
  *   - else             -> null (nothing recognizable / vote cleared)
  */
@@ -73,13 +76,15 @@ export function combineSelections(labels: string[]): ParsedOption | null {
     const plus = text.match(/(?:\+|\bplus\b)\s*(\d+)/);
     if (plus) {
       const n = parseInt(plus[1], 10);
-      if (Number.isFinite(n)) guestCount = Math.max(guestCount, Math.min(GUEST_CAP, n));
+      if (Number.isFinite(n) && n > 0) guestCount += n; // additive across options
     }
 
     if (NO_WORDS.some((w) => text.includes(w))) hasNo = true;
     else if (MAYBE_WORDS.some((w) => text.includes(w))) hasMaybe = true;
     else if (YES_WORDS.some((w) => text.includes(w))) hasYes = true;
   }
+
+  if (guestCount > GUEST_CAP) guestCount = GUEST_CAP;
 
   if (hasNo) return { status: 'no', guestCount: 0 };
   if (hasYes || guestCount > 0) return { status: 'yes', guestCount };
