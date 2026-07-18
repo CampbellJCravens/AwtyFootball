@@ -74,7 +74,8 @@ export async function relinkWhatsapp(): Promise<void> {
  * account's own number (digits, e.g. 17136289439).
  */
 export async function requestWhatsappPairingCode(phone: string): Promise<string> {
-  const digits = phone.replace(/\D/g, '');
+  let digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) digits = '1' + digits; // assume US country code if omitted
   if (!digits) throw new Error('A phone number is required');
   if (isWhatsappLinked()) throw new Error('WhatsApp is already linked');
 
