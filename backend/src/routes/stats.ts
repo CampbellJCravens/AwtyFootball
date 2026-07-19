@@ -1010,25 +1010,72 @@ router.get('/legacy', async (req: AuthenticatedRequest, res: Response) => {
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+// Annual member roster sizes from the club's field-statistics sheet. This is the
+// denominator for response/attendance rates (the stored FieldStat.groupSize in
+// the DB is incomplete/stale, so we don't use it). Update each November when the
+// next year's roster is set; unlisted future years carry forward the latest.
+const ROSTER_BY_YEAR: Record<number, number> = {
+  2018: 43, 2019: 45, 2020: 47, 2021: 43, 2022: 48, 2023: 43, 2024: 48, 2025: 56, 2026: 55,
+};
+const ROSTER_YEARS = Object.keys(ROSTER_BY_YEAR).map(Number).sort((a, b) => a - b);
+function rosterSizeForYear(yr: number): number | null {
+  if (ROSTER_BY_YEAR[yr]) return ROSTER_BY_YEAR[yr];
+  let best: number | null = null;
+  for (const ky of ROSTER_YEARS) if (ky <= yr) best = ROSTER_BY_YEAR[ky];
+  return best; // carry forward the latest known roster to future years
+}
+
 router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const yearParam = req.query.year as string | undefined;
     const year = yearParam ? parseInt(yearParam) : null;
     const where = year && !isNaN(year) ? { year } : {};
 
-    const [stats, allGames] = await Promise.all([
+    const [stats, allGames, allPlayers, allRsvps] = await Promise.all([
       prisma.fieldStat.findMany({ where, orderBy: { date: 'asc' } }),
-      prisma.game.findMany({ select: { createdAt: true, teamAssignments: true } }),
+      prisma.game.findMany({ select: { id: true, createdAt: true, teamAssignments: true } }),
+      prisma.player.findMany({ select: { id: true, name: true } }),
+      prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true } }),
     ]);
 
-    // Build a map of ISO date → unique player count from tracked Game records
+    const nameById = new Map(allPlayers.map(p => [p.id, p.name]));
+    const isGuest = (pid: string) => (nameById.get(pid) ?? '').includes('Guest');
+
+    // Build a map of ISO date → unique player count from tracked Game records,
+    // plus per-date non-guest attendance for live response/attendance rates.
     const playerCountByDate = new Map<string, number>();
+    const gameDate = new Map<string, string>();          // gameId → iso date
+    const shownByDate = new Map<string, Set<string>>();  // non-guest players who showed
     for (const g of allGames) {
       const dateKey = g.createdAt.toISOString().slice(0, 10);
+      gameDate.set(g.id, dateKey);
       const assignments = safeParseJSON<Record<string, string>>(g.teamAssignments, {});
-      const count = Object.keys(assignments).length;
-      playerCountByDate.set(dateKey, (playerCountByDate.get(dateKey) ?? 0) + count);
+      playerCountByDate.set(dateKey, (playerCountByDate.get(dateKey) ?? 0) + Object.keys(assignments).length);
+      let shown = shownByDate.get(dateKey);
+      if (!shown) { shown = new Set(); shownByDate.set(dateKey, shown); }
+      for (const pid of Object.keys(assignments)) if (!isGuest(pid)) shown.add(pid);
     }
+
+    // Per-date responders (any RSVP), from GameRsvp — includes the WhatsApp sync.
+    const respByDate = new Map<string, Set<string>>();
+    for (const r of allRsvps) {
+      const iso = gameDate.get(r.gameId);
+      if (!iso || isGuest(r.playerId)) continue;
+      let set = respByDate.get(iso);
+      if (!set) { set = new Set(); respByDate.set(iso, set); }
+      set.add(r.playerId);
+    }
+
+    // Live response/attendance vs the year's roster (0 when we can't compute).
+    const liveRates = (isoDate: string, yr: number) => {
+      const size = rosterSizeForYear(yr);
+      const responders = respByDate.get(isoDate)?.size ?? 0;
+      const shown = shownByDate.get(isoDate)?.size ?? 0;
+      return {
+        responseRate: size && responders > 0 ? parseFloat((responders / size * 100).toFixed(1)) : 0,
+        attendanceRate: size && shown > 0 ? parseFloat((shown / size * 100).toFixed(1)) : 0,
+      };
+    };
 
     const records = stats.map(s => {
       const isoDate = s.date.toISOString().slice(0, 10);
@@ -1044,6 +1091,12 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
       // mark played='yes' regardless of stored FieldStat.played value.
       const playedStatus = trackedPlayers && trackedPlayers > 0 ? 'yes' : s.played;
 
+      // Prefer the stored sheet rate; fall back to live RSVP/roster data so
+      // recent weeks (no sheet rate yet) still populate.
+      const storedResp = parseFloat((s.responseRate * 100).toFixed(2));
+      const storedAtt = parseFloat((s.attendanceRate * 100).toFixed(2));
+      const live = liveRates(isoDate, s.year);
+
       return {
         year: s.year,
         date: `${s.date.getUTCDate()}-${MONTH_NAMES[s.date.getUTCMonth()]}`,
@@ -1057,9 +1110,9 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         waOut: s.waOut ?? null,
         groupSize: s.groupSize ?? null,
         eviteResponse: s.eviteResponse,
-        responseRate: parseFloat((s.responseRate * 100).toFixed(2)),
+        responseRate: storedResp > 0 ? storedResp : live.responseRate,
         showUp: s.showUp,
-        attendanceRate: parseFloat((s.attendanceRate * 100).toFixed(2)),
+        attendanceRate: storedAtt > 0 ? storedAtt : live.attendanceRate,
         trackedPlayers,
         turnoutVsRsvp,
         notes: s.notes ?? null,
@@ -1073,6 +1126,7 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
       const dateObj = new Date(isoDate + 'T00:00:00Z');
       const yr = dateObj.getUTCFullYear();
       if (year && yr !== year) continue;
+      const live = liveRates(isoDate, yr);
       records.push({
         year: yr,
         date: `${dateObj.getUTCDate()}-${MONTH_NAMES[dateObj.getUTCMonth()]}`,
@@ -1086,8 +1140,8 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         waOut: null,
         groupSize: null,
         eviteResponse: null,
-        responseRate: 0,
-        attendanceRate: 0,
+        responseRate: live.responseRate,
+        attendanceRate: live.attendanceRate,
         showUp: null,
         trackedPlayers: count,
         turnoutVsRsvp: null,

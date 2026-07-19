@@ -218,7 +218,12 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           )}
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">{player.name}</h2>
+          <h2 className="text-2xl font-bold text-text-primary flex items-center gap-1.5">
+            {player.name}
+            {achievements.some(a => a.id === 'highlander' && a.current >= a.target) && (
+              <span title="The Highlander — longest attendance streak" className="text-xl" aria-label="The Highlander">🗡️</span>
+            )}
+          </h2>
           {/* Form dots */}
           <div className="flex gap-1 mt-2">
             {form.map((result, i) => (
