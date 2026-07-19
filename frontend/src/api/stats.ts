@@ -232,6 +232,7 @@ export interface Achievement {
   description: string;
   current: number;
   target: number;
+  reigning?: boolean; // Highlander: currently the reigning holder (sword badge)
 }
 
 export async function fetchPlayerAchievements(playerId: string): Promise<Achievement[]> {

@@ -220,8 +220,8 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
         <div>
           <h2 className="text-2xl font-bold text-text-primary flex items-center gap-1.5">
             {player.name}
-            {achievements.some(a => a.id === 'highlander' && a.current >= a.target) && (
-              <span title="The Highlander — longest attendance streak" className="text-xl" aria-label="The Highlander">🗡️</span>
+            {achievements.some(a => a.id === 'highlander' && a.reigning) && (
+              <span title="The Highlander — reigning attendance-streak champion" className="text-xl" aria-label="The Highlander">🗡️</span>
             )}
           </h2>
           {/* Form dots */}

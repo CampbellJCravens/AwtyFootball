@@ -29,6 +29,7 @@ export interface Achievement {
   description: string;
   current: number;
   target: number;
+  reigning?: boolean; // Highlander: currently the reigning holder (sword badge)
 }
 
 const safeParseJSON = <T>(value: string | null | undefined, fallback: T): T => {
@@ -258,33 +259,44 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
 
   const totalPoints = (wins * 3) + (ties * 1);
 
-  // The Highlander — "there can be only one": the longest attendance streak of
-  // the current year (most consecutive games attended without missing one).
-  // Rewards the most reliable attendee; a miss resets the run. Guests excluded.
-  const highlanderYear = currentYear;
-  const isNonGuestOnRoster = (g: ParsedGame) =>
+  // The Highlander — annual title for a year's longest attendance streak
+  // (most consecutive games attended; a miss resets the run; guests excluded).
+  // The achievement unlocks for anyone who won a COMPLETED year; the reigning
+  // holder (most recent completed year's champion) also gets a sword by name.
+  const rosterOf = (g: ParsedGame) =>
     Object.keys(g.teamAssignments).filter(pid => {
       const info = playerMap.get(pid);
       return info && !info.name.includes('Guest');
     });
-  const streakGames = sortedGames.filter(g => g.createdAt.getFullYear() === highlanderYear && isNonGuestOnRoster(g).length > 0);
-
-  const curRun = new Map<string, number>();
-  const maxRun = new Map<string, number>();
-  for (const g of streakGames) {
-    const present = new Set(isNonGuestOnRoster(g));
-    for (const pid of present) {
-      const r = (curRun.get(pid) ?? 0) + 1;
-      curRun.set(pid, r);
-      maxRun.set(pid, Math.max(maxRun.get(pid) ?? 0, r));
-    }
-    for (const pid of curRun.keys()) {
-      if (!present.has(pid)) curRun.set(pid, 0);
-    }
+  const gamesByYearForStreak = new Map<number, ParsedGame[]>();
+  for (const g of sortedGames) {
+    if (rosterOf(g).length === 0) continue;
+    const yr = g.createdAt.getFullYear();
+    if (!gamesByYearForStreak.has(yr)) gamesByYearForStreak.set(yr, []);
+    gamesByYearForStreak.get(yr)!.push(g);
   }
-  let bestRun = 0;
-  for (const [, r] of maxRun) bestRun = Math.max(bestRun, r);
-  const isHighlander = bestRun >= 2 && (maxRun.get(playerId) ?? 0) === bestRun;
+  const championsByYear = new Map<number, Set<string>>();
+  for (const [yr, ygames] of gamesByYearForStreak) {
+    const curRun = new Map<string, number>();
+    const maxRun = new Map<string, number>();
+    for (const g of ygames) {
+      const present = new Set(rosterOf(g));
+      for (const pid of present) {
+        const r = (curRun.get(pid) ?? 0) + 1;
+        curRun.set(pid, r);
+        maxRun.set(pid, Math.max(maxRun.get(pid) ?? 0, r));
+      }
+      for (const pid of curRun.keys()) if (!present.has(pid)) curRun.set(pid, 0);
+    }
+    let bestRun = 0;
+    for (const [, r] of maxRun) bestRun = Math.max(bestRun, r);
+    if (bestRun >= 2) championsByYear.set(yr, new Set([...maxRun].filter(([, r]) => r === bestRun).map(([pid]) => pid)));
+  }
+  const completedChampYears = [...championsByYear.keys()].filter(yr => yr < currentYear).sort((a, b) => a - b);
+  const wonHighlanderYears = completedChampYears.filter(yr => championsByYear.get(yr)!.has(playerId));
+  const isHighlander = wonHighlanderYears.length > 0;
+  const reigningYear = completedChampYears.length ? completedChampYears[completedChampYears.length - 1] : null;
+  const isReigningHighlander = reigningYear !== null && championsByYear.get(reigningYear)!.has(playerId);
 
   return [
     { id: 'first_goal', name: 'My First Goal!', description: 'Score your first goal', current: Math.min(goals, 1), target: 1 },
@@ -301,7 +313,10 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     { id: 'clean_sheets_3', name: 'Brick Wall', description: 'Keep 3 clean sheets', current: Math.min(cleanSheets, 3), target: 3 },
     { id: 'mr_consistent', name: 'Mr. Consistent', description: 'Play every game in a month', current: playedAllGamesInMonth ? 1 : 0, target: 1 },
     { id: 'invincible', name: 'Invincible', description: 'Go undefeated in a month (play all games, only wins or ties)', current: undefeatedInMonth ? 1 : 0, target: 1 },
-    { id: 'highlander', name: 'The Highlander', description: `Hold the longest attendance streak of ${highlanderYear} — there can be only one`, current: isHighlander ? 1 : 0, target: 1 },
+    { id: 'highlander', name: 'The Highlander', description: isHighlander
+        ? `Won a season's longest attendance streak (${wonHighlanderYears.join(', ')}) — there can be only one`
+        : `Win a season's longest attendance streak — there can be only one`,
+      current: isHighlander ? 1 : 0, target: 1, reigning: isReigningHighlander },
     { id: 'first_sportsmanship', name: 'My First Gold Star!', description: 'Earn your first sportsmanship point', current: Math.min(totalSportsmanship, 1), target: 1 },
     { id: 'sportsmanship_10', name: 'Ted Lasso', description: 'Earn 10 sportsmanship points', current: Math.min(totalSportsmanship, 10), target: 10 },
     { id: 'comeback_3', name: 'They Had Us in the First Half', description: 'Come back to win after losing at halftime 3 times', current: Math.min(comebackWins, 3), target: 3 },
