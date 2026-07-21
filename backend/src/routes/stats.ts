@@ -1033,7 +1033,7 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
 
     const [stats, allGames, allPlayers, allRsvps] = await Promise.all([
       prisma.fieldStat.findMany({ where, orderBy: { date: 'asc' } }),
-      prisma.game.findMany({ select: { id: true, createdAt: true, teamAssignments: true } }),
+      prisma.game.findMany({ select: { id: true, createdAt: true, teamAssignments: true, field: true } }),
       prisma.player.findMany({ select: { id: true, name: true } }),
       prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true } }),
     ]);
@@ -1046,9 +1046,11 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
     const playerCountByDate = new Map<string, number>();
     const gameDate = new Map<string, string>();          // gameId → iso date
     const shownByDate = new Map<string, Set<string>>();  // non-guest players who showed
+    const fieldByDate = new Map<string, string>();       // iso date → game field/location
     for (const g of allGames) {
       const dateKey = g.createdAt.toISOString().slice(0, 10);
       gameDate.set(g.id, dateKey);
+      if (g.field && !fieldByDate.has(dateKey)) fieldByDate.set(dateKey, g.field);
       const assignments = safeParseJSON<Record<string, string>>(g.teamAssignments, {});
       playerCountByDate.set(dateKey, (playerCountByDate.get(dateKey) ?? 0) + Object.keys(assignments).length);
       let shown = shownByDate.get(dateKey);
@@ -1058,12 +1060,20 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
 
     // Per-date responders (any RSVP), from GameRsvp — includes the WhatsApp sync.
     const respByDate = new Map<string, Set<string>>();
+    // Live In/Maybe/Out counts from the poll (GameRsvp), for weeks with no
+    // stored FieldStat row yet. status: "yes"=In, "maybe"=Maybe, "no"=Out.
+    const pollByDate = new Map<string, { in: number; maybe: number; out: number }>();
     for (const r of allRsvps) {
       const iso = gameDate.get(r.gameId);
       if (!iso || isGuest(r.playerId)) continue;
       let set = respByDate.get(iso);
       if (!set) { set = new Set(); respByDate.set(iso, set); }
       set.add(r.playerId);
+      let poll = pollByDate.get(iso);
+      if (!poll) { poll = { in: 0, maybe: 0, out: 0 }; pollByDate.set(iso, poll); }
+      if (r.status === 'yes') poll.in++;
+      else if (r.status === 'maybe') poll.maybe++;
+      else if (r.status === 'no') poll.out++;
     }
 
     // Live response/attendance vs the year's roster (0 when we can't compute).
@@ -1102,12 +1112,12 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         date: `${s.date.getUTCDate()}-${MONTH_NAMES[s.date.getUTCMonth()]}`,
         isoDate,
         played: playedStatus,
-        location: s.location ?? null,
-        waIn: s.waIn ?? null,
+        location: s.location ?? fieldByDate.get(isoDate) ?? null,
+        waIn: s.waIn ?? pollByDate.get(isoDate)?.in ?? null,
         waPlus1: s.waPlus1 ?? null,
         waPlus2: s.waPlus2 ?? null,
-        waMaybe: s.waMaybe ?? null,
-        waOut: s.waOut ?? null,
+        waMaybe: s.waMaybe ?? pollByDate.get(isoDate)?.maybe ?? null,
+        waOut: s.waOut ?? pollByDate.get(isoDate)?.out ?? null,
         groupSize: s.groupSize ?? null,
         eviteResponse: s.eviteResponse,
         responseRate: storedResp > 0 ? storedResp : live.responseRate,
@@ -1132,12 +1142,12 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         date: `${dateObj.getUTCDate()}-${MONTH_NAMES[dateObj.getUTCMonth()]}`,
         isoDate,
         played: 'yes',
-        location: null,
-        waIn: null,
+        location: fieldByDate.get(isoDate) ?? null,
+        waIn: pollByDate.get(isoDate)?.in ?? null,
         waPlus1: null,
         waPlus2: null,
-        waMaybe: null,
-        waOut: null,
+        waMaybe: pollByDate.get(isoDate)?.maybe ?? null,
+        waOut: pollByDate.get(isoDate)?.out ?? null,
         groupSize: null,
         eviteResponse: null,
         responseRate: live.responseRate,
