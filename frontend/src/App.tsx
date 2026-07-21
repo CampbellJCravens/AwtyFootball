@@ -24,9 +24,16 @@ import PlayerProfile from './components/PlayerProfile';
 import PlayerLinkSetup from './components/PlayerLinkSetup';
 import HomeTab from './components/HomeTab';
 import AchievementUnlockedModal from './components/AchievementUnlockedModal';
+import IntroSplash from './components/IntroSplash';
 
 function App() {
   const { user, loading: authLoading, login, logout, refreshUser, isAdmin } = useAuth();
+  // Intro splash plays once per site open, after access is granted. Reduced-motion
+  // users skip it.
+  const [introDone, setIntroDone] = useState<boolean>(() =>
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
   const [passwordGranted, setPasswordGranted] = useState<boolean>(() => {
     try { return localStorage.getItem(PASSWORD_STORAGE_KEY) === 'granted'; } catch { return false; }
   });
@@ -634,6 +641,11 @@ function App() {
   // the password on this device before.
   if (!user && !passwordGranted) {
     return <PasswordGate onUnlock={() => setPasswordGranted(true)} />;
+  }
+
+  // Access granted → play the intro once before revealing the app.
+  if (!introDone) {
+    return <IntroSplash onDone={() => setIntroDone(true)} />;
   }
 
   return (

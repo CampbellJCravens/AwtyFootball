@@ -3,10 +3,6 @@ import { FormEvent, useState } from 'react';
 export const PASSWORD_STORAGE_KEY = 'awtyAccess';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
-const prefersReducedMotion =
-  typeof window !== 'undefined' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
 interface PasswordGateProps {
   onUnlock: () => void;
 }
@@ -49,20 +45,7 @@ export default function PasswordGate({ onUnlock }: PasswordGateProps) {
     <div className="min-h-screen bg-base flex items-center justify-center p-4">
       <div className="bg-surface rounded-2xl shadow-modal max-w-sm w-full p-6 border border-border">
         <div className="text-center mb-6">
-          {prefersReducedMotion ? (
-            <img src="/afc-logo.png" alt="Awty Soccer Club" className="w-40 h-auto mx-auto mb-4 rounded-xl" />
-          ) : (
-            <video
-              src="/afc-intro.mp4"
-              poster="/afc-logo.png"
-              autoPlay
-              muted
-              playsInline
-              preload="auto"
-              aria-label="Awty Soccer Club"
-              className="w-40 h-auto mx-auto mb-4 rounded-xl"
-            />
-          )}
+          <img src="/afc-logo.png" alt="Awty Soccer Club" className="w-40 h-auto mx-auto mb-4 rounded-xl" />
           <h1 className="text-3xl font-bold text-gold italic">Awty Football</h1>
           <p className="text-text-tertiary text-sm mt-2">Enter the password to continue</p>
           {showHint ? (
