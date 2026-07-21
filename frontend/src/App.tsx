@@ -643,13 +643,10 @@ function App() {
     return <PasswordGate onUnlock={() => setPasswordGranted(true)} />;
   }
 
-  // Access granted → play the intro once before revealing the app.
-  if (!introDone) {
-    return <IntroSplash onDone={() => setIntroDone(true)} />;
-  }
-
   return (
     <>
+      {/* Intro plays once per open, over the app, then fades to reveal it. */}
+      {!introDone && <IntroSplash onDone={() => setIntroDone(true)} />}
       <div className="h-[100dvh] bg-base flex flex-col">
         <TopHeader
           userPicture={user?.picture || identityPlayer?.pictureUrl}
