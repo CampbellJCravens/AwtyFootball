@@ -17,11 +17,13 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
   const [imagePosition, setImagePosition] = useState({ x: 50, y: 50 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [onRoster, setOnRoster] = useState(true);
 
   useEffect(() => {
     if (player) {
       setName(player.name);
       setPhone(player.phone ?? '');
+      setOnRoster(player.onRoster);
       setPicturePreview(player.pictureUrl);
       setPictureFile(null);
       setImagePosition({ x: 50, y: 50 }); // Reset position
@@ -110,6 +112,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
     try {
       const data: UpdatePlayerData = {
         name: name.trim(),
+        onRoster,
       };
 
       // Phone is an admin-only field (WhatsApp RSVP mapping).
@@ -160,6 +163,31 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
               placeholder="Enter player name"
               disabled={isSubmitting}
             />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-text-secondary mb-2">Roster status</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setOnRoster(true)}
+                disabled={isSubmitting}
+                className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${onRoster ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+              >
+                On current roster
+              </button>
+              <button
+                type="button"
+                onClick={() => setOnRoster(false)}
+                disabled={isSubmitting}
+                className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${!onRoster ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+              >
+                Prior member
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-text-tertiary">
+              Prior members drop to the collapsible section at the bottom of the players list.
+            </p>
           </div>
 
           {isAdmin && (

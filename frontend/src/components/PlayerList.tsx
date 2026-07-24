@@ -14,6 +14,7 @@ interface PlayerListProps {
 
 export default function PlayerList({ players, games = [], onEdit, onDelete, onPlayerClick, showActions = true }: PlayerListProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [priorOpen, setPriorOpen] = useState(false);
 
   // Compute per-player stats from games
   const playerStats = useMemo(() => {
@@ -33,12 +34,42 @@ export default function PlayerList({ players, games = [], onEdit, onDelete, onPl
     return stats;
   }, [games]);
 
-  const filteredAndSortedPlayers = useMemo(() => {
-    const filtered = players.filter(player =>
-      player.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  // Search matches BOTH groups; current roster on top, prior members split out.
+  const { current, prior } = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    const filtered = players
+      .filter(player => player.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      current: filtered.filter(p => p.onRoster),
+      prior: filtered.filter(p => !p.onRoster),
+    };
   }, [players, searchQuery]);
+
+  const searching = searchQuery.trim().length > 0;
+  // Prior members are collapsed by default, but auto-revealed when a search matches one.
+  const priorVisible = priorOpen || (searching && prior.length > 0);
+
+  const renderGrid = (list: Player[]) => (
+    <div className="grid grid-cols-2 gap-3 pb-4">
+      {list.map((player) => {
+        const stats = playerStats.get(player.id);
+        return (
+          <PlayerCard
+            key={player.id}
+            player={player}
+            gp={stats?.gp ?? 0}
+            goals={stats?.goals ?? 0}
+            assists={stats?.assists ?? 0}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onClick={onPlayerClick ? () => onPlayerClick(player) : undefined}
+            showActions={showActions}
+          />
+        );
+      })}
+    </div>
+  );
 
   if (players.length === 0) {
     return (
@@ -62,30 +93,40 @@ export default function PlayerList({ players, games = [], onEdit, onDelete, onPl
         />
       </div>
 
-      {filteredAndSortedPlayers.length === 0 ? (
+      {current.length === 0 && prior.length === 0 ? (
         <div className="text-center py-12 text-text-tertiary">
           <p className="text-lg">No players found matching "{searchQuery}"</p>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-3 pb-4">
-            {filteredAndSortedPlayers.map((player) => {
-              const stats = playerStats.get(player.id);
-              return (
-                <PlayerCard
-                  key={player.id}
-                  player={player}
-                  gp={stats?.gp ?? 0}
-                  goals={stats?.goals ?? 0}
-                  assists={stats?.assists ?? 0}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onClick={onPlayerClick ? () => onPlayerClick(player) : undefined}
-                  showActions={showActions}
-                />
-              );
-            })}
-          </div>
+          {/* Current roster */}
+          {current.length > 0 ? (
+            <>
+              {prior.length > 0 && (
+                <div className="text-xs font-semibold text-text-secondary px-1 mb-2">
+                  Current Roster ({current.length})
+                </div>
+              )}
+              {renderGrid(current)}
+            </>
+          ) : !searching ? (
+            <div className="text-center py-8 text-text-tertiary text-sm">No current roster players.</div>
+          ) : null}
+
+          {/* Prior members — collapsible, at the very bottom */}
+          {prior.length > 0 && (
+            <div className="mt-2 border-t border-border-emphasis pt-2">
+              <button
+                onClick={() => setPriorOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-1 py-2.5 text-text-secondary hover:text-text-primary transition-colors"
+                aria-expanded={priorVisible}
+              >
+                <span className="text-sm font-semibold">Prior Members ({prior.length})</span>
+                <span className="text-xs">{priorVisible ? '▲ Hide' : '▼ Show'}</span>
+              </button>
+              {priorVisible && renderGrid(prior)}
+            </div>
+          )}
         </div>
       )}
     </div>
