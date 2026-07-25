@@ -8,3 +8,7 @@ dist/
 *.db-journal
 *.db-wal
 
+# Script backups (one per --apply run)
+import-poll-backup-*.json
+mark-former-backup-*.json
+
