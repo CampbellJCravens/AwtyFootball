@@ -19,19 +19,12 @@ export default function PlayerCard({ player, gp = 0, goals = 0, assists = 0, onE
       onClick={onClick}
       className={`bg-surface rounded-xl shadow-card border border-border p-4 flex flex-col items-center text-center relative ${!player.onRoster ? 'opacity-80' : ''} ${onClick ? 'cursor-pointer hover:shadow-card-hover hover:border-border-emphasis transition-all' : ''}`}
     >
-      {/* Prior-member and alumni badges */}
-      <div className="absolute top-2 left-2 flex gap-1">
-        {!player.onRoster && (
-          <span className="px-1.5 py-0.5 rounded-md bg-surface-active text-text-tertiary text-[9px] font-semibold uppercase tracking-wide">
-            Former
-          </span>
-        )}
-        {player.isAlumni && (
-          <span className="flex items-center justify-center h-[18px] px-1 rounded-md bg-white/90" title="Awty alumni">
-            <img src="/awty-alumni.png" alt="Awty alumni" className="h-3.5 w-auto" />
-          </span>
-        )}
-      </div>
+      {/* Prior-member badge */}
+      {!player.onRoster && (
+        <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-surface-active text-text-tertiary text-[9px] font-semibold uppercase tracking-wide">
+          Former
+        </span>
+      )}
 
       {/* Admin edit button */}
       {showActions && (
@@ -57,8 +50,8 @@ export default function PlayerCard({ player, gp = 0, goals = 0, assists = 0, onE
         </div>
       )}
 
-      {/* Avatar */}
-      <div className="mb-3 mt-1">
+      {/* Avatar, with the school mark pinned to it for alumni */}
+      <div className="mb-3 mt-1 relative">
         {player.pictureUrl ? (
           <img
             src={player.pictureUrl}
@@ -69,6 +62,14 @@ export default function PlayerCard({ player, gp = 0, goals = 0, assists = 0, onE
           <div className="w-16 h-16 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-2xl font-semibold border-2 border-border-emphasis">
             {getInitial(player.name)}
           </div>
+        )}
+        {player.isAlumni && (
+          <span
+            className="absolute -bottom-0.5 -right-0.5 w-[22px] h-[22px] rounded-full bg-white border border-border-emphasis flex items-center justify-center shadow-card"
+            title="Awty alumni"
+          >
+            <img src="/awty-alumni.png" alt="Awty alumni" className="w-3.5 h-auto" />
+          </span>
         )}
       </div>
 
