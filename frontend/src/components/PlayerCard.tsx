@@ -27,8 +27,8 @@ export default function PlayerCard({ player, gp = 0, goals = 0, assists = 0, onE
           </span>
         )}
         {player.isAlumni && (
-          <span className="px-1.5 py-0.5 rounded-md bg-gold/20 text-gold text-[9px] font-semibold uppercase tracking-wide">
-            Alumni
+          <span className="flex items-center justify-center h-[18px] px-1 rounded-md bg-white/90" title="Awty alumni">
+            <img src="/awty-alumni.png" alt="Awty alumni" className="h-3.5 w-auto" />
           </span>
         )}
       </div>
