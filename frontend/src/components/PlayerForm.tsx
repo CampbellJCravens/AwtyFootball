@@ -13,6 +13,7 @@ export default function PlayerForm({ onSubmitSuccess }: PlayerFormProps) {
   const [imagePosition, setImagePosition] = useState({ x: 50, y: 50 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAlumni, setIsAlumni] = useState(false);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -106,6 +107,7 @@ export default function PlayerForm({ onSubmitSuccess }: PlayerFormProps) {
     try {
       const data: CreatePlayerData = {
         name: name.trim(),
+        isAlumni,
       };
 
       // Convert image to base64 if provided, with positioning applied
@@ -117,6 +119,7 @@ export default function PlayerForm({ onSubmitSuccess }: PlayerFormProps) {
       await createPlayer(data);
       // Clear form on success
       setName('');
+      setIsAlumni(false);
       setPictureFile(null);
       setPicturePreview(null);
       setImagePosition({ x: 50, y: 50 });
@@ -157,6 +160,28 @@ export default function PlayerForm({ onSubmitSuccess }: PlayerFormProps) {
           placeholder="Enter player name"
           disabled={isSubmitting}
         />
+      </div>
+
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-text-secondary mb-2">Alumni status</label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setIsAlumni(true)}
+            disabled={isSubmitting}
+            className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${isAlumni ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+          >
+            Alumni
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsAlumni(false)}
+            disabled={isSubmitting}
+            className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${!isAlumni ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+          >
+            Not alumni
+          </button>
+        </div>
       </div>
 
       <div className="mb-4">

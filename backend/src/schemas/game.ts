@@ -27,6 +27,7 @@ export const updateGameSchema = z.object({
   teamChanges: z.array(teamChangeSchema).optional(),
   gameEvents: z.array(gameEventSchema).optional(),
   sportsmanship: z.record(z.number()).optional(),
+  fouls: z.record(z.number()).optional(),
   createdAt: z.string().datetime().optional(), // ISO date string
   gameNumber: z.number().int().positive().optional(), // Add game number support
   field: z.enum(['stadium', 'grass', 'cancelled']).nullable().optional(),

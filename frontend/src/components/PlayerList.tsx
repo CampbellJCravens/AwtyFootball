@@ -46,6 +46,18 @@ export default function PlayerList({ players, games = [], onEdit, onDelete, onPl
     };
   }, [players, searchQuery]);
 
+  // Alumni share of the current roster. Unfiltered by search — this is a
+  // standing figure about the club, not about what you're looking at.
+  const rosterAlumni = useMemo(() => {
+    const roster = players.filter(p => p.onRoster);
+    const count = roster.filter(p => p.isAlumni).length;
+    return {
+      count,
+      total: roster.length,
+      pct: roster.length ? Math.round((count / roster.length) * 100) : 0,
+    };
+  }, [players]);
+
   const searching = searchQuery.trim().length > 0;
   // Prior members are collapsed by default, but auto-revealed when a search matches one.
   const priorVisible = priorOpen || (searching && prior.length > 0);
@@ -102,11 +114,12 @@ export default function PlayerList({ players, games = [], onEdit, onDelete, onPl
           {/* Current roster */}
           {current.length > 0 ? (
             <>
-              {prior.length > 0 && (
-                <div className="text-xs font-semibold text-text-secondary px-1 mb-2">
-                  Current Roster ({current.length})
-                </div>
-              )}
+              <div className="flex items-baseline gap-2 text-xs px-1 mb-2">
+                <span className="font-semibold text-text-secondary">Current Roster ({current.length})</span>
+                <span className="text-text-tertiary">·</span>
+                <span className="font-semibold text-gold tabular-nums">{rosterAlumni.pct}% alumni</span>
+                <span className="text-text-tertiary">({rosterAlumni.count} of {rosterAlumni.total})</span>
+              </div>
               {renderGrid(current)}
             </>
           ) : !searching ? (

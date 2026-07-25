@@ -128,6 +128,7 @@ export interface MonthlyStatsResponse {
     topAssister: MonthlyAward[] | null;
     topDefender: MonthlyAward[] | null;
     sportsmanOfTheMonth: MonthlyAward[] | null;
+    dirtiestPlayerOfTheMonth: MonthlyAward[] | null;
     topDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
     topTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;
   };
@@ -138,6 +139,7 @@ export interface MonthlyStatsResponse {
     assists: LeaderboardEntry[];
     defensiveRating: LeaderboardEntry[];
     sportsmanship: LeaderboardEntry[];
+    fouls: LeaderboardEntry[];
   };
 }
 
@@ -180,6 +182,7 @@ export interface YearlyStatsResponse {
     ironMan: MonthlyAward[] | null;
     topDefender: MonthlyAward[] | null;
     sportsman: MonthlyAward[] | null;
+    dirtiestPlayer: MonthlyAward[] | null;
   };
   bestDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
   bestTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;
@@ -192,6 +195,7 @@ export interface YearlyStatsResponse {
     ppg: YearlyLeaderEntry[];
     winRate: YearlyLeaderEntry[];
     sportsmanship: YearlyLeaderEntry[];
+    fouls: YearlyLeaderEntry[];
     defensiveRating: YearlyLeaderEntry[];
   };
 }
@@ -296,6 +300,9 @@ export interface FieldGameRecord {
   // Cross-reference with actual tracked game player counts
   trackedPlayers: number | null;
   turnoutVsRsvp: number | null;
+  // Share of non-guest players on the date who are school alumni.
+  // null for the frozen pre-2026 history (no per-player roster recorded).
+  alumniRate?: number | null;
   notes: string | null;
 }
 

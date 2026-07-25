@@ -67,6 +67,7 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
         tile(data.awards.goldenBoot, 'GOLDEN BOOT', a => `${a.value} goal${a.value === 1 ? '' : 's'}`),
         tile(data.awards.playmaker, 'PLAYMAKER', a => `${a.value} assist${a.value === 1 ? '' : 's'}`),
         tile(data.awards.ironMan, 'IRON MAN', a => `${a.value} game${a.value === 1 ? '' : 's'}`),
+        tile(data.awards.sportsman, 'SPORTSMAN', a => `${a.value} SP`),
       ].filter((x): x is YearlyAwardItem => x !== null);
 
       const lb = (title: string, entries: { player: { name: string }; value: number }[]): YearlyLeaderboard =>
@@ -77,6 +78,7 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
         lb('GOAL INVOLVEMENTS (G+A)', data.leaderboards.goalInvolvements),
         lb('POINTS', data.leaderboards.points),
         lb('APPEARANCES', data.leaderboards.appearances),
+        lb('SPORTSMANSHIP', data.leaderboards.sportsmanship),
       ].filter(l => l.rows.length > 0);
 
       const banners: YearlyAwardItem[] = [];

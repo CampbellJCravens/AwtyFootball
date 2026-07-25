@@ -30,6 +30,7 @@ export const createPlayerSchema = z.object({
   team: z.enum(['dark', 'white']).optional(),
   phone: phoneSchema,
   onRoster: z.boolean().optional(),
+  isAlumni: z.boolean().optional(),
 });
 
 export const updatePlayerSchema = z.object({
@@ -38,6 +39,7 @@ export const updatePlayerSchema = z.object({
   team: z.enum(['dark', 'white']).optional(),
   phone: phoneSchema,
   onRoster: z.boolean().optional(),
+  isAlumni: z.boolean().optional(),
 });
 
 export type CreatePlayerInput = z.infer<typeof createPlayerSchema>;

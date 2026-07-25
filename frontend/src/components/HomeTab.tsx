@@ -406,6 +406,19 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
                 onShowLeaderboard={() => setLeaderboardModal({ title: 'Sportsmanship', emoji: '🤙', unit: 'SP', entries: data.leaderboards.sportsmanship })}
               />
             )}
+            {(data.year > 2026 || (data.year === 2026 && data.month >= 7)) && (
+              <AwardSection
+                title="Dirtiest Player of the Month"
+                titlePlural="Dirtiest Players of the Month"
+                emoji="🟥"
+                statLabel={`${data.awards.dirtiestPlayerOfTheMonth?.[0]?.value ?? 0} Fouls`}
+                awards={data.awards.dirtiestPlayerOfTheMonth}
+                onPlayerClick={onPlayerClick}
+                onImageClick={setLightboxImage}
+                noQualifierMessage="No fouls recorded this month."
+                onShowLeaderboard={() => setLeaderboardModal({ title: 'Fouls', emoji: '🟥', unit: 'F', entries: data.leaderboards.fouls })}
+              />
+            )}
             <AwardSection
               title="Top Scorer"
               titlePlural="Top Scorers"

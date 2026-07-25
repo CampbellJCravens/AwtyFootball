@@ -1,5 +1,5 @@
 import { useState, useMemo, ComponentType } from 'react';
-import { SoccerBall, Handshake, Star, DoorOpen, IconProps } from '@phosphor-icons/react';
+import { SoccerBall, Handshake, Star, DoorOpen, Warning, IconProps } from '@phosphor-icons/react';
 import { Player } from '../api/players';
 
 // Goals are tracked in the parent as Player objects (after restoring from API).
@@ -10,6 +10,7 @@ interface ActivePlayersSectionProps {
   playerTeams: Record<string, 'color' | 'white'>;
   leftPlayers: Record<string, boolean>;
   sportsmanship?: Record<string, number>;
+  fouls?: Record<string, number>;
   goals?: GameGoal[];
   onTeamSelect: (playerId: string, team: 'color' | 'white') => void;
   onAddGuest: (team: 'color' | 'white') => void;
@@ -19,6 +20,7 @@ interface ActivePlayersSectionProps {
   onLeaveTeam: (playerId: string) => void;
   onReturnToTeam: (playerId: string) => void;
   onSportsmanshipChange?: (playerId: string, delta: number) => void;
+  onFoulsChange?: (playerId: string, delta: number) => void;
   isAdmin?: boolean; // Whether user is admin (can modify games)
 }
 
@@ -56,11 +58,45 @@ function StatStack({
   );
 }
 
+// Admin −/+ counter used for both sportsmanship (gold) and fouls (red).
+function Stepper({
+  value,
+  onChange,
+  tooltip,
+  label,
+  activeClass,
+}: {
+  value: number;
+  onChange: (delta: number) => void;
+  tooltip: string;
+  label: string;
+  activeClass: string;
+}) {
+  return (
+    <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip={tooltip}>
+      <button
+        onClick={() => onChange(-1)}
+        className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+        aria-label={`Decrease ${label}`}
+      >-</button>
+      <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${value > 0 ? activeClass : 'text-text-tertiary'}`}>
+        {value}
+      </span>
+      <button
+        onClick={() => onChange(1)}
+        className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+        aria-label={`Increase ${label}`}
+      >+</button>
+    </div>
+  );
+}
+
 export default function ActivePlayersSection({
   players,
   playerTeams,
   leftPlayers,
   sportsmanship = {},
+  fouls = {},
   goals = [],
   onTeamSelect: _onTeamSelect,
   onAddGuest,
@@ -70,6 +106,7 @@ export default function ActivePlayersSection({
   onLeaveTeam,
   onReturnToTeam,
   onSportsmanshipChange,
+  onFoulsChange,
   isAdmin = true,
 }: ActivePlayersSectionProps) {
   // Pre-aggregate goals/assists per playerId so each row doesn't re-scan.
@@ -93,15 +130,17 @@ export default function ActivePlayersSection({
   const renderStatBadges = (playerId: string, opts?: { showLeft?: boolean }) => {
     const s = statsByPlayer.get(playerId);
     const sportsCount = sportsmanship[playerId] || 0;
+    const foulCount = fouls[playerId] || 0;
     const goalCount = s?.goals ?? 0;
     const assistCount = s?.assists ?? 0;
     const showLeft = opts?.showLeft;
-    if (!goalCount && !assistCount && !sportsCount && !showLeft) return null;
+    if (!goalCount && !assistCount && !sportsCount && !foulCount && !showLeft) return null;
     return (
       <div className="flex items-center gap-2 flex-shrink-0">
         <StatStack Icon={SoccerBall} count={goalCount} weight="duotone" className="text-text-primary" label="goal" />
         <StatStack Icon={Handshake} count={assistCount} weight="regular" className="text-text-secondary" label="assist" />
         <StatStack Icon={Star} count={sportsCount} weight="fill" className="text-gold" label="sportsmanship" />
+        <StatStack Icon={Warning} count={foulCount} weight="fill" className="text-red-400" label="foul" />
         {showLeft && (
           <span className="inline-flex items-center text-warning" title="Left the game">
             <DoorOpen size={16} weight="bold" />
@@ -110,6 +149,18 @@ export default function ActivePlayersSection({
       </div>
     );
   };
+
+  // Alumni share of this game's roster. Guests are excluded, matching how the
+  // backend computes the per-date alumni rate on the field stats tab.
+  const gameAlumni = useMemo(() => {
+    const assigned = players.filter(p => playerTeams[p.id] && !p.name.includes('Guest'));
+    const count = assigned.filter(p => p.isAlumni).length;
+    return {
+      count,
+      total: assigned.length,
+      pct: assigned.length ? Math.round((count / assigned.length) * 100) : 0,
+    };
+  }, [players, playerTeams]);
 
   const [activeTab, setActiveTab] = useState<'color' | 'white'>('color');
   const colorTeamPlayers = players.filter(player => playerTeams[player.id] === 'color');
@@ -131,7 +182,15 @@ export default function ActivePlayersSection({
 
   return (
     <div className="mb-6">
-      <h3 className="text-lg font-semibold text-text-primary mb-4">Teams</h3>
+      <div className="flex items-baseline justify-between mb-4">
+        <h3 className="text-lg font-semibold text-text-primary">Teams</h3>
+        {gameAlumni.total > 0 && (
+          <span className="text-xs" data-tooltip="Alumni share of this game's roster">
+            <span className="font-semibold text-gold tabular-nums">{gameAlumni.pct}% alumni</span>
+            <span className="text-text-tertiary ml-1">({gameAlumni.count} of {gameAlumni.total})</span>
+          </span>
+        )}
+      </div>
       {/* Tabs */}
       <div className="flex border-b border-border mb-3">
         <button
@@ -197,21 +256,22 @@ export default function ActivePlayersSection({
                       <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
                       {!isAdmin && renderStatBadges(player.id)}
                       {isAdmin && onSportsmanshipChange && (
-                        <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip="Sportsmanship">
-                          <button
-                            onClick={() => onSportsmanshipChange(player.id, -1)}
-                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
-                            aria-label="Decrease sportsmanship"
-                          >-</button>
-                          <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${(sportsmanship[player.id] || 0) > 0 ? 'text-gold' : 'text-text-tertiary'}`}>
-                            {sportsmanship[player.id] || 0}
-                          </span>
-                          <button
-                            onClick={() => onSportsmanshipChange(player.id, 1)}
-                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
-                            aria-label="Increase sportsmanship"
-                          >+</button>
-                        </div>
+                        <Stepper
+                          value={sportsmanship[player.id] || 0}
+                          onChange={delta => onSportsmanshipChange(player.id, delta)}
+                          tooltip="Sportsmanship"
+                          label="sportsmanship"
+                          activeClass="text-gold"
+                        />
+                      )}
+                      {isAdmin && onFoulsChange && (
+                        <Stepper
+                          value={fouls[player.id] || 0}
+                          onChange={delta => onFoulsChange(player.id, delta)}
+                          tooltip="Fouls"
+                          label="fouls"
+                          activeClass="text-red-400"
+                        />
                       )}
                       <div className="flex gap-1 flex-shrink-0">
                         {isAdmin && (
@@ -381,21 +441,22 @@ export default function ActivePlayersSection({
                       <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
                       {!isAdmin && renderStatBadges(player.id)}
                       {isAdmin && onSportsmanshipChange && (
-                        <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip="Sportsmanship">
-                          <button
-                            onClick={() => onSportsmanshipChange(player.id, -1)}
-                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
-                            aria-label="Decrease sportsmanship"
-                          >-</button>
-                          <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${(sportsmanship[player.id] || 0) > 0 ? 'text-gold' : 'text-text-tertiary'}`}>
-                            {sportsmanship[player.id] || 0}
-                          </span>
-                          <button
-                            onClick={() => onSportsmanshipChange(player.id, 1)}
-                            className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
-                            aria-label="Increase sportsmanship"
-                          >+</button>
-                        </div>
+                        <Stepper
+                          value={sportsmanship[player.id] || 0}
+                          onChange={delta => onSportsmanshipChange(player.id, delta)}
+                          tooltip="Sportsmanship"
+                          label="sportsmanship"
+                          activeClass="text-gold"
+                        />
+                      )}
+                      {isAdmin && onFoulsChange && (
+                        <Stepper
+                          value={fouls[player.id] || 0}
+                          onChange={delta => onFoulsChange(player.id, delta)}
+                          tooltip="Fouls"
+                          label="fouls"
+                          activeClass="text-red-400"
+                        />
                       )}
                       <div className="flex gap-1 flex-shrink-0">
                         {isAdmin && (

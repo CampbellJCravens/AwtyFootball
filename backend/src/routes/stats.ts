@@ -30,6 +30,7 @@ interface ParsedGame {
   teamAssignments: Record<string, 'color' | 'white'>;
   goals: GoalData[];
   sportsmanship: Record<string, number>;
+  fouls: Record<string, number>;
 }
 
 async function loadAllGames(): Promise<ParsedGame[]> {
@@ -42,8 +43,14 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
+    fouls: safeParseJSON<Record<string, number>>(g.fouls, {}),
   }));
 }
+
+// Sportsmanship points started being recorded in May 2026; fouls in July 2026.
+// Awards for each are suppressed for periods before their data exists.
+const hasSportsmanshipData = (year: number, month: number) => year > 2026 || (year === 2026 && month >= 5);
+const hasFoulsData = (year: number, month: number) => year > 2026 || (year === 2026 && month >= 7);
 
 function getGameResult(game: ParsedGame, team: 'color' | 'white'): 'W' | 'L' | 'T' {
   const colorGoals = game.goals.filter(g => g.team === 'color').length;
@@ -393,7 +400,9 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
 
     // Compute per-player stats for this month
     const stats = new Map<string, PlayerStat>();
-    type PlayerStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number };
+    // `sportsmanship` is the NET figure (gold stars minus fouls) and can be
+    // negative; `fouls` is the raw positive count, used for Dirtiest Player.
+    type PlayerStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
 
     for (const game of monthGames) {
       const colorGoals = game.goals.filter(g => g.team === 'color').length;
@@ -404,10 +413,11 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         const playerInfo = playerMap.get(pid)!;
         if (playerInfo.name.includes('Guest')) continue;
 
-        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
         const s = stats.get(pid)!;
         s.games++;
-        s.sportsmanship += game.sportsmanship[pid] || 0;
+        s.sportsmanship += (game.sportsmanship[pid] || 0) - (game.fouls[pid] || 0);
+        s.fouls += game.fouls[pid] || 0;
 
         const isTie = colorGoals === whiteGoals;
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
@@ -490,8 +500,14 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     const topDefender = getTop(s => (s.games * 3) - s.goalsAllowed, undefined, undefined, s => s.games > 1);
 
     // Sportsman of the Month: only awarded from May 2026 onwards (no historical data)
-    const sportsmanOfTheMonth = (year > 2026 || (year === 2026 && month >= 5))
+    const sportsmanOfTheMonth = hasSportsmanshipData(year, month)
       ? getTop(s => s.sportsmanship, undefined, 1)
+      : null;
+
+    // Dirtiest Player of the Month: most fouls. Fouls are a positive count, so
+    // getTop's "highest wins, drop zeros" behavior applies unchanged.
+    const dirtiestPlayerOfTheMonth = hasFoulsData(year, month)
+      ? getTop(s => s.fouls, undefined, 0)
       : null;
 
     // Top Duo: pair with the most scorer-assister goal contributions to each other
@@ -598,6 +614,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         topAssister,
         topDefender,
         sportsmanOfTheMonth,
+        dirtiestPlayerOfTheMonth,
         topDuo,
         topTrio,
       },
@@ -607,7 +624,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         goals: getLeaderboard(s => s.goals),
         assists: getLeaderboard(s => s.assists),
         defensiveRating: getLeaderboard(s => (s.games * 3) - s.goalsAllowed, { includeAll: true, extraFields: s => ({ games: s.games, goalsAllowed: s.goalsAllowed }), filter: s => s.games > 1 }),
-        sportsmanship: (year > 2026 || (year === 2026 && month >= 5)) ? getLeaderboard(s => s.sportsmanship) : [],
+        sportsmanship: hasSportsmanshipData(year, month) ? getLeaderboard(s => s.sportsmanship) : [],
+        fouls: hasFoulsData(year, month) ? getLeaderboard(s => s.fouls) : [],
       },
     });
   } catch (error) {
@@ -634,7 +652,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     const allPlayers = await prisma.player.findMany();
     const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
 
-    type YStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number };
+    type YStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
     const stats = new Map<string, YStat>();
 
     for (const game of yearGames) {
@@ -643,10 +661,11 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
       for (const [pid, team] of Object.entries(game.teamAssignments)) {
         if (!playerMap.has(pid)) continue;
         if (playerMap.get(pid)!.name.includes('Guest')) continue;
-        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
         const s = stats.get(pid)!;
         s.games++;
-        s.sportsmanship += game.sportsmanship[pid] || 0;
+        s.sportsmanship += (game.sportsmanship[pid] || 0) - (game.fouls[pid] || 0);
+        s.fouls += game.fouls[pid] || 0;
         const isTie = colorGoals === whiteGoals;
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
         if (isWin) { s.points += 3; s.wins++; }
@@ -681,6 +700,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     const ppg = rankList(s => Math.round((s.points / s.games) * 100) / 100, { min: MIN_RATE_GAMES });
     const winRate = rankList(s => Math.round((s.wins / s.games) * 100), { min: MIN_RATE_GAMES, extra: s => ({ games: s.games, wins: s.wins }) });
     const sportsmanship = rankList(s => s.sportsmanship);
+    const fouls = rankList(s => s.fouls);
     const defensiveRating = rankList(s => (s.games * 3) - s.goalsAllowed, { min: 2, extra: s => ({ games: s.games, goalsAllowed: s.goalsAllowed }) });
 
     // Best Duo (scorer-assister combos across the year)
@@ -758,10 +778,11 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         ironMan: marquee(appearances),
         topDefender: marquee(defensiveRating),
         sportsman: marquee(sportsmanship),
+        dirtiestPlayer: marquee(fouls),
       },
       bestDuo: bestDuo.length ? bestDuo : null,
       bestTrio: bestTrio.length ? bestTrio : null,
-      leaderboards: { points, goals, assists, goalInvolvements, appearances, ppg, winRate, sportsmanship, defensiveRating },
+      leaderboards: { points, goals, assists, goalInvolvements, appearances, ppg, winRate, sportsmanship, fouls, defensiveRating },
     });
   } catch (error) {
     console.error('Error fetching yearly stats:', error);
@@ -787,7 +808,7 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
       gamesByMonth.get(key)!.push(g);
     }
 
-    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number };
+    type PlayerStat = { points: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number };
 
     const getTopIds = (stats: Map<string, PlayerStat>, metric: (s: PlayerStat) => number, tiebreakers?: ((s: PlayerStat) => number)[], filter?: (s: PlayerStat) => boolean): string[] => {
       let topIds: string[] = [];
@@ -835,9 +856,10 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
         for (const [pid, team] of Object.entries(game.teamAssignments)) {
           if (!playerMap.has(pid)) continue;
           if (playerMap.get(pid)!.name.includes('Guest')) continue;
-          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0 });
+          if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
           const s = stats.get(pid)!;
           s.games++;
+          s.sportsmanship += (game.sportsmanship[pid] || 0) - (game.fouls[pid] || 0);
           const isTie = colorGoals === whiteGoals;
           const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
           if (isWin) s.points += 3;
@@ -858,6 +880,11 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
         { name: 'Top Assister', unit: 'Assists', metric: s => s.assists, minimum: 1 },
         { name: 'Top Defender', unit: 'Defensive Rating', metric: s => (s.games * 3) - s.goalsAllowed, filter: s => s.games > 1 },
       ];
+
+      // Sportsman of the Month, matching the threshold used by /stats/monthly.
+      if (hasSportsmanshipData(year, month)) {
+        awardDefs.push({ name: 'Sportsman of the Month', unit: 'Sportsmanship Points', metric: s => s.sportsmanship, minimum: 1 });
+      }
 
       for (const def of awardDefs) {
         const winnerIds = getTopIds(stats, def.metric, def.tiebreakers, def.filter);
@@ -1034,12 +1061,13 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
     const [stats, allGames, allPlayers, allRsvps] = await Promise.all([
       prisma.fieldStat.findMany({ where, orderBy: { date: 'asc' } }),
       prisma.game.findMany({ select: { id: true, createdAt: true, teamAssignments: true, field: true } }),
-      prisma.player.findMany({ select: { id: true, name: true } }),
+      prisma.player.findMany({ select: { id: true, name: true, isAlumni: true } }),
       prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true } }),
     ]);
 
     const nameById = new Map(allPlayers.map(p => [p.id, p.name]));
     const isGuest = (pid: string) => (nameById.get(pid) ?? '').includes('Guest');
+    const alumniIds = new Set(allPlayers.filter(p => p.isAlumni).map(p => p.id));
 
     // Build a map of ISO date → unique player count from tracked Game records,
     // plus per-date non-guest attendance for live response/attendance rates.
@@ -1087,6 +1115,16 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
       };
     };
 
+    // Share of the non-guest players who showed on a date who are school alumni.
+    // null when no tracked roster exists for that date (e.g. pre-2026 history).
+    const alumniRateFor = (isoDate: string): number | null => {
+      const shown = shownByDate.get(isoDate);
+      if (!shown || shown.size === 0) return null;
+      let alumni = 0;
+      for (const pid of shown) if (alumniIds.has(pid)) alumni++;
+      return parseFloat((alumni / shown.size * 100).toFixed(1));
+    };
+
     const records = stats.map(s => {
       const isoDate = s.date.toISOString().slice(0, 10);
       const trackedPlayers = playerCountByDate.get(isoDate) ?? null;
@@ -1125,6 +1163,7 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         attendanceRate: storedAtt > 0 ? storedAtt : live.attendanceRate,
         trackedPlayers,
         turnoutVsRsvp,
+        alumniRate: alumniRateFor(isoDate),
         notes: s.notes ?? null,
       };
     });
@@ -1155,6 +1194,7 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         showUp: null,
         trackedPlayers: count,
         turnoutVsRsvp: null,
+        alumniRate: alumniRateFor(isoDate),
         notes: null,
       });
     }

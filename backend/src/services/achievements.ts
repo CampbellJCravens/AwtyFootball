@@ -21,6 +21,7 @@ interface ParsedGame {
   goals: GoalData[];
   gameEvents: GameEventData[];
   sportsmanship: Record<string, number>;
+  fouls: Record<string, number>;
 }
 
 export interface Achievement {
@@ -52,6 +53,7 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     gameEvents: safeParseJSON<GameEventData[]>(g.gameEvents, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
+    fouls: safeParseJSON<Record<string, number>>(g.fouls, {}),
   }));
 }
 
@@ -101,7 +103,7 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     const opponentGoals = game.goals.filter(g => g.team === opponentTeam).length;
     if (opponentGoals === 0) cleanSheets++;
 
-    totalSportsmanship += game.sportsmanship[playerId] || 0;
+    totalSportsmanship += (game.sportsmanship[playerId] || 0) - (game.fouls[playerId] || 0);
 
     // Comeback win: losing at halftime but won the game
     if (result === 'W') {
@@ -190,7 +192,7 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
         if (!stats.has(pid)) stats.set(pid, { points: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0 });
         const s = stats.get(pid)!;
         s.games++;
-        s.sportsmanship += game.sportsmanship[pid] || 0;
+        s.sportsmanship += (game.sportsmanship[pid] || 0) - (game.fouls[pid] || 0);
         const isTie = colorGoals === whiteGoals;
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
         if (isWin) s.points += 3;
@@ -317,8 +319,8 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
         ? `Won a season's longest attendance streak (${wonHighlanderYears.join(', ')}) — there can be only one`
         : `Win a season's longest attendance streak — there can be only one`,
       current: isHighlander ? 1 : 0, target: 1, reigning: isReigningHighlander },
-    { id: 'first_sportsmanship', name: 'My First Gold Star!', description: 'Earn your first sportsmanship point', current: Math.min(totalSportsmanship, 1), target: 1 },
-    { id: 'sportsmanship_10', name: 'Ted Lasso', description: 'Earn 10 sportsmanship points', current: Math.min(totalSportsmanship, 10), target: 10 },
+    { id: 'first_sportsmanship', name: 'My First Gold Star!', description: 'Earn your first sportsmanship point', current: Math.max(0, Math.min(totalSportsmanship, 1)), target: 1 },
+    { id: 'sportsmanship_10', name: 'Ted Lasso', description: 'Earn 10 sportsmanship points', current: Math.max(0, Math.min(totalSportsmanship, 10)), target: 10 },
     { id: 'comeback_3', name: 'They Had Us in the First Half', description: 'Come back to win after losing at halftime 3 times', current: Math.min(comebackWins, 3), target: 3 },
     { id: 'game_winner', name: 'The Dagger', description: 'Score a game-winning goal', current: Math.min(gameWinningGoals, 1), target: 1 },
   ];

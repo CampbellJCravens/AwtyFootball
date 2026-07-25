@@ -19,12 +19,19 @@ export default function PlayerCard({ player, gp = 0, goals = 0, assists = 0, onE
       onClick={onClick}
       className={`bg-surface rounded-xl shadow-card border border-border p-4 flex flex-col items-center text-center relative ${!player.onRoster ? 'opacity-80' : ''} ${onClick ? 'cursor-pointer hover:shadow-card-hover hover:border-border-emphasis transition-all' : ''}`}
     >
-      {/* Prior-member badge */}
-      {!player.onRoster && (
-        <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-surface-active text-text-tertiary text-[9px] font-semibold uppercase tracking-wide">
-          Former
-        </span>
-      )}
+      {/* Prior-member and alumni badges */}
+      <div className="absolute top-2 left-2 flex gap-1">
+        {!player.onRoster && (
+          <span className="px-1.5 py-0.5 rounded-md bg-surface-active text-text-tertiary text-[9px] font-semibold uppercase tracking-wide">
+            Former
+          </span>
+        )}
+        {player.isAlumni && (
+          <span className="px-1.5 py-0.5 rounded-md bg-gold/20 text-gold text-[9px] font-semibold uppercase tracking-wide">
+            Alumni
+          </span>
+        )}
+      </div>
 
       {/* Admin edit button */}
       {showActions && (

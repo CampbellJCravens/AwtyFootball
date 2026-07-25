@@ -59,6 +59,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver'; timestamp: Date }>>([]);
   const [sportsmanship, setSportsmanship] = useState<Record<string, number>>({});
+  const [fouls, setFouls] = useState<Record<string, number>>({});
   const [gameEventToDelete, setGameEventToDelete] = useState<number | null>(null);
   const [editingGameEventIndex, setEditingGameEventIndex] = useState<number | null>(null);
   const [editingGoalIndex, setEditingGoalIndex] = useState<number | null>(null);
@@ -148,6 +149,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         setSportsmanship(gameData.sportsmanship);
       }
 
+      if (gameData.fouls) {
+        setFouls(gameData.fouls);
+      }
+
       // Restore team changes from database
       if (gameData.teamChanges && gameData.teamChanges.length > 0) {
         const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
@@ -214,6 +219,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         teamChanges: teamChangesData,
         gameEvents: gameEventsData,
         sportsmanship,
+        fouls,
       });
     } catch (err) {
       console.error('Error saving game data:', err);
@@ -221,7 +227,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSaving(false);
     }
-  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship]);
+  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls]);
 
   // Export game data to Google Sheets
   const handleExportToSheets = useCallback(async () => {
@@ -497,7 +503,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, loading, isAdmin, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, loading, isAdmin, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -1293,6 +1299,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               playerTeams={playerTeams}
               leftPlayers={leftPlayers}
               sportsmanship={sportsmanship}
+              fouls={fouls}
               goals={goals}
               onTeamSelect={handleTeamSelect}
               onAddGuest={handleAddGuest}
@@ -1305,6 +1312,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 setSportsmanship(prev => {
                   const current = prev[playerId] || 0;
                   const next = current + delta;
+                  if (next <= 0) {
+                    const { [playerId]: _, ...rest } = prev;
+                    return rest;
+                  }
+                  return { ...prev, [playerId]: next };
+                });
+              }}
+              onFoulsChange={(playerId, delta) => {
+                setFouls(prev => {
+                  const next = (prev[playerId] || 0) + delta;
                   if (next <= 0) {
                     const { [playerId]: _, ...rest } = prev;
                     return rest;

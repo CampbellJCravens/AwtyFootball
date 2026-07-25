@@ -372,6 +372,7 @@ export default function FieldStatsTab() {
               <th className="py-1.5 px-1 text-right text-text-secondary font-semibold">In</th>
               <th className="py-1.5 px-1 text-right text-text-secondary font-semibold">Resp%</th>
               <th className="py-1.5 px-1 text-right text-text-secondary font-semibold">Show%</th>
+              <th className="py-1.5 px-1 text-right text-text-secondary font-semibold" title="Share of players on the roster that day who are school alumni">Alumni%</th>
               <th className="py-1.5 px-1 text-right text-text-secondary font-semibold">Tracked</th>
             </tr>
           </thead>
@@ -385,7 +386,7 @@ export default function FieldStatsTab() {
                   const yc = effectiveCollapsed.has(r.year);
                   rows.push(
                     <tr key={`yh-${r.year}`} onClick={() => toggleYear(r.year)} className="cursor-pointer bg-surface-hover/60 border-b border-gold/40">
-                      <td colSpan={7} className="py-1.5 px-1 text-[11px] font-bold text-gold">
+                      <td colSpan={8} className="py-1.5 px-1 text-[11px] font-bold text-gold">
                         <span className="inline-block w-3 text-text-tertiary">{yc ? '▸' : '▾'}</span> {r.year}
                         <span className="text-text-tertiary font-normal ml-2">{countByYear[r.year]} week{countByYear[r.year] !== 1 ? 's' : ''}</span>
                       </td>
@@ -429,6 +430,11 @@ export default function FieldStatsTab() {
                       {isPlayed && r.attendanceRate > 0 ? `${r.attendanceRate.toFixed(1)}%` : null}
                     </td>
                     <td className="py-1.5 px-1 text-right">
+                      {isPlayed && r.alumniRate !== null && r.alumniRate !== undefined
+                        ? <span className="text-gold font-medium">{r.alumniRate.toFixed(1)}%</span>
+                        : <span className="text-text-tertiary">—</span>}
+                    </td>
+                    <td className="py-1.5 px-1 text-right">
                       {isPlayed && r.trackedPlayers !== null
                         ? <span className="text-gold font-medium">{r.trackedPlayers}</span>
                         : null}
@@ -438,7 +444,7 @@ export default function FieldStatsTab() {
                 if (isExpanded) {
                   rows.push(
                     <tr key={`${r.isoDate}-detail`} className="bg-surface-hover/70">
-                      <td colSpan={7} className="px-3 py-2">
+                      <td colSpan={8} className="px-3 py-2">
                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
                           {r.waIn !== null ? <>
                             <span className="text-emerald-400">In: {r.waIn}</span>

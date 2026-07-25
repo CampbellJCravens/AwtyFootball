@@ -7,6 +7,7 @@ export interface Player {
   pictureUrl: string | null;
   team: 'dark' | 'white' | null;
   onRoster: boolean;         // false = prior member (no longer on the current roster)
+  isAlumni: boolean;         // true = alumnus of the school
   hasPhone: boolean;         // whether a WhatsApp number is linked (safe to show)
   phone?: string | null;     // actual number — only returned to admins
   createdAt: string;
@@ -18,6 +19,7 @@ export interface CreatePlayerData {
   pictureUrl?: string;
   team?: 'dark' | 'white';
   phone?: string;
+  isAlumni?: boolean;
 }
 
 export interface UpdatePlayerData {
@@ -26,6 +28,7 @@ export interface UpdatePlayerData {
   team?: 'dark' | 'white';
   phone?: string;
   onRoster?: boolean;
+  isAlumni?: boolean;
 }
 
 // Fetch all players
