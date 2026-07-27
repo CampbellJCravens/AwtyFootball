@@ -531,6 +531,8 @@ export async function resyncPollsForPhone(digits: string): Promise<void> {
 // Computed live from WhatsApp votes so it counts everyone — linked players AND
 // unlinked numbers — and reflects a new link immediately. Never exposes phone
 // numbers to the client (unlinked voters show their WhatsApp display name).
+// Falls back to the stored GameRsvp rows when there's no poll data for the game,
+// so a missing or unlinked poll can't blank out RSVPs we already have.
 
 export interface GamePollEntry {
   key: string; // stable React key; never the phone number
@@ -547,6 +549,33 @@ export interface GamePoll {
   out: GamePollEntry[];
   counts: { in: number; maybe: number; out: number };
   guestTotal: number;
+  // Where these results came from, so the UI can label them honestly.
+  // "poll" = decoded WhatsApp votes; "rsvp" = the stored GameRsvp rows.
+  source: 'poll' | 'rsvp';
+}
+
+function emptyPoll(source: 'poll' | 'rsvp'): GamePoll {
+  return {
+    in: [],
+    maybe: [],
+    out: [],
+    counts: { in: 0, maybe: 0, out: 0 },
+    guestTotal: 0,
+    source,
+  };
+}
+
+/** Sort each bucket by name and derive the counts. */
+function finalizePoll(result: GamePoll): GamePoll {
+  result.in.sort((a, b) => a.name.localeCompare(b.name));
+  result.maybe.sort((a, b) => a.name.localeCompare(b.name));
+  result.out.sort((a, b) => a.name.localeCompare(b.name));
+  result.counts = { in: result.in.length, maybe: result.maybe.length, out: result.out.length };
+  return result;
+}
+
+function bucketFor(status: string): 'in' | 'maybe' | 'out' {
+  return status === 'yes' ? 'in' : status === 'maybe' ? 'maybe' : 'out';
 }
 
 export async function getGamePoll(gameId: string): Promise<GamePoll> {
@@ -574,13 +603,7 @@ export async function getGamePoll(gameId: string): Promise<GamePoll> {
   const playerByPhone = new Map(players.map((p) => [p.phone!, p]));
   const nameByPhone = new Map(contacts.map((c) => [c.phone, c.pushName]));
 
-  const result: GamePoll = {
-    in: [],
-    maybe: [],
-    out: [],
-    counts: { in: 0, maybe: 0, out: 0 },
-    guestTotal: 0,
-  };
+  const result = emptyPoll('poll');
 
   let anon = 0;
   for (const [phone, names] of byPhone) {
@@ -600,16 +623,54 @@ export async function getGamePoll(gameId: string): Promise<GamePoll> {
       playerId: player ? player.id : null,
     };
 
-    const bucket = parsed.status === 'yes' ? 'in' : parsed.status === 'maybe' ? 'maybe' : 'out';
+    const bucket = bucketFor(parsed.status);
     result[bucket].push(entry);
     if (bucket === 'in') result.guestTotal += entry.guestCount;
   }
 
-  result.in.sort((a, b) => a.name.localeCompare(b.name));
-  result.maybe.sort((a, b) => a.name.localeCompare(b.name));
-  result.out.sort((a, b) => a.name.localeCompare(b.name));
-  result.counts = { in: result.in.length, maybe: result.maybe.length, out: result.out.length };
-  return result;
+  // No poll votes to show — either no poll is linked to this game, or its
+  // captured votes are gone. Fall back to the RSVP rows we already hold so the
+  // tab reflects reality instead of reading as "nobody voted".
+  if (result.in.length + result.maybe.length + result.out.length === 0) {
+    return getGamePollFromRsvps(gameId);
+  }
+
+  return finalizePoll(result);
+}
+
+/**
+ * Build the same read-only view straight from GameRsvp. Used when a game has no
+ * usable poll data: WhatsApp-sourced RSVPs already written by syncPollToRsvps
+ * survive even if the poll record doesn't, and pre-listener games have RSVPs
+ * that were never poll-backed at all. Every entry maps to a real player, so
+ * there are no unlinked voters here.
+ */
+async function getGamePollFromRsvps(gameId: string): Promise<GamePoll> {
+  const rsvps = await prisma.gameRsvp.findMany({
+    where: { gameId },
+    select: {
+      status: true,
+      guestCount: true,
+      player: { select: { id: true, name: true, pictureUrl: true } },
+    },
+  });
+
+  const result = emptyPoll('rsvp');
+  for (const r of rsvps) {
+    const bucket = bucketFor(r.status);
+    const entry: GamePollEntry = {
+      key: r.player.id,
+      name: r.player.name,
+      pictureUrl: r.player.pictureUrl,
+      guestCount: bucket === 'in' ? r.guestCount : 0,
+      linked: true,
+      playerId: r.player.id,
+    };
+    result[bucket].push(entry);
+    if (bucket === 'in') result.guestTotal += entry.guestCount;
+  }
+
+  return finalizePoll(result);
 }
 
 /** Assign a phone to a player (backfills Player.phone) and re-sync all polls. */

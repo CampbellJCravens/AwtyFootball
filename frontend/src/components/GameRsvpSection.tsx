@@ -179,7 +179,7 @@ export default function GameRsvpSection({ gameId, refreshSignal }: GameRsvpSecti
       <TotalComingHero inCount={poll.counts.in} guestCount={poll.guestTotal} />
 
       <p className="text-[11px] text-text-tertiary text-center -mt-1">
-        Results from the WhatsApp poll · view only
+        {poll.source === 'poll' ? 'Results from the WhatsApp poll' : 'Saved RSVPs'} · view only
       </p>
 
       <div className="space-y-2.5">

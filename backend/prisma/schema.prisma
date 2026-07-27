@@ -16,6 +16,13 @@ model Player {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // Declared here to match columns already present in the production database.
+  // No app code reads them yet; they back in-progress roster work. Without these
+  // declarations the build's `prisma db push --accept-data-loss` would drop the
+  // columns and the flags set on them. See data/drifted-columns-backup-*.json.
+  isAlumni   Boolean  @default(false)
+  onRoster   Boolean  @default(true)
+
   rsvps      GameRsvp[]
 }
 
@@ -29,6 +36,8 @@ model Game {
   teamChanges     String?
   gameEvents      String?
   sportsmanship   String?
+  // As above: present in production, declared so db push won't drop it.
+  fouls           String?
 
   // Which field/turf the game was played on. "stadium" | "grass" |
   // "cancelled" | null. null = "N/A FIELD" in the UI.

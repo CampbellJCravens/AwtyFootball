@@ -36,6 +36,9 @@ export interface GamePoll {
   out: GamePollEntry[];
   counts: { in: number; maybe: number; out: number };
   guestTotal: number;
+  // "poll" = live WhatsApp votes; "rsvp" = saved RSVP rows (shown when the game
+  // has no poll data, e.g. no poll linked or its captured votes are gone).
+  source: 'poll' | 'rsvp';
 }
 
 export async function fetchGamePoll(gameId: string): Promise<GamePoll> {
