@@ -12,6 +12,7 @@ import EditGameModal from './EditGameModal';
 import GameRsvpSection from './GameRsvpSection';
 import WhatsappUnmatchedFlag from './WhatsappUnmatchedFlag';
 import WhatsappLinkBanner from './WhatsappLinkBanner';
+import { renderMatchReportImage, MatchReportData } from '../utils/renderMatchReportImage';
 import Papa, { ParseResult } from 'papaparse';
 
 type GameViewTab = 'game' | 'rsvp';
@@ -58,6 +59,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver'; timestamp: Date }>>([]);
   const [sportsmanship, setSportsmanship] = useState<Record<string, number>>({});
+  const [fouls, setFouls] = useState<Record<string, number>>({});
   const [gameEventToDelete, setGameEventToDelete] = useState<number | null>(null);
   const [editingGameEventIndex, setEditingGameEventIndex] = useState<number | null>(null);
   const [editingGoalIndex, setEditingGoalIndex] = useState<number | null>(null);
@@ -67,6 +69,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [editingTeamChangeIndex, setEditingTeamChangeIndex] = useState<number | null>(null);
   const [_saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [_exportError, setExportError] = useState<string | null>(null);
@@ -146,6 +149,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         setSportsmanship(gameData.sportsmanship);
       }
 
+      if (gameData.fouls) {
+        setFouls(gameData.fouls);
+      }
+
       // Restore team changes from database
       if (gameData.teamChanges && gameData.teamChanges.length > 0) {
         const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
@@ -212,6 +219,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         teamChanges: teamChangesData,
         gameEvents: gameEventsData,
         sportsmanship,
+        fouls,
       });
     } catch (err) {
       console.error('Error saving game data:', err);
@@ -219,7 +227,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSaving(false);
     }
-  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship]);
+  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls]);
 
   // Export game data to Google Sheets
   const handleExportToSheets = useCallback(async () => {
@@ -248,6 +256,69 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       setExporting(false);
     }
   }, [gameId, teamChanges]);
+
+  // Build + share a compact match-report PNG for the group chat. Uses in-memory
+  // goals (already resolved to Player objects), so no extra fetch is needed.
+  const handleShareMatchReport = useCallback(async () => {
+    try {
+      setSharing(true);
+
+      const colorScore = goals.filter(g => g.team === 'color').length;
+      const whiteScore = goals.filter(g => g.team === 'white').length;
+
+      // Man of the Match = most goal involvements (goals + assists), guests
+      // excluded. Ties surface all winners. Omitted when nobody was involved.
+      const involvement = new Map<string, { name: string; goals: number; assists: number }>();
+      const bump = (p: Player, kind: 'goals' | 'assists') => {
+        if (p.name.includes('Guest')) return;
+        const cur = involvement.get(p.id) ?? { name: p.name, goals: 0, assists: 0 };
+        cur[kind] += 1;
+        involvement.set(p.id, cur);
+      };
+      for (const g of goals) {
+        bump(g.scorer, 'goals');
+        if (g.assister) bump(g.assister, 'assists');
+      }
+      let topInv = 0;
+      for (const s of involvement.values()) topInv = Math.max(topInv, s.goals + s.assists);
+      const manOfTheMatch = topInv > 0
+        ? Array.from(involvement.values())
+            .filter(s => s.goals + s.assists === topInv)
+            .sort((a, b) => b.goals - a.goals)
+        : null;
+
+      const data: MatchReportData = {
+        title: gameTitle.replace(/ - /g, ' · '),
+        colorScore,
+        whiteScore,
+        goals: goals.map(g => ({
+          scorer: g.scorer.name,
+          assister: g.assister?.name ?? null,
+          team: g.team,
+        })),
+        manOfTheMatch,
+      };
+
+      const blob = await renderMatchReportImage(data);
+      const file = new File([blob], `awty-game-${gameNumber ?? 'report'}.png`, { type: 'image/png' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Match Report' });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return; // user cancelled share sheet
+      alert(`Couldn't create the match report: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setSharing(false);
+    }
+  }, [goals, gameNumber, gameTitle]);
 
   // Handle CSV file selection for import
   const handleFileInputChange = useCallback(async () => {
@@ -432,7 +503,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, loading, isAdmin, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, loading, isAdmin, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -1228,6 +1299,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               playerTeams={playerTeams}
               leftPlayers={leftPlayers}
               sportsmanship={sportsmanship}
+              fouls={fouls}
               goals={goals}
               onTeamSelect={handleTeamSelect}
               onAddGuest={handleAddGuest}
@@ -1247,6 +1319,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                   return { ...prev, [playerId]: next };
                 });
               }}
+              onFoulsChange={(playerId, delta) => {
+                setFouls(prev => {
+                  const next = (prev[playerId] || 0) + delta;
+                  if (next <= 0) {
+                    const { [playerId]: _, ...rest } = prev;
+                    return rest;
+                  }
+                  return { ...prev, [playerId]: next };
+                });
+              }}
               isAdmin={isAdmin}
             />
           </div>
@@ -1258,11 +1340,27 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       {/* Sticky footer: Report Stats — always visible on the Game tab so it
           stays one tap away regardless of scroll. */}
       {isAdmin && activeTab === 'game' && (
-        <div className="flex-shrink-0 border-t border-border bg-surface/95 backdrop-blur-sm px-4 py-3">
+        <div className="flex-shrink-0 border-t border-border bg-surface/95 backdrop-blur-sm px-4 py-3 flex gap-2">
+          <button
+            onClick={handleShareMatchReport}
+            disabled={sharing || loading}
+            className="flex-1 px-4 py-3.5 bg-surface-raised text-text-primary text-base font-bold rounded-2xl border border-gold/60 hover:bg-surface-active active:bg-surface-active disabled:text-text-tertiary disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+          >
+            {sharing ? (
+              'Rendering…'
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                Share Report
+              </>
+            )}
+          </button>
           <button
             onClick={handleExportToSheets}
             disabled={exporting || loading}
-            className="w-full px-4 py-3.5 bg-gold text-text-on-accent text-base font-bold rounded-2xl hover:bg-gold-hover active:bg-gold-active disabled:bg-surface-active disabled:text-text-tertiary disabled:cursor-not-allowed transition-colors shadow-glow-gold flex items-center justify-center gap-2"
+            className="flex-1 px-4 py-3.5 bg-gold text-text-on-accent text-base font-bold rounded-2xl hover:bg-gold-hover active:bg-gold-active disabled:bg-surface-active disabled:text-text-tertiary disabled:cursor-not-allowed transition-colors shadow-glow-gold flex items-center justify-center gap-2"
           >
             {exporting ? (
               'Reporting…'

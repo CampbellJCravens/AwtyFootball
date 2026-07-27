@@ -13,6 +13,8 @@ model Player {
   pictureUrl String?
   team       String?
   phone      String?  @unique // E.164, used to attribute WhatsApp poll votes
+  onRoster   Boolean  @default(true) // false = prior member (no longer on the current roster)
+  isAlumni   Boolean  @default(false) // true = alumnus of the school; drives the alumni % figures
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -37,6 +39,10 @@ model Game {
   gameEvents      String?
   sportsmanship   String?
   // As above: present in production, declared so db push won't drop it.
+  fouls           String?
+
+  // Per-player foul counts, JSON Record<playerId, number>. Stored as positive
+  // counts; net sportsmanship (sportsmanship - fouls) is computed at read time.
   fouls           String?
 
   // Which field/turf the game was played on. "stadium" | "grass" |

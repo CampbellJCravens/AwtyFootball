@@ -36,6 +36,7 @@ export interface Game {
   teamChanges?: TeamChange[];
   gameEvents?: GameEvent[];
   sportsmanship?: Record<string, number>;
+  fouls?: Record<string, number>;
   field?: GameField | null;
 }
 
@@ -45,6 +46,7 @@ export interface UpdateGameData {
   teamChanges?: TeamChange[];
   gameEvents?: GameEvent[];
   sportsmanship?: Record<string, number>;
+  fouls?: Record<string, number>;
   createdAt?: string; // ISO date string
   gameNumber?: number; // Add game number
   field?: GameField | null;

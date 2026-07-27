@@ -132,6 +132,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
       teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
       gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
+      fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
     }));
     
     res.json(parsedGames);
@@ -161,6 +162,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
       teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
       gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
+      fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
     };
 
     res.json(parsedGame);
@@ -209,6 +211,10 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       updateData.sportsmanship = JSON.stringify(data.sportsmanship);
     }
 
+    if (data.fouls !== undefined) {
+      updateData.fouls = JSON.stringify(data.fouls);
+    }
+
     if (data.createdAt !== undefined) {
       updateData.createdAt = new Date(data.createdAt);
     }
@@ -234,6 +240,7 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       teamChanges: safeParseJSON(game.teamChanges, [] as any[]),
       gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
+      fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
     };
 
     res.json(parsedGame);
@@ -315,6 +322,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
 
     // Parse sportsmanship data
     const sportsmanship = safeParseJSON<Record<string, number>>(game.sportsmanship, {});
+    const fouls = safeParseJSON<Record<string, number>>(game.fouls, {});
 
     // Build Players CSV data
     const playersData: Array<{
@@ -324,6 +332,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       Goals: number;
       Assists: number;
       Sportsmanship: number;
+      Fouls: number;
     }> = [];
 
     // Calculate stats for each player in the game
@@ -370,6 +379,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
           Goals: stats.goals,
           Assists: stats.assists,
           Sportsmanship: sportsmanship[playerId] || 0,
+          Fouls: fouls[playerId] || 0,
         });
       }
     });
@@ -470,7 +480,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
     // Prepare data for sheets API (include filtered existing data and new data)
     const playersValues = [
       ...filteredPlayers.slice(1), // Skip header from filtered data
-      ...playersData.map(p => [p.Player, p.Game, p.Team, p.Goals.toString(), p.Assists.toString(), p.Sportsmanship.toString()]),
+      ...playersData.map(p => [p.Player, p.Game, p.Team, p.Goals.toString(), p.Assists.toString(), p.Sportsmanship.toString(), p.Fouls.toString()]),
     ];
 
     const gameSummaryValues = [
@@ -503,7 +513,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       valueInputOption: 'RAW',
       requestBody: {
         values: [
-          ['Player', 'Game', 'Team', 'Goals', 'Assists', 'Sportsmanship'], // Header
+          ['Player', 'Game', 'Team', 'Goals', 'Assists', 'Sportsmanship', 'Fouls'], // Header
           ...playersValues,
         ],
       },

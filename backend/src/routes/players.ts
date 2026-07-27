@@ -25,6 +25,8 @@ const serializePlayer = (p: any, isAdmin: boolean) => ({
   name: p.name,
   pictureUrl: p.pictureUrl,
   team: p.team,
+  onRoster: p.onRoster,
+  isAlumni: p.isAlumni,
   createdAt: p.createdAt,
   updatedAt: p.updatedAt,
   hasPhone: !!p.phone,
@@ -45,6 +47,8 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
         pictureUrl: validatedData.pictureUrl && validatedData.pictureUrl !== '' ? validatedData.pictureUrl : null,
         team: validatedData.team || null,
         phone: normalizePhone(validatedData.phone) ?? null,
+        ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
+        ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
       },
     });
     res.status(201).json(serializePlayer(player, isReqAdmin(req)));
@@ -106,6 +110,8 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
         ...(validatedData.pictureUrl !== undefined && { pictureUrl: validatedData.pictureUrl || null }),
         ...(validatedData.team !== undefined && { team: validatedData.team || null }),
         ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
+        ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
+        ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
       },
     });
 
