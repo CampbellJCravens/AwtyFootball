@@ -31,7 +31,38 @@ import {
   noteContact,
   isInScope,
   refreshScope,
+  getPollUpdate,
+  unwrapMessage,
 } from './polls';
+
+// Ordinary chatter we deliberately ignore. Anything in scope that isn't one of
+// these, and isn't a poll, gets its shape logged once so a message type we don't
+// handle yet is visible instead of silently dropped — the failure mode that lost
+// the 25Jul 2026 poll (a pollCreationMessageV4/V5 we didn't recognise).
+const IGNORED_MESSAGE_TYPES = new Set([
+  'conversation',
+  'extendedTextMessage',
+  'imageMessage',
+  'videoMessage',
+  'audioMessage',
+  'stickerMessage',
+  'documentMessage',
+  'reactionMessage',
+  'protocolMessage',
+  'senderKeyDistributionMessage',
+  'messageContextInfo',
+  'contactMessage',
+  'locationMessage',
+]);
+
+function logUnhandledMessage(message: any): void {
+  const inner = unwrapMessage(message);
+  if (!inner) return;
+  const types = Object.keys(inner).filter((k) => !IGNORED_MESSAGE_TYPES.has(k));
+  if (types.length === 0) return;
+  // Field names only, never content — this lands in Render logs.
+  console.log(`[whatsapp] Unhandled in-scope message type(s): ${types.join(', ')}`);
+}
 
 let sock: WASocket | null = null;
 let latestQr: string | null = null;
@@ -150,8 +181,10 @@ export async function startWhatsappListener(): Promise<void> {
           }
           if (isPollCreation(msg.message)) {
             await capturePoll(msg);
-          } else if ((msg.message as any)?.pollUpdateMessage) {
+          } else if (getPollUpdate(msg.message)) {
             await handlePollUpdateMessage(msg, meId, meLid);
+          } else {
+            logUnhandledMessage(msg.message);
           }
         } catch (err) {
           console.error('[whatsapp] messages.upsert handler error:', err);

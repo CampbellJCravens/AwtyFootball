@@ -98,15 +98,54 @@ export async function setWhatsappSettings(patch: {
   return { groupJid: scopeGroupJid, titleFilter: scopeTitleFilter };
 }
 
-/** Pull the poll-creation content out of a message, across proto versions. */
+/**
+ * Unwrap the container messages WhatsApp nests real content inside (disappearing
+ * messages, view-once, edits, own-device echoes). The payload we care about can
+ * sit one or more layers down, and every layer hides it from a naive lookup.
+ */
+export function unwrapMessage(message: any): any | null {
+  let m = message;
+  for (let depth = 0; m && depth < 5; depth++) {
+    const inner =
+      m.ephemeralMessage?.message ||
+      m.viewOnceMessage?.message ||
+      m.viewOnceMessageV2?.message ||
+      m.viewOnceMessageV2Extension?.message ||
+      m.documentWithCaptionMessage?.message ||
+      m.editedMessage?.message ||
+      m.deviceSentMessage?.message;
+    if (!inner) return m;
+    m = inner;
+  }
+  return m;
+}
+
+/**
+ * Pull the poll-creation content out of a message, across proto versions and
+ * container wrappers.
+ *
+ * WhatsApp has shipped poll creations as pollCreationMessage through V5. This
+ * used to test an explicit list ending at V3, so when a sender's client moved to
+ * a newer version the poll was skipped SILENTLY — no log, no capture, and every
+ * later vote rejected as "uncaptured poll". That's what lost the 25Jul 2026
+ * poll. Match any pollCreationMessage* field instead, so the next bump can't
+ * break it the same way.
+ */
 function getPollCreation(message: any): any | null {
-  if (!message) return null;
-  return (
-    message.pollCreationMessage ||
-    message.pollCreationMessageV2 ||
-    message.pollCreationMessageV3 ||
-    null
-  );
+  const m = unwrapMessage(message);
+  if (!m) return null;
+  for (const [key, value] of Object.entries(m)) {
+    // pollCreationMessageKey is a back-reference carried on votes, not a poll.
+    if (key.startsWith('pollCreationMessage') && key !== 'pollCreationMessageKey' && value) {
+      return value;
+    }
+  }
+  return null;
+}
+
+/** The poll-vote payload, likewise tolerant of wrappers. */
+export function getPollUpdate(message: any): any | null {
+  return unwrapMessage(message)?.pollUpdateMessage ?? null;
 }
 
 export function isPollCreation(message: any): boolean {
@@ -228,7 +267,7 @@ export async function handlePollUpdateMessage(
   meId: string | undefined,
   meLid?: string
 ): Promise<void> {
-  const pum = msg.message?.pollUpdateMessage;
+  const pum = getPollUpdate(msg.message);
   const creationKey = pum?.pollCreationMessageKey;
   if (!pum || !creationKey?.id) return;
 
@@ -239,7 +278,12 @@ export async function handlePollUpdateMessage(
   }
 
   const stored = dec(poll.pollMessage);
-  const pollEncKey = toBytes(stored?.message?.messageContextInfo?.messageSecret);
+  // The secret rides on the poll-creation message; when that message was
+  // wrapped (ephemeral/view-once), it sits on the inner layer instead.
+  const pollEncKey = toBytes(
+    unwrapMessage(stored?.message)?.messageContextInfo?.messageSecret ??
+      stored?.message?.messageContextInfo?.messageSecret
+  );
   if (!pollEncKey) {
     console.warn(
       `[whatsapp] Poll ${creationKey.id} has no messageSecret — can't decrypt votes. ` +
