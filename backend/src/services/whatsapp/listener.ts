@@ -282,6 +282,11 @@ export async function startWhatsappListener(): Promise<void> {
     });
   } catch (err) {
     console.error('[whatsapp] Failed to start listener:', err);
+    // Startup can fail for recoverable reasons — most importantly the database
+    // being unreachable while we still need it to migrate the session. Retry
+    // with backoff instead of sitting dead until someone redeploys.
+    starting = false;
+    scheduleReconnect('Listener startup failed');
   } finally {
     starting = false;
   }

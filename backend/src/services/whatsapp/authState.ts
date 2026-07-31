@@ -120,10 +120,16 @@ async function migratePostgresAuthToFiles(dir: string): Promise<void> {
   try {
     rows = await prisma.whatsappAuthState.findMany({ select: { id: true, value: true } });
   } catch (err) {
-    // The database may be unreachable (that's how we got here). A fresh pairing
-    // is recoverable; a crash loop is not.
+    // The database being unreachable is exactly the situation this migration
+    // exists for (the Neon compute quota outage). Carrying on would hand Baileys
+    // an empty directory, which silently mints a BRAND NEW session and forces a
+    // re-pair of the phone. Fail instead, so the caller retries once the
+    // database is back and the real session is still there to migrate.
     console.error('[whatsapp] Could not read Postgres auth state to migrate:', err);
-    return;
+    throw new Error(
+      'WhatsApp auth migration deferred: the database is unreachable and no local session exists yet. ' +
+        'Refusing to start a fresh session that would require re-pairing.'
+    );
   }
   if (rows.length === 0) return;
 
