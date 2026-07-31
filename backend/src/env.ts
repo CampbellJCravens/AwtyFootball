@@ -24,6 +24,13 @@ export const env = {
   WHATSAPP_LISTENER_ENABLED: process.env.WHATSAPP_LISTENER_ENABLED
     ? process.env.WHATSAPP_LISTENER_ENABLED === 'true'
     : process.env.NODE_ENV === 'production',
+  // Where Baileys auth state lives. "file" keeps creds + signal keys on disk;
+  // "postgres" is the original store. Signal keys rotate constantly, so keeping
+  // them in Postgres held the Neon compute awake 24/7 and burned the compute
+  // quota (outage on 2026-07-29). File is the default; on Render this must
+  // point at a mounted persistent disk or the session dies on every redeploy.
+  WHATSAPP_AUTH_STORE: process.env.WHATSAPP_AUTH_STORE === 'postgres' ? 'postgres' : 'file',
+  WHATSAPP_AUTH_DIR: process.env.WHATSAPP_AUTH_DIR || './.wa-auth',
 };
 
 // Validate required environment variables

@@ -22,7 +22,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
-import { usePostgresAuthState, clearPostgresAuthState } from './authState';
+import { useWhatsappAuthState, clearWhatsappAuthState } from './authState';
 import prisma from '../../prisma';
 import {
   capturePoll,
@@ -67,6 +67,54 @@ function logUnhandledMessage(message: any): void {
 let sock: WASocket | null = null;
 let latestQr: string | null = null;
 let starting = false;
+// Bumped on every connection attempt. Handlers captured on an older socket
+// compare against it and bail, so a socket we've abandoned can't keep writing
+// auth state or processing messages behind the live one's back.
+let generation = 0;
+let reconnectTimer: NodeJS.Timeout | null = null;
+let reconnectAttempts = 0;
+
+/**
+ * Stop the current socket emitting and close it. The old code dropped the
+ * reference without detaching handlers or ending the socket, so a flapping
+ * connection could leave several live sockets running at once — each one
+ * decrypting messages and persisting Signal keys, multiplying database load.
+ */
+function teardownSocket(): void {
+  const s = sock as any;
+  sock = null;
+  if (!s) return;
+  try {
+    s.ev?.removeAllListeners?.();
+  } catch {
+    /* ignore */
+  }
+  try {
+    s.end?.(undefined);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Schedule exactly one reconnect, backing off up to 5 minutes. Single-flight:
+ * WhatsApp can emit several close events for one drop, and the old code
+ * scheduled an independent reconnect for each.
+ */
+function scheduleReconnect(reason: string): void {
+  if (reconnectTimer) return;
+  const delay = Math.min(5000 * 2 ** reconnectAttempts, 5 * 60_000);
+  reconnectAttempts++;
+  console.log(
+    `[whatsapp] ${reason}; reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts}).`
+  );
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    startWhatsappListener().catch((err) =>
+      console.error('[whatsapp] Reconnect failed:', err)
+    );
+  }, delay);
+}
 
 /**
  * The most recent QR string, or null once linked. A future admin endpoint can
@@ -86,15 +134,16 @@ export function isWhatsappLinked(): boolean {
  * recover a logged-out listener from the panel without a redeploy.
  */
 export async function relinkWhatsapp(): Promise<void> {
-  try {
-    (sock as any)?.end?.(undefined);
-  } catch {
-    /* ignore */
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
   }
-  sock = null;
+  generation++; // orphan any in-flight socket's handlers
+  teardownSocket();
   latestQr = null;
   starting = false;
-  await clearPostgresAuthState();
+  reconnectAttempts = 0;
+  await clearWhatsappAuthState();
   await startWhatsappListener();
 }
 
@@ -142,9 +191,12 @@ export async function startWhatsappListener(): Promise<void> {
   if (starting) return;
   starting = true;
 
+  const myGeneration = ++generation;
+  teardownSocket(); // never leave a previous socket running alongside this one
+
   try {
     await refreshScope(); // load the group-scope setting before we start capturing
-    const { state, saveCreds } = await usePostgresAuthState();
+    const { state, saveCreds } = await useWhatsappAuthState();
     const { version } = await fetchLatestBaileysVersion();
 
     sock = makeWASocket({
@@ -170,6 +222,7 @@ export async function startWhatsappListener(): Promise<void> {
     // Poll creations AND votes both arrive on messages.upsert. Baileys 7 no
     // longer decrypts poll votes, so we handle pollUpdateMessage ourselves.
     sock.ev.on('messages.upsert', async ({ messages }) => {
+      if (myGeneration !== generation) return; // stale socket, ignore
       const meId = sock?.user?.id;
       const meLid = (sock?.user as any)?.lid;
       for (const msg of messages) {
@@ -193,6 +246,7 @@ export async function startWhatsappListener(): Promise<void> {
     });
 
     sock.ev.on('connection.update', (update) => {
+      if (myGeneration !== generation) return; // stale socket, ignore
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -203,33 +257,27 @@ export async function startWhatsappListener(): Promise<void> {
 
       if (connection === 'open') {
         latestQr = null;
+        reconnectAttempts = 0; // healthy again, reset the backoff
         console.log('[whatsapp] Linked and listening (read-only).');
       }
 
       if (connection === 'close') {
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason.loggedOut;
-        sock = null;
+        teardownSocket();
         starting = false;
         if (loggedOut) {
           // The session is dead. Clear it and restart so a FRESH QR is
           // generated automatically — otherwise the listener sits idle forever
           // and silently stops capturing votes until someone notices.
           console.warn('[whatsapp] Logged out by WhatsApp — clearing session and restarting for a fresh QR.');
-          clearPostgresAuthState()
+          clearWhatsappAuthState()
             .then(() => new Promise((r) => setTimeout(r, 3000)))
             .then(() => startWhatsappListener())
             .catch((err) => console.error('[whatsapp] Auto-recovery after logout failed:', err));
           return;
         }
-        console.log(
-          `[whatsapp] Connection closed (code ${statusCode ?? 'unknown'}); reconnecting in 5s.`
-        );
-        setTimeout(() => {
-          startWhatsappListener().catch((err) =>
-            console.error('[whatsapp] Reconnect failed:', err)
-          );
-        }, 5000);
+        scheduleReconnect(`Connection closed (code ${statusCode ?? 'unknown'})`);
       }
     });
   } catch (err) {

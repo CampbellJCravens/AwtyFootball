@@ -197,13 +197,26 @@ export async function capturePoll(raw: any): Promise<void> {
   );
 }
 
+// Display names essentially never change, but this used to write on EVERY group
+// message, keeping the database awake around the clock. Cache what we've already
+// stored and only write on a real change. The cache is per-process, so a restart
+// costs one write per contact and nothing more.
+const contactNameCache = new Map<string, string | null>();
+
 async function upsertContact(phone: string, pushName?: string | null): Promise<void> {
   if (!phone) return;
+  const next = pushName ?? null;
+  if (contactNameCache.has(phone)) {
+    const cached = contactNameCache.get(phone)!;
+    // Nothing new to record: same name, or no name to add to what we have.
+    if (cached === next || next === null) return;
+  }
   await prisma.whatsappContact.upsert({
     where: { phone },
-    create: { phone, pushName: pushName ?? null },
-    update: pushName ? { pushName } : {},
+    create: { phone, pushName: next },
+    update: next ? { pushName: next } : {},
   });
+  contactNameCache.set(phone, next ?? contactNameCache.get(phone) ?? null);
 }
 
 /**

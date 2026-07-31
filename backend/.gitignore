@@ -12,3 +12,4 @@ dist/
 import-poll-backup-*.json
 mark-former-backup-*.json
 
+.wa-auth/
