@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import prisma from '../prisma';
 import { updateGameSchema, UpdateGameInput } from '../schemas/game';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
+import { isOwnGoal } from '../services/goals';
 import { google } from 'googleapis';
 import { env } from '../env';
 import Papa from 'papaparse';
@@ -306,6 +307,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       assisterId: string | null;
       timestamp: string;
       team: 'color' | 'white' | null;
+      ownGoal?: boolean;
     }>>(game.goals, []);
 
     // Fetch all players
@@ -330,13 +332,14 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       Game: string;
       Team: string;
       Goals: number;
+      OwnGoals: number;
       Assists: number;
       Sportsmanship: number;
       Fouls: number;
     }> = [];
 
     // Calculate stats for each player in the game
-    const playerStats = new Map<string, { goals: number; assists: number; team: string }>();
+    const playerStats = new Map<string, { goals: number; ownGoals: number; assists: number; team: string }>();
 
     // Initialize stats for all players in team assignments
     Object.entries(teamAssignments).forEach(([playerId, team]) => {
@@ -344,6 +347,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
       if (player) {
         playerStats.set(playerId, {
           goals: 0,
+          ownGoals: 0,
           assists: 0,
           team: team === 'color' ? 'Color' : 'White',
         });
@@ -352,11 +356,12 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
 
     // Count goals and assists
     goals.forEach(goal => {
-      // Count goals
+      // Count goals — an own goal credits the opposition, never the scorer.
       if (goal.scorerId) {
         const stats = playerStats.get(goal.scorerId);
         if (stats) {
-          stats.goals += 1;
+          if (isOwnGoal(goal)) stats.ownGoals += 1;
+          else stats.goals += 1;
         }
       }
       // Count assists
@@ -377,6 +382,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
           Game: gameName,
           Team: stats.team,
           Goals: stats.goals,
+          OwnGoals: stats.ownGoals,
           Assists: stats.assists,
           Sportsmanship: sportsmanship[playerId] || 0,
           Fouls: fouls[playerId] || 0,
@@ -402,7 +408,7 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
 
       if (scorer) {
         gameSummaryData.push({
-          EntryType: 'goal',
+          EntryType: isOwnGoal(goal) ? 'own goal' : 'goal',
           Game: gameName,
           PlayerName: scorer.name,
           Assister: assister?.name || '',

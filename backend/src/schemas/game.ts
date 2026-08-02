@@ -4,7 +4,10 @@ export const goalSchema = z.object({
   scorerId: z.string(),
   assisterId: z.string().nullable(),
   timestamp: z.string(), // ISO date string
+  // The team CREDITED with the goal. For an own goal that is the scorer's
+  // opponent, which is what keeps the scoreline right with no special-casing.
   team: z.enum(['color', 'white']).nullable(),
+  ownGoal: z.boolean().optional(),
 });
 
 export const teamChangeSchema = z.object({

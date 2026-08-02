@@ -23,6 +23,16 @@ const startOfToday = () => {
   return d;
 };
 
+// `team` is the team CREDITED with the goal. For an own goal that's the
+// scorer's opponent, which keeps the scoreline correct with no special-casing.
+type LocalGoal = {
+  scorer: Player;
+  assister: Player | null;
+  timestamp: Date;
+  team: 'color' | 'white' | null;
+  ownGoal?: boolean;
+};
+
 interface GameModuleExpandedProps {
   gameId: string;
   gameNumber: number | null;
@@ -55,7 +65,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [leftPlayers, setLeftPlayers] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
-  const [goals, setGoals] = useState<Array<{ scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null }>>([]);
+  const [goals, setGoals] = useState<Array<LocalGoal>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver'; timestamp: Date }>>([]);
   const [sportsmanship, setSportsmanship] = useState<Record<string, number>>({});
@@ -114,7 +124,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       if (gameData.goals && gameData.goals.length > 0) {
         const allPlayersWithGuests = [...playersData];
         
-        const restoredGoals = gameData.goals.map(goal => {
+        const restoredGoals = gameData.goals.map((goal): LocalGoal | null => {
           const scorer = allPlayersWithGuests.find(p => p.id === goal.scorerId);
           const assister = goal.assisterId ? allPlayersWithGuests.find(p => p.id === goal.assisterId) || null : null;
           
@@ -128,8 +138,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             assister,
             timestamp: new Date(goal.timestamp),
             team: goal.team,
+            ownGoal: goal.ownGoal,
           };
-        }).filter((g): g is { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null } => g !== null);
+        }).filter((g): g is LocalGoal => g !== null);
         
         setGoals(restoredGoals);
       }
@@ -195,6 +206,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         assisterId: goal.assister?.id || null,
         timestamp: goal.timestamp.toISOString(),
         team: goal.team,
+        ...(goal.ownGoal ? { ownGoal: true } : {}),
       }));
       
       // Convert team changes to API format
@@ -276,7 +288,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         involvement.set(p.id, cur);
       };
       for (const g of goals) {
-        bump(g.scorer, 'goals');
+        // An own goal is not a goal involvement — it must never win MotM.
+        if (!g.ownGoal) bump(g.scorer, 'goals');
         if (g.assister) bump(g.assister, 'assists');
       }
       let topInv = 0;
@@ -295,6 +308,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           scorer: g.scorer.name,
           assister: g.assister?.name ?? null,
           team: g.team,
+          ownGoal: g.ownGoal,
         })),
         manOfTheMatch,
       };
@@ -388,7 +402,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         setPlayerTeams(gameData.teamAssignments);
       }
       if (gameData.goals && gameData.goals.length > 0) {
-        const restoredGoals = gameData.goals.map(goal => {
+        const restoredGoals = gameData.goals.map((goal): LocalGoal | null => {
           const scorer = updatedPlayers.find(p => p.id === goal.scorerId);
           const assister = goal.assisterId ? updatedPlayers.find(p => p.id === goal.assisterId) || null : null;
           
@@ -401,8 +415,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             assister,
             timestamp: new Date(goal.timestamp),
             team: goal.team,
+            ownGoal: goal.ownGoal,
           };
-        }).filter((g): g is { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null } => g !== null);
+        }).filter((g): g is LocalGoal => g !== null);
         
         setGoals(restoredGoals);
       }
@@ -655,6 +670,20 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setGoalScorer(player);
   };
 
+  // Own goal: credited to the scorer's OPPONENT, so the scoreline needs no
+  // special-casing anywhere. No assist prompt — there is no assist on an own
+  // goal. Requires a team assignment; there's no opponent to credit without one.
+  const handleOwnGoalClick = (player: Player) => {
+    if (!isAdmin) return;
+    const scorerTeam = playerTeams[player.id];
+    if (!scorerTeam) return;
+    const creditedTeam = scorerTeam === 'color' ? 'white' : 'color';
+    const gameDateObj = new Date(gameDate);
+    const now = new Date(gameDateObj);
+    now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
+    setGoals(prev => [...prev, { scorer: player, assister: null, timestamp: now, team: creditedTeam, ownGoal: true }]);
+  };
+
   const handleAssisterSelected = (assister: Player | null) => {
     if (goalScorer) {
       const scorerTeam = playerTeams[goalScorer.id] || null;
@@ -720,6 +749,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           assister,
           timestamp: prev[editingGoalIndex].timestamp, // Keep original timestamp
           team: scorerTeam,
+          // Re-picking a scorer the normal way makes this an ordinary goal again.
+          ownGoal: false,
         };
         return newGoals;
       });
@@ -727,6 +758,30 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       setEditingScorer(null);
       setGoalScorer(null);
     }
+  };
+
+  // Convert an existing goal into an own goal. `team` becomes the opposite of
+  // the new scorer's team — i.e. the team that benefits — so a goal that was
+  // logged as a normal goal for the benefiting team keeps the same scoreline
+  // and only changes who it's attributed to. Any assist is dropped.
+  const handleMarkOwnGoal = (scorer: Player) => {
+    if (editingGoalIndex === null) return;
+    const scorerTeam = playerTeams[scorer.id];
+    if (!scorerTeam) return;
+    setGoals(prev => {
+      const next = [...prev];
+      next[editingGoalIndex] = {
+        scorer,
+        assister: null,
+        timestamp: prev[editingGoalIndex].timestamp,
+        team: scorerTeam === 'color' ? 'white' : 'color',
+        ownGoal: true,
+      };
+      return next;
+    });
+    setEditingGoalIndex(null);
+    setEditingScorer(null);
+    setGoalScorer(null);
   };
 
   const handleCloseEditModal = () => {
@@ -936,7 +991,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 onResolved={() => setPollVersion((v) => v + 1)}
               />
             )}
-            <GameRsvpSection gameId={gameId} refreshSignal={pollVersion} />
+            <GameRsvpSection gameId={gameId} refreshSignal={pollVersion} isAdmin={isAdmin} />
           </>
         )}
 
@@ -1094,7 +1149,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                           <span className="pr-3 flex-1">
                               {(() => {
                                 const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
-                                return goal.assister 
+                                // goal.team is the team CREDITED, so an own goal
+                                // already reads under the benefiting team.
+                                if (goal.ownGoal) return `(${teamLabel}) ${goal.scorer.name} — own goal`;
+                                return goal.assister
                                   ? `(${teamLabel}) ${goal.scorer.name} scored! Assisted by ${goal.assister.name}`
                                   : `(${teamLabel}) ${goal.scorer.name} scored!`;
                               })()}
@@ -1306,6 +1364,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               onRemoveFromTeam={handleRemoveFromTeam}
               onSwapTeam={handleSwapTeam}
               onGoalClick={handleGoalClick}
+              onOwnGoalClick={handleOwnGoalClick}
               onLeaveTeam={handleLeaveTeam}
               onReturnToTeam={handleReturnToTeam}
               onSportsmanshipChange={(playerId, delta) => {
@@ -1391,8 +1450,15 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         <EditGoalscorerModal
           currentScorer={editingScorer}
           teamPlayers={getTeamPlayers(editingScorer)}
+          opposingPlayers={allPlayers.filter(p => {
+            const credited = goals[editingGoalIndex].team;
+            if (!credited) return false;
+            return playerTeams[p.id] === (credited === 'color' ? 'white' : 'color');
+          })}
+          isOwnGoal={goals[editingGoalIndex].ownGoal}
           currentGoalTime={goals[editingGoalIndex].timestamp}
           onSelectScorer={handleEditScorerSelected}
+          onMarkOwnGoal={handleMarkOwnGoal}
           onSkip={handleEditScorerSkip}
           onTimeChange={handleGoalTimeChange}
           onClose={handleCloseEditModal}

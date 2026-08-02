@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
+import { isScoringGoal, isOwnGoal } from '../services/goals';
+import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
+import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
 
 const router = Router();
 
@@ -20,6 +23,7 @@ interface GoalData {
   assisterId: string | null;
   timestamp: string;
   team: 'color' | 'white' | null;
+  ownGoal?: boolean;
 }
 
 interface ParsedGame {
@@ -70,7 +74,7 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
     const allPlayers = await prisma.player.findMany();
     const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
 
-    let wins = 0, losses = 0, ties = 0, totalGoals = 0, totalAssists = 0;
+    let wins = 0, losses = 0, ties = 0, totalGoals = 0, totalOwnGoals = 0, totalAssists = 0;
     const matchHistory: any[] = [];
     const partnerTracker = new Map<string, { games: number; points: number }>();
     const groupTracker = new Map<string, { playerIds: string[]; games: number; points: number }>();
@@ -91,9 +95,11 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
 
       const colorScore = game.goals.filter(g => g.team === 'color').length;
       const whiteScore = game.goals.filter(g => g.team === 'white').length;
-      const goalsScored = game.goals.filter(g => g.scorerId === player.id).length;
+      const goalsScored = game.goals.filter(g => g.scorerId === player.id && isScoringGoal(g)).length;
+      const ownGoalsScored = game.goals.filter(g => g.scorerId === player.id && isOwnGoal(g)).length;
       const assistsMade = game.goals.filter(g => g.assisterId === player.id).length;
       totalGoals += goalsScored;
+      totalOwnGoals += ownGoalsScored;
       totalAssists += assistsMade;
 
       matchHistory.push({
@@ -208,7 +214,7 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
         const result = getGameResult(game, team);
         if (result === 'W') pWins++;
         else if (result === 'T') pTies++;
-        pGoals += game.goals.filter(g => g.scorerId === p.id).length;
+        pGoals += game.goals.filter(g => g.scorerId === p.id && isScoringGoal(g)).length;
         pAssists += game.goals.filter(g => g.assisterId === p.id).length;
       }
       if (pGames === 0) continue;
@@ -251,7 +257,7 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
 
     res.json({
       player: { id: player.id, name: player.name, pictureUrl: player.pictureUrl },
-      aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, assists: totalAssists },
+      aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, ownGoals: totalOwnGoals, assists: totalAssists },
       ranks,
       matchHistory,
       bestPartnersByPPG,
@@ -402,7 +408,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     const stats = new Map<string, PlayerStat>();
     // `sportsmanship` is the NET figure (gold stars minus fouls) and can be
     // negative; `fouls` is the raw positive count, used for Dirtiest Player.
-    type PlayerStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
+    type PlayerStat = { points: number; wins: number; ties: number; goals: number; ownGoals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
 
     for (const game of monthGames) {
       const colorGoals = game.goals.filter(g => g.team === 'color').length;
@@ -413,7 +419,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         const playerInfo = playerMap.get(pid)!;
         if (playerInfo.name.includes('Guest')) continue;
 
-        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, ownGoals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
         const s = stats.get(pid)!;
         s.games++;
         s.sportsmanship += (game.sportsmanship[pid] || 0) - (game.fouls[pid] || 0);
@@ -430,8 +436,12 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
 
       for (const goal of game.goals) {
         if (stats.has(goal.scorerId)) {
-          stats.get(goal.scorerId)!.goals++;
-          stats.get(goal.scorerId)!.goalInvolvements++;
+          if (isOwnGoal(goal)) {
+            stats.get(goal.scorerId)!.ownGoals++;
+          } else {
+            stats.get(goal.scorerId)!.goals++;
+            stats.get(goal.scorerId)!.goalInvolvements++;
+          }
         }
         if (goal.assisterId && stats.has(goal.assisterId)) {
           stats.get(goal.assisterId)!.assists++;
@@ -509,6 +519,12 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     const dirtiestPlayerOfTheMonth = hasFoulsData(year, month)
       ? getTop(s => s.fouls, undefined, 0)
       : null;
+
+    // Own Goal of the Month. Unlike every other award this one is absent, not
+    // "unclaimed", in months with none — getTop returns null when the top value
+    // is 0, and the frontend must skip the section entirely rather than render
+    // a no-qualifier message.
+    const ownGoalOfTheMonth = getTop(s => s.ownGoals, undefined, 0);
 
     // Top Duo: pair with the most scorer-assister goal contributions to each other
     const duoStats = new Map<string, { ids: [string, string]; contributions: number }>();
@@ -615,6 +631,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         topDefender,
         sportsmanOfTheMonth,
         dirtiestPlayerOfTheMonth,
+        ownGoalOfTheMonth,
         topDuo,
         topTrio,
       },
@@ -626,6 +643,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         defensiveRating: getLeaderboard(s => (s.games * 3) - s.goalsAllowed, { includeAll: true, extraFields: s => ({ games: s.games, goalsAllowed: s.goalsAllowed }), filter: s => s.games > 1 }),
         sportsmanship: hasSportsmanshipData(year, month) ? getLeaderboard(s => s.sportsmanship) : [],
         fouls: hasFoulsData(year, month) ? getLeaderboard(s => s.fouls) : [],
+        // Empty in any month without an own goal — getLeaderboard drops zeros.
+        ownGoals: getLeaderboard(s => s.ownGoals),
       },
     });
   } catch (error) {
@@ -673,7 +692,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         s.goalsAllowed += team === 'color' ? whiteGoals : colorGoals;
       }
       for (const goal of game.goals) {
-        if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
+        if (stats.has(goal.scorerId) && isScoringGoal(goal)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
         if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
       }
     }
@@ -868,7 +887,7 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
           s.goalsAllowed += opponentGoals;
         }
         for (const goal of game.goals) {
-          if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
+          if (stats.has(goal.scorerId) && isScoringGoal(goal)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
           if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
         }
       }
@@ -1208,108 +1227,132 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 // ── GET /api/stats/reliability ── (admin only)
-// Per-player RSVP reliability across *tracked* games (a game with a non-empty
-// Color/White roster = "who showed up"). Guests (the GuestN pool players) are
-// excluded — they aren't real members. Guest *headcounts* (guestCount on a
-// player's own "yes") are rolled up separately for the guest-frequency view.
+// Aggregation lives in services/reliability.ts so the turnout projection reads
+// the exact same bucket definitions.
 router.get('/reliability', requireAdmin, async (_req: AuthenticatedRequest, res: Response) => {
   try {
-    const [players, games, rsvps] = await Promise.all([
-      prisma.player.findMany({ select: { id: true, name: true, pictureUrl: true } }),
-      prisma.game.findMany({ select: { id: true, teamAssignments: true } }),
-      prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true, guestCount: true } }),
-    ]);
-
-    // Tracked game = one with at least one player on a team.
-    const rosterByGame = new Map<string, Set<string>>();
-    for (const g of games) {
-      const roster = Object.keys(safeParseJSON<Record<string, string>>(g.teamAssignments, {}));
-      if (roster.length > 0) rosterByGame.set(g.id, new Set(roster));
-    }
-    const totalTrackedGames = rosterByGame.size;
-
-    // RSVPs keyed by game+player, restricted to tracked games.
-    const rsvpByKey = new Map<string, { status: string; guestCount: number }>();
-    for (const r of rsvps) {
-      if (rosterByGame.has(r.gameId)) {
-        rsvpByKey.set(`${r.gameId}:${r.playerId}`, { status: r.status, guestCount: r.guestCount });
-      }
-    }
-
-    const isGuestPool = (name: string) => /^Guest\d+$/.test(name.trim());
-
-    const result = players
-      .filter(p => !isGuestPool(p.name))
-      .map(p => {
-        let responded = 0, committed = 0, showed = 0, showedWhenCommitted = 0;
-        let noShow = 0, ghost = 0, guestsBrought = 0, gamesWithGuests = 0;
-
-        for (const [gameId, roster] of rosterByGame) {
-          const r = rsvpByKey.get(`${gameId}:${p.id}`);
-          const onRoster = roster.has(p.id);
-          const committedThis = r?.status === 'yes';
-
-          if (r) responded++;
-          if (committedThis) {
-            committed++;
-            guestsBrought += r!.guestCount;
-            if (r!.guestCount > 0) gamesWithGuests++;
-          }
-          if (onRoster) showed++;
-          if (committedThis && onRoster) showedWhenCommitted++;
-          if (committedThis && !onRoster) noShow++;
-          if (!committedThis && onRoster) ghost++;
-        }
-
-        const frac = (num: number, den: number) => (den > 0 ? num / den : null);
-
-        return {
-          id: p.id,
-          name: p.name,
-          pictureUrl: p.pictureUrl,
-          responded,
-          committed,
-          showed,
-          showedWhenCommitted,
-          noShow,
-          ghost,
-          guestsBrought,
-          gamesWithGuests,
-          // Fractions 0-1 (or null when the denominator is 0). Frontend formats %.
-          responseRate: frac(responded, totalTrackedGames),
-          showWhenCommittedRate: frac(showedWhenCommitted, committed),
-          attendanceRate: frac(showed, totalTrackedGames),
-          guestAttachRate: frac(gamesWithGuests, committed),
-        };
-      });
-
-    // Season reconciliation: responses vs actual turnout, and indicated vs
-    // actual guests. Guests sit on the roster as "GuestN" entries, so a game's
-    // real turnout excludes them and guest slots = guests who actually showed.
-    const nameById = new Map(players.map(p => [p.id, p.name]));
-    let guestSlots = 0, realTurnout = 0, responsesTotal = 0, guestsIndicated = 0;
-    for (const [, roster] of rosterByGame) {
-      for (const pid of roster) {
-        if (isGuestPool(nameById.get(pid) || '')) guestSlots++; else realTurnout++;
-      }
-    }
-    for (const r of rsvps) {
-      if (rosterByGame.has(r.gameId)) {
-        responsesTotal++;
-        if (r.status === 'yes') guestsIndicated += r.guestCount;
-      }
-    }
-    const summary = {
-      avgResponses: totalTrackedGames ? responsesTotal / totalTrackedGames : 0,
-      avgTurnout: totalTrackedGames ? realTurnout / totalTrackedGames : 0,
-      guestsIndicated,
-      guestsShown: guestSlots,
-    };
-
-    res.json({ totalTrackedGames, summary, players: result });
+    const { totalTrackedGames, summary, players } = await getReliability();
+    res.json({ totalTrackedGames, summary, players });
   } catch (error) {
     console.error('Error computing reliability stats:', error);
     res.status(500).json({ error: 'Failed to compute reliability statistics' });
+  }
+});
+
+// ── GET /api/stats/turnout/:gameId ── (admin only)
+// Forward-looking turnout projection for one game. Admin-only by design: a
+// public projection is self-fulfilling (a low number told to the group depresses
+// the very turnout it predicts), and per-player show probabilities would be
+// corrosive in a club chat. There is deliberately no public payload to leak.
+router.get('/turnout/:gameId', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { gameId } = req.params;
+
+    const [game, rsvps, allPlayers, reliability] = await Promise.all([
+      prisma.game.findUnique({ where: { id: gameId }, select: { id: true } }),
+      prisma.gameRsvp.findMany({ where: { gameId }, select: { playerId: true, status: true, guestCount: true } }),
+      prisma.player.findMany({ where: { onRoster: true }, select: { id: true, name: true, pictureUrl: true } }),
+      getReliability(),
+    ]);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+
+    const { summary, totalTrackedGames, turnoutHistoryTotal } = reliability;
+    const base = summary.baseRates;
+    const historyById = new Map(reliability.players.map(p => [p.id, p]));
+
+    // Current bucket per rostered player. Same source as the history (GameRsvp)
+    // so a player's present state and past states are defined identically.
+    const statusById = new Map(rsvps.map(r => [r.playerId, r.status]));
+    const toBucket = (status: string | undefined): RsvpBucket =>
+      status === 'yes' ? 'yes' : status === 'maybe' ? 'maybe' : status === 'no' ? 'no' : 'silent';
+
+    const universe = allPlayers.filter(p => !isGuestPool(p.name));
+
+    const projected = universe.map(p => {
+      const bucket = toBucket(statusById.get(p.id));
+      const { p: probability, n } = shrunkProbability(historyById.get(p.id), bucket, base);
+      return {
+        id: p.id,
+        name: p.name,
+        pictureUrl: p.pictureUrl,
+        bucket,
+        probability,
+        // Games behind this player's own rate for this bucket. n === 0 means the
+        // number is purely the league prior, not a read on them personally.
+        n,
+      };
+    });
+
+    const dist = poissonBinomial(projected.map(p => p.probability));
+    const expected = projected.reduce((a, p) => a + p.probability, 0);
+    const variance = projected.reduce((a, p) => a + p.probability * (1 - p.probability), 0);
+    const sd = Math.sqrt(variance);
+
+    // Guests. Historically MORE guests turn up than are ever flagged in the poll
+    // (119 shown vs 75 flagged over the 2026 season), so a simple
+    // flagged × conversion multiplier is wrong twice: it collapses to zero on
+    // the many weeks nobody flags anyone, and it inflates the weeks they do.
+    // Model it as flagged guests (who reliably come) plus the season's average
+    // *unflagged* surplus, which is the part that shows up regardless.
+    const guestsIndicated = rsvps.reduce((a, r) => a + (r.status === 'yes' ? r.guestCount : 0), 0);
+    const unflaggedPerGame = totalTrackedGames > 0
+      ? Math.max(0, (summary.guestsShown - summary.guestsIndicated) / totalTrackedGames)
+      : 0;
+    const expectedGuests = guestsIndicated + unflaggedPerGame;
+
+    // Everything the panel SHOWS is in total bodies (guests included), because
+    // that is what "how many turned up" means. The Poisson-binomial below is
+    // over rostered players only, so the guest offset is applied to the
+    // threshold before evaluating it against that distribution — mixing the two
+    // scales silently biases every comparison.
+    const median = percentile(turnoutHistoryTotal, 0.5);
+    const p10 = percentile(turnoutHistoryTotal, 0.1);
+
+    // Contribution breakdown by bucket — the "ghosts" line is the whole reason
+    // the projection beats the raw In count.
+    const buckets: RsvpBucket[] = ['yes', 'maybe', 'no', 'silent'];
+    const breakdown = buckets.map(b => {
+      const inBucket = projected.filter(p => p.bucket === b);
+      return {
+        bucket: b,
+        count: inBucket.length,
+        expected: inBucket.reduce((a, p) => a + p.probability, 0),
+        baseRate: base[b],
+        n: base.n[b],
+      };
+    });
+
+    // Below this many tracked games any percentage is theatre — the frontend
+    // shows an explanatory state instead of numbers.
+    const MIN_TRACKED_GAMES = 6;
+
+    res.json({
+      gameId,
+      totalTrackedGames,
+      sufficientData: totalTrackedGames >= MIN_TRACKED_GAMES,
+      expected: expected + expectedGuests,
+      expectedPlayers: expected,
+      expectedGuests,
+      guestsIndicated,
+      unflaggedGuestsPerGame: unflaggedPerGame,
+      low: Math.max(0, expected - sd) + expectedGuests,
+      high: expected + sd + expectedGuests,
+      sd,
+      seasonMedian: median,
+      // "Thin week" threshold: the season's bottom decile, computed not
+      // hard-coded, so it self-calibrates as the club grows or shrinks.
+      thinThreshold: p10,
+      // P(total < p10) evaluated on the player-only distribution by shifting the
+      // threshold down by the expected guests. Guests are treated as a
+      // deterministic offset — we have headcounts, not identified people, so
+      // there is nothing to give a Bernoulli to.
+      probThin: p10 === null ? null : probBelow(dist, Math.max(0, Math.round(p10 - expectedGuests))),
+      breakdown,
+      players: projected.sort((a, b) => b.probability - a.probability),
+    });
+  } catch (error) {
+    console.error('Error computing turnout projection:', error);
+    res.status(500).json({ error: 'Failed to compute turnout projection' });
   }
 });
 

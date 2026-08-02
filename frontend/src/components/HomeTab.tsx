@@ -419,6 +419,21 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
                 onShowLeaderboard={() => setLeaderboardModal({ title: 'Fouls', emoji: '🟥', unit: 'F', entries: data.leaderboards.fouls })}
               />
             )}
+            {/* Own Goal of the Month. Unlike the other awards this section does
+                not render at all in months with none — no "nobody qualified". */}
+            {data.awards.ownGoalOfTheMonth && (
+              <AwardSection
+                title="Own Goal of the Month"
+                titlePlural="Own Goals of the Month"
+                emoji="🥄"
+                statLabel={`${data.awards.ownGoalOfTheMonth[0]?.value ?? 0} Own Goal${(data.awards.ownGoalOfTheMonth[0]?.value ?? 0) === 1 ? '' : 's'}`}
+                awards={data.awards.ownGoalOfTheMonth}
+                onPlayerClick={onPlayerClick}
+                onImageClick={setLightboxImage}
+                noQualifierMessage="No own goals this month."
+                onShowLeaderboard={() => setLeaderboardModal({ title: 'Own Goals', emoji: '🥄', unit: 'OG', entries: data.leaderboards.ownGoals })}
+              />
+            )}
             <AwardSection
               title="Top Scorer"
               titlePlural="Top Scorers"

@@ -1,10 +1,12 @@
 import { CSSProperties, useCallback, useEffect, useState } from 'react';
 import { RsvpStatus, GamePoll, GamePollEntry, fetchGamePoll } from '../api/rsvps';
+import TurnoutProjection from './TurnoutProjection';
 
 interface GameRsvpSectionProps {
   gameId: string;
   // Bump to force a refetch (e.g. after an admin links a number to a player).
   refreshSignal?: number;
+  isAdmin?: boolean;
 }
 
 const STATUS_LABEL: Record<RsvpStatus, string> = { yes: 'In', maybe: 'Maybe', no: 'Out' };
@@ -135,7 +137,7 @@ function AttendeeRow({ entry, status }: { entry: GamePollEntry; status: RsvpStat
   );
 }
 
-export default function GameRsvpSection({ gameId, refreshSignal }: GameRsvpSectionProps) {
+export default function GameRsvpSection({ gameId, refreshSignal, isAdmin = false }: GameRsvpSectionProps) {
   const [poll, setPoll] = useState<GamePoll | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +178,8 @@ export default function GameRsvpSection({ gameId, refreshSignal }: GameRsvpSecti
 
   return (
     <div className="space-y-4">
+      {isAdmin && <TurnoutProjection gameId={gameId} />}
+
       <TotalComingHero inCount={poll.counts.in} guestCount={poll.guestTotal} />
 
       <p className="text-[11px] text-text-tertiary text-center -mt-1">

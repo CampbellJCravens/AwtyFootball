@@ -7,8 +7,15 @@ export interface Goal {
   scorerId: string;
   assisterId: string | null;
   timestamp: string; // ISO date string
+  // The team CREDITED with the goal — for an own goal, the scorer's opponent.
   team: 'color' | 'white' | null;
+  ownGoal?: boolean;
 }
+
+// Own goals credit the opposition, so `team` handles the scoreline. Never
+// credit the scorer's own tally with one.
+export const isScoringGoal = (g: { ownGoal?: boolean }) => !g.ownGoal;
+export const isOwnGoal = (g: { ownGoal?: boolean }) => g.ownGoal === true;
 
 export interface TeamChange {
   playerId: string;

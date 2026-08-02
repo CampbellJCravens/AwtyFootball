@@ -1,4 +1,5 @@
 import prisma from '../prisma';
+import { isScoringGoal, isOwnGoal } from './goals';
 
 // Types mirrored from stats.ts — kept local so this module is self-contained.
 interface GoalData {
@@ -6,6 +7,7 @@ interface GoalData {
   assisterId: string | null;
   timestamp: string;
   team: 'color' | 'white' | null;
+  ownGoal?: boolean;
 }
 
 interface GameEventData {
@@ -80,7 +82,7 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
 
   const allGames = await loadAllGames();
 
-  let wins = 0, ties = 0, goals = 0, assists = 0, gamesPlayed = 0, cleanSheets = 0, totalSportsmanship = 0;
+  let wins = 0, ties = 0, goals = 0, ownGoals = 0, assists = 0, gamesPlayed = 0, cleanSheets = 0, totalSportsmanship = 0;
   let comebackWins = 0, gameWinningGoals = 0;
   const matchResults: ('W' | 'L' | 'T')[] = [];
 
@@ -96,7 +98,8 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     if (result === 'W') wins++;
     else if (result === 'T') ties++;
 
-    goals += game.goals.filter(g => g.scorerId === playerId).length;
+    goals += game.goals.filter(g => g.scorerId === playerId && isScoringGoal(g)).length;
+    ownGoals += game.goals.filter(g => g.scorerId === playerId && isOwnGoal(g)).length;
     assists += game.goals.filter(g => g.assisterId === playerId).length;
 
     const opponentTeam = playerTeam === 'color' ? 'white' : 'color';
@@ -323,6 +326,8 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     { id: 'sportsmanship_10', name: 'Ted Lasso', description: 'Earn 10 sportsmanship points', current: Math.max(0, Math.min(totalSportsmanship, 10)), target: 10 },
     { id: 'comeback_3', name: 'They Had Us in the First Half', description: 'Come back to win after losing at halftime 3 times', current: Math.min(comebackWins, 3), target: 3 },
     { id: 'game_winner', name: 'The Dagger', description: 'Score a game-winning goal', current: Math.min(gameWinningGoals, 1), target: 1 },
+    { id: 'first_own_goal', name: 'Wrong Net', description: 'Score an own goal', current: Math.min(ownGoals, 1), target: 1 },
+    { id: 'own_goals_3', name: 'Sponsored by the Opposition', description: 'Score 3 own goals', current: Math.min(ownGoals, 3), target: 3 },
   ];
 }
 
