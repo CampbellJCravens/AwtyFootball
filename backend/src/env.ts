@@ -24,13 +24,26 @@ export const env = {
   WHATSAPP_LISTENER_ENABLED: process.env.WHATSAPP_LISTENER_ENABLED
     ? process.env.WHATSAPP_LISTENER_ENABLED === 'true'
     : process.env.NODE_ENV === 'production',
-  // Where Baileys auth state lives. "file" keeps creds + signal keys on disk;
-  // "postgres" is the original store. Signal keys rotate constantly, so keeping
-  // them in Postgres held the Neon compute awake 24/7 and burned the compute
-  // quota (outage on 2026-07-29). File is the default; on Render this must
-  // point at a mounted persistent disk or the session dies on every redeploy.
-  WHATSAPP_AUTH_STORE: process.env.WHATSAPP_AUTH_STORE === 'postgres' ? 'postgres' : 'file',
+  // Where Baileys auth state lives. Signal keys rotate constantly, so keeping
+  // them in Postgres held the Neon compute awake 24/7 and burned the monthly
+  // compute quota (outage on 2026-07-29).
+  //   "redis"    — default when REDIS_URL is set. Survives redeploys and keeps
+  //                zero-downtime deploys (unlike a Render disk, which forces the
+  //                old instance to stop before the new one starts).
+  //   "file"     — creds on disk at WHATSAPP_AUTH_DIR. Needs a persistent disk
+  //                on Render or the session dies on every redeploy.
+  //   "postgres" — the original store. Restores the compute burn; escape hatch.
+  WHATSAPP_AUTH_STORE:
+    process.env.WHATSAPP_AUTH_STORE === 'postgres'
+      ? 'postgres'
+      : process.env.WHATSAPP_AUTH_STORE === 'file'
+        ? 'file'
+        : process.env.WHATSAPP_AUTH_STORE === 'redis' || process.env.REDIS_URL
+          ? 'redis'
+          : 'file',
   WHATSAPP_AUTH_DIR: process.env.WHATSAPP_AUTH_DIR || './.wa-auth',
+  // Standard Redis connection string (Upstash, Redis Cloud, self-hosted).
+  REDIS_URL: process.env.REDIS_URL || '',
 };
 
 // Validate required environment variables

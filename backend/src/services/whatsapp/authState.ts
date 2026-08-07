@@ -24,6 +24,7 @@ import type {
 } from '@whiskeysockets/baileys';
 import prisma from '../../prisma';
 import { env } from '../../env';
+import { useRedisAuthState, clearRedisAuthState } from './redisAuthState';
 
 export async function usePostgresAuthState(): Promise<{
   state: AuthenticationState;
@@ -163,6 +164,15 @@ export async function useWhatsappAuthState(): Promise<{
     console.log('[whatsapp] Auth store: postgres (writes keep the DB compute awake)');
     return usePostgresAuthState();
   }
+  if (env.WHATSAPP_AUTH_STORE === 'redis') {
+    if (!env.REDIS_URL) {
+      // Fail rather than silently falling back to a store that would either
+      // re-burn the Neon quota or lose the session on the next deploy.
+      throw new Error('WHATSAPP_AUTH_STORE=redis but REDIS_URL is not set');
+    }
+    console.log('[whatsapp] Auth store: redis');
+    return useRedisAuthState(env.REDIS_URL);
+  }
   const dir = path.resolve(env.WHATSAPP_AUTH_DIR);
   if (process.env.NODE_ENV === 'production' && !process.env.WHATSAPP_AUTH_DIR) {
     console.warn(
@@ -181,6 +191,17 @@ export async function useWhatsappAuthState(): Promise<{
 export async function clearWhatsappAuthState(): Promise<void> {
   if (env.WHATSAPP_AUTH_STORE === 'postgres') {
     await clearPostgresAuthState();
+    return;
+  }
+  if (env.WHATSAPP_AUTH_STORE === 'redis') {
+    if (env.REDIS_URL) await clearRedisAuthState(env.REDIS_URL);
+    // Drop the Postgres copy too, or the next boot re-migrates the dead session
+    // straight back over the fresh one.
+    try {
+      await clearPostgresAuthState();
+    } catch (err) {
+      console.error('[whatsapp] Failed to clear Postgres auth fallback:', err);
+    }
     return;
   }
   const dir = path.resolve(env.WHATSAPP_AUTH_DIR);
