@@ -5,7 +5,10 @@
 export interface MatchGoalLine {
   scorer: string;
   assister: string | null;
+  // The team CREDITED — for an own goal, the scorer's opponent, so the goal
+  // correctly appears in the benefiting team's column.
   team: 'color' | 'white' | null;
+  ownGoal?: boolean;
 }
 
 export interface ManOfTheMatch {
@@ -171,7 +174,7 @@ export async function renderMatchReportImage(data: MatchReportData): Promise<Blo
       ctx.textBaseline = 'middle';
       ctx.fillStyle = COLORS.textPrimary;
       ctx.font = `bold 16px ${FONT_STACK}`;
-      ctx.fillText(truncateToWidth(ctx, g.scorer, colW - 15), x + 13, cy + nameLineH / 2);
+      ctx.fillText(truncateToWidth(ctx, g.ownGoal ? `${g.scorer} (OG)` : g.scorer, colW - 15), x + 13, cy + nameLineH / 2);
       cy += nameLineH;
       if (g.assister) {
         ctx.fillStyle = COLORS.textTertiary;

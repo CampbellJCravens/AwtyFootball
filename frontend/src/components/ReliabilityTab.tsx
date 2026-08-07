@@ -4,7 +4,7 @@ import { fetchReliability, ReliabilityPlayer, ReliabilitySummary } from '../api/
 const MIN_GAMES = 5;   // "In" votes needed to be "qualified"
 const TOP_N = 20;      // focus each leaderboard on the top 20
 
-type SortKey = 'reliability' | 'noShow' | 'ghost' | 'response';
+type SortKey = 'reliability' | 'noShow' | 'converted' | 'ghost' | 'response';
 type SortDir = 'asc' | 'desc';
 type SectionId = 'attendance' | 'guests' | 'qualified' | 'unqualified';
 
@@ -82,6 +82,7 @@ export default function ReliabilityTab() {
     const cmp: Record<SortKey, (a: ReliabilityPlayer, b: ReliabilityPlayer) => number> = {
       reliability: (a, b) => nullLast(a.showWhenCommittedRate) - nullLast(b.showWhenCommittedRate),
       noShow:      (a, b) => a.noShow - b.noShow,
+      converted:   (a, b) => a.converted - b.converted,
       ghost:       (a, b) => a.ghost - b.ghost,
       response:    (a, b) => nullLast(a.responseRate) - nullLast(b.responseRate),
     };
@@ -121,6 +122,7 @@ export default function ReliabilityTab() {
               <th className="py-1.5 px-1 text-left text-text-secondary font-semibold">Player</th>
               <Th k="reliability" label="Rely%" />
               <Th k="noShow" label="No-show" />
+              <Th k="converted" label="Maybe→In" />
               <Th k="ghost" label="Ghost" />
               <Th k="response" label="Resp%" />
             </tr>
@@ -134,6 +136,10 @@ export default function ReliabilityTab() {
                   <span className="text-text-tertiary font-normal text-[10px] ml-0.5">/{p.committed}</span>
                 </td>
                 <td className={`py-1.5 px-1 text-right ${p.noShow > 0 ? 'text-red-400 font-medium' : 'text-text-tertiary'}`}>{p.noShow || '—'}</td>
+                <td className={`py-1.5 px-1 text-right ${p.converted > 0 ? 'text-emerald-400' : 'text-text-tertiary'}`}>
+                  {p.converted || '—'}
+                  {p.maybed > 0 && <span className="text-text-tertiary font-normal text-[10px] ml-0.5">/{p.maybed}</span>}
+                </td>
                 <td className={`py-1.5 px-1 text-right ${p.ghost > 0 ? 'text-blue-400' : 'text-text-tertiary'}`}>{p.ghost || '—'}</td>
                 <td className="py-1.5 px-1 text-right text-text-secondary">{pct(p.responseRate)}</td>
               </tr>
@@ -168,8 +174,32 @@ export default function ReliabilityTab() {
             </div>
           </div>
           <p className="text-[11px] text-text-tertiary">
-            More people turn out than respond — the gap is players who show without RSVPing (<span className="text-blue-400">ghosts</span>), plus guests.
+            More people turn out than respond — the gap is players who show without saying anything at all
+            (<span className="text-blue-400">ghosts</span>), plus guests.
           </p>
+          {summary.baseRates && (
+            <div className="mt-2.5 pt-2.5 border-t border-border">
+              <p className="text-[10px] uppercase tracking-wider text-text-tertiary font-semibold mb-1.5">
+                Show rate by what they said
+              </p>
+              <div className="flex gap-3 flex-wrap">
+                {([
+                  ['Said In', summary.baseRates.yes, summary.baseRates.n.yes, 'text-emerald-400'],
+                  ['Said Maybe', summary.baseRates.maybe, summary.baseRates.n.maybe, 'text-gold'],
+                  ['Said Out', summary.baseRates.no, summary.baseRates.n.no, 'text-red-400'],
+                  ['Said nothing', summary.baseRates.silent, summary.baseRates.n.silent, 'text-blue-400'],
+                ] as const).map(([label, r, n, cls]) => (
+                  <div key={label}>
+                    <p className={`text-base font-bold tabular-nums leading-none ${cls}`}>{Math.round(r * 100)}%</p>
+                    <p className="text-[10px] text-text-tertiary mt-1">{label} <span className="opacity-60">n={n}</span></p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-text-tertiary mt-1.5">
+                A Maybe who turns up has <span className="text-gold">converted</span> — that is not ghosting.
+              </p>
+            </div>
+          )}
         </div>
       )}
 

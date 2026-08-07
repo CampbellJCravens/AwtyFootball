@@ -1,9 +1,9 @@
 import { useState, useMemo, ComponentType } from 'react';
-import { SoccerBall, Handshake, Star, DoorOpen, Warning, IconProps } from '@phosphor-icons/react';
+import { SoccerBall, Handshake, Star, DoorOpen, Warning, ArrowUUpLeft, IconProps } from '@phosphor-icons/react';
 import { Player } from '../api/players';
 
 // Goals are tracked in the parent as Player objects (after restoring from API).
-type GameGoal = { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null };
+type GameGoal = { scorer: Player; assister: Player | null; timestamp: Date; team: 'color' | 'white' | null; ownGoal?: boolean };
 
 interface ActivePlayersSectionProps {
   players: Player[];
@@ -17,6 +17,7 @@ interface ActivePlayersSectionProps {
   onRemoveFromTeam: (playerId: string) => void;
   onSwapTeam: (playerId: string) => void;
   onGoalClick: (player: Player) => void;
+  onOwnGoalClick?: (player: Player) => void;
   onLeaveTeam: (playerId: string) => void;
   onReturnToTeam: (playerId: string) => void;
   onSportsmanshipChange?: (playerId: string, delta: number) => void;
@@ -58,7 +59,7 @@ function StatStack({
   );
 }
 
-// Admin −/+ counter used for both sportsmanship (gold) and fouls (red).
+// Admin −/+ counter used for both sportsmanship (blue) and fouls (red).
 function Stepper({
   value,
   onChange,
@@ -76,7 +77,7 @@ function Stepper({
     <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip={tooltip}>
       <button
         onClick={() => onChange(-1)}
-        className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+        className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
         aria-label={`Decrease ${label}`}
       >-</button>
       <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${value > 0 ? activeClass : 'text-text-tertiary'}`}>
@@ -84,7 +85,7 @@ function Stepper({
       </span>
       <button
         onClick={() => onChange(1)}
-        className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold text-text-secondary hover:bg-surface-hover active:bg-surface-active transition-colors"
+        className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
         aria-label={`Increase ${label}`}
       >+</button>
     </div>
@@ -103,6 +104,7 @@ export default function ActivePlayersSection({
   onRemoveFromTeam: _onRemoveFromTeam,
   onSwapTeam,
   onGoalClick,
+  onOwnGoalClick,
   onLeaveTeam,
   onReturnToTeam,
   onSportsmanshipChange,
@@ -111,15 +113,17 @@ export default function ActivePlayersSection({
 }: ActivePlayersSectionProps) {
   // Pre-aggregate goals/assists per playerId so each row doesn't re-scan.
   const statsByPlayer = useMemo(() => {
-    const m = new Map<string, { goals: number; assists: number }>();
+    const m = new Map<string, { goals: number; ownGoals: number; assists: number }>();
     for (const g of goals) {
       const sId = g.scorer.id;
-      const s = m.get(sId) ?? { goals: 0, assists: 0 };
-      s.goals += 1;
+      const s = m.get(sId) ?? { goals: 0, ownGoals: 0, assists: 0 };
+      // An own goal credits the opposition — never the scorer's own tally.
+      if (g.ownGoal) s.ownGoals += 1;
+      else s.goals += 1;
       m.set(sId, s);
       if (g.assister) {
         const aId = g.assister.id;
-        const a = m.get(aId) ?? { goals: 0, assists: 0 };
+        const a = m.get(aId) ?? { goals: 0, ownGoals: 0, assists: 0 };
         a.assists += 1;
         m.set(aId, a);
       }
@@ -132,12 +136,14 @@ export default function ActivePlayersSection({
     const sportsCount = sportsmanship[playerId] || 0;
     const foulCount = fouls[playerId] || 0;
     const goalCount = s?.goals ?? 0;
+    const ownGoalCount = s?.ownGoals ?? 0;
     const assistCount = s?.assists ?? 0;
     const showLeft = opts?.showLeft;
-    if (!goalCount && !assistCount && !sportsCount && !foulCount && !showLeft) return null;
+    if (!goalCount && !ownGoalCount && !assistCount && !sportsCount && !foulCount && !showLeft) return null;
     return (
       <div className="flex items-center gap-2 flex-shrink-0">
         <StatStack Icon={SoccerBall} count={goalCount} weight="duotone" className="text-text-primary" label="goal" />
+        <StatStack Icon={ArrowUUpLeft} count={ownGoalCount} weight="bold" className="text-red-400" label="own goal" />
         <StatStack Icon={Handshake} count={assistCount} weight="regular" className="text-text-secondary" label="assist" />
         <StatStack Icon={Star} count={sportsCount} weight="fill" className="text-gold" label="sportsmanship" />
         <StatStack Icon={Warning} count={foulCount} weight="fill" className="text-red-400" label="foul" />
@@ -261,7 +267,7 @@ export default function ActivePlayersSection({
                           onChange={delta => onSportsmanshipChange(player.id, delta)}
                           tooltip="Sportsmanship"
                           label="sportsmanship"
-                          activeClass="text-gold"
+                          activeClass="text-blue-400"
                         />
                       )}
                       {isAdmin && onFoulsChange && (
@@ -294,6 +300,16 @@ export default function ActivePlayersSection({
                               <circle cx="12" cy="12" r="4" fill="currentColor"/>
                               <path d="M12 8.5L13.5 11.5L16 12L13.5 12.5L12 15.5L10.5 12.5L8 12L10.5 11.5L12 8.5Z" fill="rgba(0, 0, 0, 0.6)" stroke="rgba(0, 0, 0, 0.8)" strokeWidth="0.3"/>
                             </svg>
+                          </button>
+                        )}
+                        {isAdmin && onOwnGoalClick && (
+                          <button
+                            onClick={() => onOwnGoalClick(player)}
+                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            aria-label="Own goal"
+                            data-tooltip="Own Goal"
+                          >
+                            <ArrowUUpLeft size={18} weight="bold" className="text-red-400" />
                           </button>
                         )}
                         {isAdmin && (
@@ -446,7 +462,7 @@ export default function ActivePlayersSection({
                           onChange={delta => onSportsmanshipChange(player.id, delta)}
                           tooltip="Sportsmanship"
                           label="sportsmanship"
-                          activeClass="text-gold"
+                          activeClass="text-blue-400"
                         />
                       )}
                       {isAdmin && onFoulsChange && (
@@ -479,6 +495,16 @@ export default function ActivePlayersSection({
                               <circle cx="12" cy="12" r="4" fill="currentColor"/>
                               <path d="M12 8.5L13.5 11.5L16 12L13.5 12.5L12 15.5L10.5 12.5L8 12L10.5 11.5L12 8.5Z" fill="rgba(255, 255, 255, 0.6)" stroke="rgba(255, 255, 255, 0.8)" strokeWidth="0.3"/>
                             </svg>
+                          </button>
+                        )}
+                        {isAdmin && onOwnGoalClick && (
+                          <button
+                            onClick={() => onOwnGoalClick(player)}
+                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            aria-label="Own goal"
+                            data-tooltip="Own Goal"
+                          >
+                            <ArrowUUpLeft size={18} weight="bold" className="text-red-400" />
                           </button>
                         )}
                         {isAdmin && (

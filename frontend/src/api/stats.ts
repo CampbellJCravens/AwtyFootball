@@ -129,6 +129,8 @@ export interface MonthlyStatsResponse {
     topDefender: MonthlyAward[] | null;
     sportsmanOfTheMonth: MonthlyAward[] | null;
     dirtiestPlayerOfTheMonth: MonthlyAward[] | null;
+    // null in any month without an own goal — the section is then not rendered.
+    ownGoalOfTheMonth: MonthlyAward[] | null;
     topDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
     topTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;
   };
@@ -140,6 +142,7 @@ export interface MonthlyStatsResponse {
     defensiveRating: LeaderboardEntry[];
     sportsmanship: LeaderboardEntry[];
     fouls: LeaderboardEntry[];
+    ownGoals: LeaderboardEntry[];
   };
 }
 
@@ -794,11 +797,21 @@ export interface ReliabilityPlayer {
   showed: number;
   showedWhenCommitted: number;
   noShow: number;
+  // Four mutually exclusive response buckets. Only silence → showed is a GHOST.
+  // A Maybe who shows has CONVERTED; an Out who shows is a REVERSAL.
+  maybed: number;
+  converted: number;
+  declined: number;
+  reversed: number;
+  silent: number;
   ghost: number;
   guestsBrought: number;
   gamesWithGuests: number;
   responseRate: number | null;         // fractions 0-1, or null when denominator is 0
   showWhenCommittedRate: number | null;
+  convertRate: number | null;
+  reversalRate: number | null;
+  ghostRate: number | null;
   attendanceRate: number | null;
   guestAttachRate: number | null;
 }
@@ -808,6 +821,10 @@ export interface ReliabilitySummary {
   avgTurnout: number;     // avg real players who showed per game
   guestsIndicated: number; // guests flagged in polls (season)
   guestsShown: number;     // guest slots on rosters = guests who showed (season)
+  baseRates: {
+    yes: number; maybe: number; no: number; silent: number;
+    n: { yes: number; maybe: number; no: number; silent: number };
+  };
 }
 
 export interface ReliabilityResponse {
@@ -823,6 +840,56 @@ export async function fetchReliability(): Promise<ReliabilityResponse> {
   });
   if (!response.ok) {
     throw new Error('Failed to fetch reliability stats');
+  }
+  return response.json();
+}
+
+export type RsvpBucket = 'yes' | 'maybe' | 'no' | 'silent';
+
+export interface TurnoutPlayer {
+  id: string;
+  name: string;
+  pictureUrl: string | null;
+  bucket: RsvpBucket;
+  probability: number;   // 0-1
+  n: number;             // games behind their own rate; 0 = pure league prior
+}
+
+export interface TurnoutBreakdown {
+  bucket: RsvpBucket;
+  count: number;
+  expected: number;
+  baseRate: number;
+  n: number;
+}
+
+export interface TurnoutResponse {
+  gameId: string;
+  totalTrackedGames: number;
+  sufficientData: boolean;
+  expected: number;        // players + guests
+  expectedPlayers: number;
+  expectedGuests: number;
+  guestsIndicated: number;
+  unflaggedGuestsPerGame: number;
+  low: number;
+  high: number;
+  sd: number;
+  seasonMedian: number | null;
+  thinThreshold: number | null;  // season bottom decile
+  probThin: number | null;       // P(turnout < thinThreshold)
+  breakdown: TurnoutBreakdown[];
+  players: TurnoutPlayer[];
+}
+
+// Admin-only by design — there is no public turnout payload. A projection shown
+// to the group is self-fulfilling, and per-player show rates would be corrosive.
+export async function fetchTurnout(gameId: string): Promise<TurnoutResponse> {
+  const response = await fetch(`${API_BASE_URL}/stats/turnout/${gameId}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch turnout projection');
   }
   return response.json();
 }

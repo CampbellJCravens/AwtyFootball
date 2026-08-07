@@ -5,32 +5,42 @@ import TimePickerModal from './TimePickerModal';
 interface EditGoalscorerModalProps {
   currentScorer: Player;
   teamPlayers: Player[];
+  // Players on the team that CONCEDED. An own goal is scored by one of them —
+  // the goal stays credited to the team it's already credited to.
+  opposingPlayers: Player[];
   currentGoalTime: Date;
+  isOwnGoal?: boolean;
   onSelectScorer: (scorer: Player) => void;
+  onMarkOwnGoal: (scorer: Player) => void;
   onSkip: () => void;
   onTimeChange: (time: Date) => void;
   onClose: () => void;
 }
 
-export default function EditGoalscorerModal({ currentScorer, teamPlayers, currentGoalTime, onSelectScorer, onSkip, onTimeChange, onClose }: EditGoalscorerModalProps) {
+export default function EditGoalscorerModal({ currentScorer, teamPlayers, opposingPlayers, currentGoalTime, isOwnGoal = false, onSelectScorer, onMarkOwnGoal, onSkip, onTimeChange, onClose }: EditGoalscorerModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [ownGoalMode, setOwnGoalMode] = useState(isOwnGoal);
 
   const getInitial = (name: string) => {
     return name.charAt(0).toUpperCase();
   };
 
   const handlePlayerClick = (player: Player) => {
-    onSelectScorer(player);
+    if (ownGoalMode) onMarkOwnGoal(player);
+    else onSelectScorer(player);
   };
+
+  // In own-goal mode the scorer comes from the conceding team instead.
+  const sourceList = ownGoalMode ? opposingPlayers : teamPlayers;
 
   // Filter and sort players alphabetically
   const filteredAndSortedPlayers = useMemo(() => {
-    const filtered = teamPlayers.filter(player =>
+    const filtered = sourceList.filter(player =>
       player.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
-  }, [teamPlayers, searchQuery]);
+  }, [sourceList, searchQuery]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
@@ -90,7 +100,25 @@ export default function EditGoalscorerModal({ currentScorer, teamPlayers, curren
               </button>
             </div>
           </div>
-          <p className="text-text-secondary text-base">Goal Scored by {currentScorer.name}</p>
+          <p className="text-text-secondary text-base">
+            {ownGoalMode ? 'Own goal — pick who put it in their own net' : `Goal Scored by ${currentScorer.name}`}
+          </p>
+          <button
+            onClick={() => { setOwnGoalMode(v => !v); setSearchQuery(''); }}
+            className={`mt-3 w-full px-4 py-2.5 text-sm font-semibold rounded-xl border transition-colors ${
+              ownGoalMode
+                ? 'bg-red-400/15 border-red-400/60 text-red-400'
+                : 'bg-surface-raised border-border text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            {ownGoalMode ? '✓ Own goal — credited to the other team' : 'This was an own goal'}
+          </button>
+          {ownGoalMode && (
+            <p className="text-text-tertiary text-xs mt-2">
+              The scoreline doesn't change — it stays credited to the team that benefited.
+              Any assist on this goal is removed.
+            </p>
+          )}
         </div>
 
         {/* Scrollable Player List */}
@@ -109,7 +137,7 @@ export default function EditGoalscorerModal({ currentScorer, teamPlayers, curren
           {filteredAndSortedPlayers.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-text-tertiary">
-                {teamPlayers.length === 0
+                {sourceList.length === 0
                   ? 'No players available on this team'
                   : `No players found matching "${searchQuery}"`}
               </p>

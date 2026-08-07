@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { Player } from '../api/players';
-import { Game } from '../api/games';
+import { Game, isOwnGoal } from '../api/games';
 
 
 interface PlayerStats {
@@ -13,6 +13,7 @@ interface PlayerStats {
   pointsPerGame: number; // points / gamesPlayed
   goalInvolvements: number; // goals + assists
   goals: number;
+  ownGoals: number;
   assists: number;
   cleanSheets: number; // games where the opponent scored 0
   sportsmanship: number; // net gold stars minus fouls; can go negative
@@ -29,7 +30,7 @@ interface OverallStatsTableProps {
   currentPlayerId?: string | null;
 }
 
-type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'assists' | 'cleanSheets' | 'sportsmanship' | 'fouls' | 'formWins';
+type SortColumn = 'points' | 'gamesPlayed' | 'wins' | 'losses' | 'ties' | 'goalInvolvements' | 'goals' | 'ownGoals' | 'assists' | 'cleanSheets' | 'sportsmanship' | 'fouls' | 'formWins';
 type SortDirection = 'asc' | 'desc';
 
 
@@ -103,6 +104,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         pointsPerGame: 0,
         goalInvolvements: 0,
         goals: 0,
+        ownGoals: 0,
         assists: 0,
         cleanSheets: 0,
         sportsmanship: 0,
@@ -168,10 +170,12 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
 
       // Process goals and assists
       goals.forEach(goal => {
-        // Count goals
+        // Count goals. An own goal credits the opposing team via goal.team and
+        // must never land in the scorer's own G column.
         if (statsMap.has(goal.scorerId)) {
           const stats = statsMap.get(goal.scorerId)!;
-          stats.goals++;
+          if (isOwnGoal(goal)) stats.ownGoals++;
+          else stats.goals++;
           // Only count GP if they weren't already counted via team assignment
           if (!playersInGame.has(goal.scorerId)) {
             stats.gamesPlayed++;
@@ -281,6 +285,10 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
     );
   }, [players, games]);
 
+  // The OG column only exists if an own goal has actually happened in the
+  // loaded scope — no permanently-empty column in the weeks before the first.
+  const hasOwnGoals = useMemo(() => playerStats.some(s => s.ownGoals > 0), [playerStats]);
+
   // Helper to get per-game value
   const pg = (val: number, gp: number) => gp > 0 ? val / gp : 0;
 
@@ -296,6 +304,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         case 'ties': return perGame ? pg(stats.ties, gp) : stats.ties;
         case 'goalInvolvements': return perGame ? pg(stats.goalInvolvements, gp) : stats.goalInvolvements;
         case 'goals': return perGame ? pg(stats.goals, gp) : stats.goals;
+        case 'ownGoals': return perGame ? pg(stats.ownGoals, gp) : stats.ownGoals;
         case 'assists': return perGame ? pg(stats.assists, gp) : stats.assists;
         case 'cleanSheets': return perGame ? pg(stats.cleanSheets, gp) : stats.cleanSheets;
         case 'sportsmanship': return perGame ? pg(stats.sportsmanship, gp) : stats.sportsmanship;
@@ -312,6 +321,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
       ties: ['points', 'goalInvolvements'],
       goalInvolvements: ['goals', 'points'],
       goals: ['assists', 'points'],
+      ownGoals: ['goals', 'points'],
       assists: ['goals', 'points'],
       cleanSheets: ['wins', 'points'],
       sportsmanship: ['points', 'goalInvolvements'],
@@ -391,6 +401,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
     { key: 'ties', label: 'T', tooltip: 'Ties', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'ties' },
     { key: 'goalInvolvements', label: 'G+A', tooltip: 'Goals + Assists', width: 'w-11', widthPx: 44, sortable: true, sortKey: 'goalInvolvements' },
     { key: 'goals', label: 'G', tooltip: 'Goals', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'goals' },
+    ...(hasOwnGoals ? [{ key: 'ownGoals', label: 'OG', tooltip: 'Own Goals', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'ownGoals' }] : []),
     { key: 'assists', label: 'A', tooltip: 'Assists', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'assists' },
     { key: 'cleanSheets', label: 'CS', tooltip: 'Clean Sheets', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'cleanSheets' },
     { key: 'sportsmanship', label: 'SP', tooltip: 'Net sportsmanship (gold stars minus fouls)', width: 'w-10', widthPx: 40, sortable: true, sortKey: 'sportsmanship' },
@@ -526,6 +537,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.ties, stats.gamesPlayed) * 100)}%` : stats.ties}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goalInvolvements, stats.gamesPlayed).toFixed(2) : stats.goalInvolvements}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
+                        {hasOwnGoals && <td className={`py-1.5 px-1 ${stats.ownGoals > 0 ? 'text-red-400' : 'text-text-tertiary'}`}>{perGame ? pg(stats.ownGoals, stats.gamesPlayed).toFixed(2) : stats.ownGoals}</td>}
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
                         <td className={`py-1.5 px-1 ${stats.sportsmanship < 0 ? 'text-red-400' : 'text-gold'}`}>{perGame ? pg(stats.sportsmanship, stats.gamesPlayed).toFixed(2) : stats.sportsmanship}</td>
@@ -594,6 +606,7 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? `${Math.round(pg(stats.ties, stats.gamesPlayed) * 100)}%` : stats.ties}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goalInvolvements, stats.gamesPlayed).toFixed(2) : stats.goalInvolvements}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.goals, stats.gamesPlayed).toFixed(2) : stats.goals}</td>
+                        {hasOwnGoals && <td className={`py-1.5 px-1 ${stats.ownGoals > 0 ? 'text-red-400' : 'text-text-tertiary'}`}>{perGame ? pg(stats.ownGoals, stats.gamesPlayed).toFixed(2) : stats.ownGoals}</td>}
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.assists, stats.gamesPlayed).toFixed(2) : stats.assists}</td>
                         <td className="py-1.5 px-1 text-text-secondary">{perGame ? pg(stats.cleanSheets, stats.gamesPlayed).toFixed(2) : stats.cleanSheets}</td>
                         <td className={`py-1.5 px-1 ${stats.sportsmanship < 0 ? 'text-red-400' : 'text-gold'}`}>{perGame ? pg(stats.sportsmanship, stats.gamesPlayed).toFixed(2) : stats.sportsmanship}</td>
