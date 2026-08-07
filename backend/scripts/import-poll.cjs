@@ -15,19 +15,33 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
+// Poll "Soccer Saturday - 1Aug", posted Wed 2026-07-29, read from screenshots
+// on 2026-07-31. The listener never captured it (pollCreationMessageV4/V5 fix
+// still undeployed, and Neon was suspended from 07-29), so this is a manual
+// reconstruction of 11 In / 4 Maybe / 4 Out / one +2.
 const CONFIG = {
-  gameId: '34fdb895-d3e9-42b3-9099-887b6e3b1579', // game #30, 2026-07-25
+  gameId: '23b36af8-0b75-4b48-8ab0-def7ec14f603', // game #31, 2026-08-01
   // Roster names, already reconciled against the poll's display names.
+  // Poll label -> roster name, where they differ:
+  //   "You" -> Campbell Cravens          "~Jason.A" -> Jason Arizpe
+  //   "~Joshua" (303 895-7146) -> Josh Jackson   NOT Joshua Tapia
+  //   "~J" (832 659-3930) -> Joseph Garcia
+  //   "~Milad" -> Milad Moradi           "Morgan McCright" -> Morgan-Sean McCright
+  //   "Franco" -> Franco Silva           "~Handsome Corey" -> Corey Rasch
+  //   "~Robert" -> Robert Peresich       "~Nelson junior" -> Junior
   yes: [
-    'Morgan-Sean McCright', 'Campbell Cravens', 'Joshua Tapia', 'Junior',
-    'Brian Karrs', 'Josh Jackson', 'Brian Buhr', 'Milad Moradi',
-    'Joseph Garcia', 'Manny Suarez', 'Eric Saito', 'Marcos Conner',
-    'Rolando Abreu', 'Franco Silva', 'Connor Shannon',
+    'Campbell Cravens', 'Jason Arizpe', 'Josh Jackson', 'Rolando Abreu',
+    'Brian Buhr', 'Joseph Garcia', 'Manny Suarez', 'Tommy El-Gawly',
+    'Franco Silva', 'Milad Moradi', 'Morgan-Sean McCright',
+    'Lammy Lammers', // voted In at 9:11 PM on 07-31, after the first screenshot
   ],
-  maybe: ['Jason Arizpe', 'David Ramos', 'Robert Peresich'],
-  no: ['Siegfried Casar', 'Corey Rasch', 'Tommy El-Gawly'],
+  // Rolando Abreu picked BOTH In and Maybe (multi-select poll, same timestamp).
+  // Counted as In, matching combineSelections() in options.ts: any In wins.
+  maybe: ['Marcos Conner', 'Corey Rasch', 'Robert Peresich'],
+  // "~Jon" +1 (872) 222-9972 = Jon Schwarz, matched on Player.phone.
+  no: ['Siegfried Casar', 'Connor Shannon', 'Junior', 'Jon Schwarz'],
   // Guests brought, by roster name. Only counted on a 'yes' row.
-  guests: { 'Josh Jackson': 1, 'Connor Shannon': 1 },
+  guests: { 'Josh Jackson': 2 },
 };
 
 const WHATSAPP_SOURCE = 'whatsapp';
