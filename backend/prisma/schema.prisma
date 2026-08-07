@@ -41,6 +41,45 @@ model Game {
 
   rsvps           GameRsvp[]
   whatsappPolls   WhatsappPoll[]
+  guestVisits     GuestVisit[]
+}
+
+// A guest who has actually turned up, tracked across games so recurring
+// visitors resolve to one identity (and one dues count). Distinct from the
+// GuestN pool Players, which are per-game slots reused by different humans.
+model Guest {
+  id             String   @id @default(uuid())
+  name           String   // as typed, e.g. "Ricky B"
+  // lower+trimmed. Unique on purpose: a split identity is a silently wrong
+  // dues count, whereas two real Rickys just means typing a surname.
+  normalizedName String   @unique
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  visits         GuestVisit[]
+}
+
+// One guest appearance in one game. slotPlayerId is the GuestN pool Player
+// that carries the guest through teamAssignments/goals/sportsmanship — it
+// stays the in-game token, this row just says who was behind it and who
+// brought them. Both player ids are plain strings, matching how the game JSON
+// fields already store player references.
+model GuestVisit {
+  id           String   @id @default(uuid())
+  gameId       String
+  slotPlayerId String
+  guestId      String?  // null = name skipped
+  hostPlayerId String?  // null = host skipped / unknown
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  game  Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  guest Guest? @relation(fields: [guestId], references: [id], onDelete: SetNull)
+
+  @@unique([gameId, slotPlayerId])
+  @@index([gameId])
+  @@index([guestId])
 }
 
 // Per-game RSVP from a player. Identity is the playerId (claimed via

@@ -6,6 +6,7 @@ import ChemistrySection from './ChemistrySection';
 import LegacyStatsTable from './LegacyStatsTable';
 import FieldStatsTab from './FieldStatsTab';
 import ReliabilityTab from './ReliabilityTab';
+import GuestLedgerTab from './GuestLedgerTab';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchYearlyStats, MonthlyAward } from '../api/stats';
 import { renderYearlyReportImage, YearlyReportData, YearlyAwardItem, YearlyLeaderboard } from '../utils/renderYearlyReportImage';
@@ -19,7 +20,7 @@ interface StatsProps {
   currentPlayerId?: string | null;
 }
 
-type StatsView = 'players' | 'pairings' | 'groups' | 'legacy' | 'field' | 'reliability';
+type StatsView = 'players' | 'pairings' | 'groups' | 'legacy' | 'field' | 'reliability' | 'guests';
 
 export default function Stats({ players, games, onPlayerClick, currentPlayerId }: StatsProps) {
   const { isAdmin } = useAuth();
@@ -132,6 +133,8 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
     { id: 'field', label: 'Field' },
     // Admin-only: RSVP reliability (who says In and actually shows).
     ...(isAdmin ? [{ id: 'reliability' as const, label: 'Reliability' }] : []),
+    // Admin-only: guest appearances, for chasing dues.
+    ...(isAdmin ? [{ id: 'guests' as const, label: 'Guests' }] : []),
   ];
 
   return (
@@ -271,6 +274,10 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
 
         {activeView === 'reliability' && isAdmin && (
           <ReliabilityTab />
+        )}
+
+        {activeView === 'guests' && isAdmin && (
+          <GuestLedgerTab players={players} />
         )}
       </div>
     </div>

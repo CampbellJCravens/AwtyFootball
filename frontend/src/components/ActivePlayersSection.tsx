@@ -1,5 +1,5 @@
 import { useState, useMemo, ComponentType } from 'react';
-import { SoccerBall, Handshake, Star, DoorOpen, Warning, ArrowUUpLeft, IconProps } from '@phosphor-icons/react';
+import { SoccerBall, Handshake, Star, DoorOpen, Warning, ArrowUUpLeft, PencilSimple, IconProps } from '@phosphor-icons/react';
 import { Player } from '../api/players';
 
 // Goals are tracked in the parent as Player objects (after restoring from API).
@@ -23,6 +23,11 @@ interface ActivePlayersSectionProps {
   onSportsmanshipChange?: (playerId: string, delta: number) => void;
   onFoulsChange?: (playerId: string, delta: number) => void;
   isAdmin?: boolean; // Whether user is admin (can modify games)
+  // Resolves a guest's per-game label. Falls back to Player.name, which is what
+  // guest exclusion elsewhere matches on and is never overwritten.
+  displayName?: (player: Player) => string;
+  guestHosts?: Record<string, string>; // slotPlayerId -> host's name
+  onEditGuest?: (slotPlayerId: string) => void;
 }
 
 // Stat badge: stacks a Phosphor icon `count` times with a slight overlap so
@@ -110,7 +115,13 @@ export default function ActivePlayersSection({
   onSportsmanshipChange,
   onFoulsChange,
   isAdmin = true,
+  displayName,
+  guestHosts = {},
+  onEditGuest,
 }: ActivePlayersSectionProps) {
+  const label = (player: Player) => displayName?.(player) ?? player.name;
+  const isGuestSlot = (player: Player) => /^Guest\d+$/.test(player.name.trim());
+
   // Pre-aggregate goals/assists per playerId so each row doesn't re-scan.
   const statsByPlayer = useMemo(() => {
     const m = new Map<string, { goals: number; ownGoals: number; assists: number }>();
@@ -256,10 +267,27 @@ export default function ActivePlayersSection({
                         />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                          {player.name.charAt(0).toUpperCase()}
+                          {label(player).charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                       {!isAdmin && renderStatBadges(player.id)}
                       {isAdmin && onSportsmanshipChange && (
                         <Stepper
@@ -383,10 +411,27 @@ export default function ActivePlayersSection({
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                            {player.name.charAt(0).toUpperCase()}
+                            {label(player).charAt(0).toUpperCase()}
                           </div>
                         )}
-                        <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                        <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                         {!isAdmin && renderStatBadges(player.id, { showLeft: true })}
                         {isAdmin && (
                           <button
@@ -451,10 +496,27 @@ export default function ActivePlayersSection({
                         />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                          {player.name.charAt(0).toUpperCase()}
+                          {label(player).charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                       {!isAdmin && renderStatBadges(player.id)}
                       {isAdmin && onSportsmanshipChange && (
                         <Stepper
@@ -578,10 +640,27 @@ export default function ActivePlayersSection({
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                            {player.name.charAt(0).toUpperCase()}
+                            {label(player).charAt(0).toUpperCase()}
                           </div>
                         )}
-                        <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                        <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                         {!isAdmin && renderStatBadges(player.id, { showLeft: true })}
                         {isAdmin && (
                           <button

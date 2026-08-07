@@ -5,6 +5,7 @@ import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
 import ActivePlayersSection from './ActivePlayersSection';
 import GoalAssistModal from './GoalAssistModal';
+import GuestDetailsModal from './GuestDetailsModal';
 import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TimePickerModal from './TimePickerModal';
@@ -94,7 +95,33 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [pollVersion, setPollVersion] = useState(0); // bump to refresh the RSVP poll view
   const [currentField, setCurrentField] = useState<GameField | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(gameDate);
+  // Guest name + host, keyed by the GuestN pool player holding the slot.
+  const [guestVisits, setGuestVisits] = useState<Record<string, { guestName: string | null; hostPlayerId: string | null }>>({});
+  // Slot awaiting details: `team` is set when the guest is being added (assign
+  // on confirm), null when an existing guest is being edited.
+  const [guestSlotPending, setGuestSlotPending] = useState<{ slotPlayerId: string; team: 'color' | 'white' | null } | null>(null);
   const gameTitle = `${formatDate(currentDate)} - ${formatTime(currentDate)} - ${fieldLabel(currentField)}`;
+
+  // Display label for a guest with a name on them. Falls back to the canonical
+  // Player.name — which is what every guest-exclusion check in the app matches
+  // on, and which this NEVER overwrites.
+  const displayName = useCallback(
+    (player: Player) => guestVisits[player.id]?.guestName?.trim() || player.name,
+    [guestVisits]
+  );
+
+  const isGuestPlayer = useCallback((player: Player) => /^Guest\d+$/.test(player.name.trim()), []);
+
+  // "guest of Sam" subtext, resolved from host id to host name.
+  const guestHostNames = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [slotPlayerId, details] of Object.entries(guestVisits)) {
+      if (!details.hostPlayerId) continue;
+      const host = players.find(p => p.id === details.hostPlayerId);
+      if (host) out[slotPlayerId] = host.name;
+    }
+    return out;
+  }, [guestVisits, players]);
 
   // Load game data and players
   const loadGameData = useCallback(async () => {
@@ -119,7 +146,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       if (gameData.teamAssignments) {
         setPlayerTeams(gameData.teamAssignments);
       }
-      
+
+      setGuestVisits(
+        Object.fromEntries(
+          (gameData.guestVisits ?? []).map(v => [
+            v.slotPlayerId,
+            { guestName: v.guestName, hostPlayerId: v.hostPlayerId },
+          ])
+        )
+      );
+
       // Restore goals - guests are now regular players, so just use playersData
       if (gameData.goals && gameData.goals.length > 0) {
         const allPlayersWithGuests = [...playersData];
@@ -225,6 +261,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         timestamp: event.timestamp.toISOString(),
       }));
 
+      // Only slots still on a team have a visit — dropping a guest from the
+      // roster drops their attribution with them.
+      const guestVisitsData = Object.entries(guestVisits)
+        .filter(([slotPlayerId]) => playerTeams[slotPlayerId])
+        .map(([slotPlayerId, details]) => ({
+          slotPlayerId,
+          guestName: details.guestName,
+          hostPlayerId: details.hostPlayerId,
+        }));
+
       await updateGame(gameId, {
         teamAssignments: playerTeams,
         goals: goalsData,
@@ -232,6 +278,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         gameEvents: gameEventsData,
         sportsmanship,
         fouls,
+        guestVisits: guestVisitsData,
       });
     } catch (err) {
       console.error('Error saving game data:', err);
@@ -239,7 +286,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSaving(false);
     }
-  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls]);
+  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits]);
 
   // Export game data to Google Sheets
   const handleExportToSheets = useCallback(async () => {
@@ -305,8 +352,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         colorScore,
         whiteScore,
         goals: goals.map(g => ({
-          scorer: g.scorer.name,
-          assister: g.assister?.name ?? null,
+          scorer: displayName(g.scorer),
+          assister: g.assister ? displayName(g.assister) : null,
           team: g.team,
           ownGoal: g.ownGoal,
         })),
@@ -332,7 +379,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSharing(false);
     }
-  }, [goals, gameNumber, gameTitle]);
+  }, [goals, gameNumber, gameTitle, displayName]);
 
   // Handle CSV file selection for import
   const handleFileInputChange = useCallback(async () => {
@@ -518,7 +565,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, loading, isAdmin, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits, loading, isAdmin, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -633,12 +680,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // the lowest-numbered guest not already in this game's roster. If all
   // existing guests are already on a team in this game, a new GuestN+1 is
   // created and added to the pool.
+  //
+  // The slot is reserved but NOT assigned to a team until the details modal
+  // resolves — Skip assigns it bare, exactly as this used to behave.
   const handleAddGuest = async (team: 'color' | 'white') => {
     try {
       const inThisGame = new Set(Object.keys(playerTeams));
-      const guestRegex = /^Guest(\d+)$/;
       const allGuests = players
-        .map(p => ({ p, match: p.name.match(guestRegex) }))
+        .map(p => ({ p, match: p.name.match(/^Guest(\d+)$/) }))
         .filter((x): x is { p: Player; match: RegExpMatchArray } => !!x.match)
         .map(({ p, match }) => ({ p, n: parseInt(match[1], 10) }))
         .sort((a, b) => a.n - b.n);
@@ -646,22 +695,41 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const available = allGuests.find(g => !inThisGame.has(g.p.id));
 
       if (available) {
-        setPlayerTeams(prev => ({ ...prev, [available.p.id]: team }));
+        setGuestSlotPending({ slotPlayerId: available.p.id, team });
         return;
       }
 
       // All existing pooled guests are taken in this game — extend the pool.
       const nextNumber = (allGuests[allGuests.length - 1]?.n ?? 0) + 1;
       const newGuest = await createPlayer({ name: `Guest${nextNumber}` });
-      setPlayerTeams(prev => ({ ...prev, [newGuest.id]: team }));
 
       const updatedPlayers = await fetchPlayers();
       setPlayers(updatedPlayers);
       onPlayerAdded?.();
+
+      setGuestSlotPending({ slotPlayerId: newGuest.id, team });
     } catch (err) {
       console.error('Error adding guest:', err);
     }
   };
+
+  // Assigns the pending slot to its team (no-op when editing an existing
+  // guest, whose team is already set) and closes the modal.
+  const commitGuestSlot = (details: { guestName: string | null; hostPlayerId: string | null } | null) => {
+    if (!guestSlotPending) return;
+    const { slotPlayerId, team } = guestSlotPending;
+
+    if (team) {
+      setPlayerTeams(prev => ({ ...prev, [slotPlayerId]: team }));
+    }
+
+    if (details) {
+      setGuestVisits(prev => ({ ...prev, [slotPlayerId]: details }));
+    }
+
+    setGuestSlotPending(null);
+  };
+
 
   // All players (guests are now regular players in the database)
   const allPlayers = players;
@@ -1151,10 +1219,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                                 const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
                                 // goal.team is the team CREDITED, so an own goal
                                 // already reads under the benefiting team.
-                                if (goal.ownGoal) return `(${teamLabel}) ${goal.scorer.name} — own goal`;
+                                if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} — own goal`;
                                 return goal.assister
-                                  ? `(${teamLabel}) ${goal.scorer.name} scored! Assisted by ${goal.assister.name}`
-                                  : `(${teamLabel}) ${goal.scorer.name} scored!`;
+                                  ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}`
+                                  : `(${teamLabel}) ${displayName(goal.scorer)} scored!`;
                               })()}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1284,8 +1352,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                           >
                             <span className="pr-3 flex-1 pl-3">
                               {change.type === 'leave'
-                                ? `${change.player.name} left the game (${change.team === 'color' ? 'Color' : 'White'})`
-                                : `${change.player.name} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
+                                ? `${displayName(change.player)} left the game (${change.team === 'color' ? 'Color' : 'White'})`
+                                : `${displayName(change.player)} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
                             </span>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-text-muted whitespace-nowrap">
@@ -1389,6 +1457,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 });
               }}
               isAdmin={isAdmin}
+              displayName={displayName}
+              guestHosts={guestHostNames}
+              onEditGuest={(slotPlayerId) => setGuestSlotPending({ slotPlayerId, team: null })}
             />
           </div>
         )}
@@ -1433,6 +1504,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             )}
           </button>
         </div>
+      )}
+
+      {/* Guest Details Modal — name + host, both skippable */}
+      {guestSlotPending && (
+        <GuestDetailsModal
+          players={allPlayers}
+          isGuestPlayer={isGuestPlayer}
+          initialName={guestVisits[guestSlotPending.slotPlayerId]?.guestName ?? null}
+          initialHostId={guestVisits[guestSlotPending.slotPlayerId]?.hostPlayerId ?? null}
+          onSave={(details) => commitGuestSlot(details)}
+          onSkip={() => commitGuestSlot(null)}
+          onClose={() => commitGuestSlot(null)}
+        />
       )}
 
       {/* Goal Assist Modal */}

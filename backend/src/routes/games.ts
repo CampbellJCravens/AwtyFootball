@@ -3,6 +3,7 @@ import prisma from '../prisma';
 import { updateGameSchema, UpdateGameInput } from '../schemas/game';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { isOwnGoal } from '../services/goals';
+import { getGuestVisits, replaceGuestVisits } from '../services/guests';
 import { google } from 'googleapis';
 import { env } from '../env';
 import Papa from 'papaparse';
@@ -164,6 +165,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
       gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
       fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
+      guestVisits: await getGuestVisits(id),
     };
 
     res.json(parsedGame);
@@ -228,9 +230,20 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       updateData.field = data.field; // null clears, 'stadium'/'grass' sets
     }
 
-    const game = await prisma.game.update({
-      where: { id },
-      data: updateData,
+    // Guest visits are relational, not a JSON column, so they ride the same
+    // transaction as the game update — the sideline auto-save must not be able
+    // to land a roster without its guest attribution.
+    const game = await prisma.$transaction(async tx => {
+      const updated = await tx.game.update({
+        where: { id },
+        data: updateData,
+      });
+
+      if (data.guestVisits !== undefined) {
+        await replaceGuestVisits(tx, id, data.guestVisits);
+      }
+
+      return updated;
     });
 
     // Parse JSON fields for response
@@ -242,6 +255,7 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
       fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
+      guestVisits: await getGuestVisits(id),
     };
 
     res.json(parsedGame);

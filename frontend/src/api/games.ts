@@ -33,6 +33,25 @@ export interface GameEvent {
 
 export type GameField = 'stadium' | 'grass' | 'cancelled';
 
+// One guest appearance. `slotPlayerId` is the GuestN pool Player that carries
+// the guest through teamAssignments/goals — `guestName` is a display label
+// only and is NEVER written to Player.name (guest exclusion across the app
+// string-matches that name).
+export interface GuestVisit {
+  slotPlayerId: string;
+  guestId: string | null;
+  guestName: string | null;
+  hostPlayerId: string | null;
+}
+
+// What the client sends: the name is unresolved text, the server maps it to a
+// durable Guest identity.
+export interface GuestVisitInput {
+  slotPlayerId: string;
+  guestName: string | null;
+  hostPlayerId: string | null;
+}
+
 export interface Game {
   id: string;
   gameNumber: number | null; // Can be null for existing games before migration
@@ -45,9 +64,11 @@ export interface Game {
   sportsmanship?: Record<string, number>;
   fouls?: Record<string, number>;
   field?: GameField | null;
+  guestVisits?: GuestVisit[]; // only returned by fetchGame/updateGame, not the list
 }
 
 export interface UpdateGameData {
+  guestVisits?: GuestVisitInput[];
   teamAssignments?: Record<string, 'color' | 'white'>;
   goals?: Goal[];
   teamChanges?: TeamChange[];

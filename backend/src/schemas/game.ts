@@ -24,7 +24,18 @@ export const gameEventSchema = z.object({
   timestamp: z.string(), // ISO date string
 });
 
+// One guest appearance. slotPlayerId is the GuestN pool Player carrying the
+// guest through teamAssignments/goals; guestName resolves server-side to a
+// durable Guest identity. Both guestName and hostPlayerId are nullable —
+// naming a guest and crediting a host are each skippable at the sideline.
+export const guestVisitSchema = z.object({
+  slotPlayerId: z.string(),
+  guestName: z.string().trim().min(1).max(60).nullable(),
+  hostPlayerId: z.string().nullable(),
+});
+
 export const updateGameSchema = z.object({
+  guestVisits: z.array(guestVisitSchema).optional(),
   teamAssignments: z.record(z.enum(['color', 'white'])).optional(),
   goals: z.array(goalSchema).optional(),
   teamChanges: z.array(teamChangeSchema).optional(),
@@ -37,5 +48,6 @@ export const updateGameSchema = z.object({
 });
 
 export type Goal = z.infer<typeof goalSchema>;
+export type GuestVisit = z.infer<typeof guestVisitSchema>;
 export type UpdateGameInput = z.infer<typeof updateGameSchema>;
 
