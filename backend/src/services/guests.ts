@@ -79,6 +79,39 @@ export async function getGuestVisits(gameId: string): Promise<GuestVisitDto[]> {
   }));
 }
 
+export interface GuestSummary {
+  id: string;
+  name: string;
+  lastSeen: string | null;
+}
+
+// Guests most-recently-seen first, so the details modal can offer the people
+// actually doing the rounds before anything is typed.
+export async function listGuests(): Promise<GuestSummary[]> {
+  const guests = await prisma.guest.findMany({
+    select: {
+      id: true,
+      name: true,
+      visits: { select: { game: { select: { createdAt: true } } } },
+    },
+  });
+
+  return guests
+    .map(g => {
+      const latest = g.visits.reduce<Date | null>(
+        (max, v) => (!max || v.game.createdAt > max ? v.game.createdAt : max),
+        null
+      );
+      return { id: g.id, name: g.name, lastSeen: latest?.toISOString() ?? null };
+    })
+    .sort((a, b) => {
+      if (a.lastSeen && b.lastSeen) return b.lastSeen.localeCompare(a.lastSeen);
+      if (a.lastSeen) return -1;
+      if (b.lastSeen) return 1;
+      return a.name.localeCompare(b.name);
+    });
+}
+
 export interface GuestLedgerRow {
   guestId: string | null; // null = the aggregate row for unnamed guests
   name: string;

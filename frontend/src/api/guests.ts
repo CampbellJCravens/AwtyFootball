@@ -3,6 +3,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
 export interface Guest {
   id: string;
   name: string;
+  lastSeen: string | null; // most recent game they appeared in; drives ordering
 }
 
 export interface GuestLedgerRow {

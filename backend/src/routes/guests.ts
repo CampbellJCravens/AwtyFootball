@@ -1,19 +1,15 @@
 import { Router, Response } from 'express';
-import prisma from '../prisma';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
-import { computeGuestLedger } from '../services/guests';
+import { computeGuestLedger, listGuests } from '../services/guests';
 
 const router = Router();
 
-// GET /api/guests - autocomplete source for the guest-details modal, so a
-// returning guest resolves to their existing identity instead of a new one.
+// GET /api/guests - source for the guest-details modal, most-recently-seen
+// first, so a returning guest resolves to their existing identity instead of a
+// near-duplicate.
 router.get('/', requireAdmin, async (_req: AuthenticatedRequest, res: Response) => {
   try {
-    const guests = await prisma.guest.findMany({
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
-    res.json(guests);
+    res.json(await listGuests());
   } catch (error) {
     console.error('Error fetching guests:', error);
     res.status(500).json({ error: 'Failed to fetch guests' });

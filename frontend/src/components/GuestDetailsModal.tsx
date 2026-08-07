@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Player } from '../api/players';
 import { Guest, fetchGuests } from '../api/guests';
 
+const RECENT_LIMIT = 8; // shown before anything is typed
+const MATCH_LIMIT = 5;  // shown while typing
+
 interface GuestDetailsModalProps {
   players: Player[];
   isGuestPlayer: (player: Player) => boolean;
@@ -35,13 +38,18 @@ export default function GuestDetailsModal({
 
   // Suggestions exist so a returning guest resolves to their existing identity
   // rather than a near-duplicate — that identity is what the dues count rides on.
+  // With nothing typed we offer the most recent guests outright (the API sorts
+  // them that way), so a regular is one tap and never gets retyped into a
+  // duplicate that would split their dues count.
   const suggestions = useMemo(() => {
     const q = name.trim().toLowerCase();
-    if (!q) return [];
+    if (!q) return knownGuests.slice(0, RECENT_LIMIT);
     return knownGuests
       .filter(g => g.name.toLowerCase().includes(q) && g.name.toLowerCase() !== q)
-      .slice(0, 5);
+      .slice(0, MATCH_LIMIT);
   }, [name, knownGuests]);
+
+  const suggestionLabel = name.trim() ? 'Been before?' : 'Recent guests';
 
   // Hosts: any non-guest player. Prior members stay selectable — a former
   // member can still bring a mate, and excluding them would just lose the host.
@@ -118,7 +126,7 @@ export default function GuestDetailsModal({
             />
             {suggestions.length > 0 && (
               <div className="mt-2">
-                <p className="text-xs text-text-tertiary mb-1">Been before?</p>
+                <p className="text-xs text-text-tertiary mb-1">{suggestionLabel}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {suggestions.map(g => (
                     <button
