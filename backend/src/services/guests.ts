@@ -118,13 +118,14 @@ export async function listGuests(): Promise<GuestSummary[]> {
 // billed.
 export const FREE_TRIAL_VISITS = 2;
 
-// Dues are collected in October for the year ahead, so the dues year runs
-// 1 Oct -> 30 Sep and is labelled by the year it covers: a game in Oct 2026
-// belongs to dues year 2027.
-export const DUES_YEAR_START_MONTH = 10; // October, 1-indexed
+// The dues year IS the calendar year (owner, 2026-08-08). Collection for the
+// year ahead opens in October and is allowed to run through December, but that
+// is a payment window, not the boundary: a game in Oct 2026 belongs to dues
+// year 2026, which was paid for back in late 2025.
+export const DUES_COLLECTION_OPENS_MONTH = 10; // October, 1-indexed
+export const DUES_COLLECTION_CLOSES_MONTH = 12; // December, soft deadline
 
-export const duesYearOf = (date: Date): number =>
-  date.getMonth() + 1 >= DUES_YEAR_START_MONTH ? date.getFullYear() + 1 : date.getFullYear();
+export const duesYearOf = (date: Date): number => date.getFullYear();
 
 export interface GuestLedgerRow {
   guestId: string | null; // null = the aggregate row for unnamed guests
