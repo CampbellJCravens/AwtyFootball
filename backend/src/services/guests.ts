@@ -112,18 +112,28 @@ export async function listGuests(): Promise<GuestSummary[]> {
     });
 }
 
-// A guest's first two games are free — the trial that lets them see whether
-// they like the group. Everything after is charged per game. Lifetime, not
-// per-year: the trial is about a person deciding once, not an annual reset.
+// A guest's first two games each dues year are free — the trial that lets them
+// see whether they like the group. Everything after is charged per game. The
+// allowance RESETS each dues year, so a guest who comes twice a year is never
+// billed.
 export const FREE_TRIAL_VISITS = 2;
+
+// Dues are collected in October for the year ahead, so the dues year runs
+// 1 Oct -> 30 Sep and is labelled by the year it covers: a game in Oct 2026
+// belongs to dues year 2027.
+export const DUES_YEAR_START_MONTH = 10; // October, 1-indexed
+
+export const duesYearOf = (date: Date): number =>
+  date.getMonth() + 1 >= DUES_YEAR_START_MONTH ? date.getFullYear() + 1 : date.getFullYear();
 
 export interface GuestLedgerRow {
   guestId: string | null; // null = the aggregate row for unnamed guests
   name: string;
   visits: number;
-  // Games chargeable at the per-game rate: visits beyond the free trial.
-  // Null on the unnamed aggregate, where the count spans unknown people and
-  // subtracting one trial from the pile would be meaningless.
+  // Games chargeable at the per-game rate: visits beyond the free trial,
+  // summed across dues years because the allowance resets annually. Null on
+  // the unnamed aggregate, where the count spans unknown people and deducting
+  // one trial from the pile would be meaningless.
   billableVisits: number | null;
   firstSeen: string | null;
   lastSeen: string | null;
@@ -188,11 +198,27 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
 
     const isUnnamed = key === '__unnamed__';
 
+    // The trial resets annually, so the allowance is deducted once per dues
+    // year rather than once ever. Someone who turns up twice every year is
+    // never billable; deducting a single lifetime trial would have billed them
+    // for every year but their first.
+    const visitsByDuesYear = new Map<number, number>();
+    for (const gameId of entry.gameIds) {
+      const date = gameDates.get(gameId);
+      if (!date) continue;
+      const year = duesYearOf(date);
+      visitsByDuesYear.set(year, (visitsByDuesYear.get(year) ?? 0) + 1);
+    }
+    let billableVisits = 0;
+    for (const count of visitsByDuesYear.values()) {
+      billableVisits += Math.max(0, count - FREE_TRIAL_VISITS);
+    }
+
     rows.push({
       guestId: isUnnamed ? null : key,
       name: entry.name,
       visits: entry.gameIds.size,
-      billableVisits: isUnnamed ? null : Math.max(0, entry.gameIds.size - FREE_TRIAL_VISITS),
+      billableVisits: isUnnamed ? null : billableVisits,
       firstSeen: dates[0]?.toISOString() ?? null,
       lastSeen: dates[dates.length - 1]?.toISOString() ?? null,
       usualHostId,

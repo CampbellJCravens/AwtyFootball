@@ -1,8 +1,14 @@
 # PRD — Guest Dues Settlement
 
-Status: **DRAFT — awaiting sign-off.** Blocking open question in Q1: whether this
-covers guest per-game charges only, or member annual dues too. That answer
-changes the size of this by an order of magnitude.
+Status: **SUPERSEDED 2026-08-07 by `CLUB_DUES_PRD.md`.** Q1 was answered — dues
+tracking covers the whole group, not just guests — so guest settlement becomes
+a subset of the club-wide spec rather than its own feature. Kept for the
+settlement-log design (date-cutoff model, two-clocks framing), which carries
+over. **Do not build from this document; build from `CLUB_DUES_PRD.md`.**
+
+⚠️ Also outdated here: this draft assumed the free trial was **lifetime**. The
+owner confirmed it is **annual** (resets each dues year). The shipped code and
+`CLUB_DUES_PRD.md` reflect the annual rule.
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-07
 Deadline: **October 2026** — the annual collection moment.
