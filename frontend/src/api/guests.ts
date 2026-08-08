@@ -10,6 +10,7 @@ export interface GuestLedgerRow {
   guestId: string | null; // null = the aggregate row for unnamed guests
   name: string;
   visits: number;
+  billableVisits: number | null; // visits beyond the free trial; null on the unnamed row
   firstSeen: string | null;
   lastSeen: string | null;
   usualHostId: string | null;

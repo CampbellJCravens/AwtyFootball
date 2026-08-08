@@ -112,10 +112,19 @@ export async function listGuests(): Promise<GuestSummary[]> {
     });
 }
 
+// A guest's first two games are free — the trial that lets them see whether
+// they like the group. Everything after is charged per game. Lifetime, not
+// per-year: the trial is about a person deciding once, not an annual reset.
+export const FREE_TRIAL_VISITS = 2;
+
 export interface GuestLedgerRow {
   guestId: string | null; // null = the aggregate row for unnamed guests
   name: string;
   visits: number;
+  // Games chargeable at the per-game rate: visits beyond the free trial.
+  // Null on the unnamed aggregate, where the count spans unknown people and
+  // subtracting one trial from the pile would be meaningless.
+  billableVisits: number | null;
   firstSeen: string | null;
   lastSeen: string | null;
   usualHostId: string | null;
@@ -177,10 +186,13 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
       }
     }
 
+    const isUnnamed = key === '__unnamed__';
+
     rows.push({
-      guestId: key === '__unnamed__' ? null : key,
+      guestId: isUnnamed ? null : key,
       name: entry.name,
       visits: entry.gameIds.size,
+      billableVisits: isUnnamed ? null : Math.max(0, entry.gameIds.size - FREE_TRIAL_VISITS),
       firstSeen: dates[0]?.toISOString() ?? null,
       lastSeen: dates[dates.length - 1]?.toISOString() ?? null,
       usualHostId,
