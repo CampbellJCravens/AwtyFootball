@@ -81,7 +81,7 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
       <div className="border border-border rounded-xl bg-surface/40 px-3 py-2.5">
         <p className="text-[11px] text-text-tertiary">
           Appearances by guest across all games. A guest in two slots in one game still counts once.
-          <strong className="text-text-secondary"> Billable = visits beyond the 2 free games allowed each dues year (Oct–Sep).</strong>
+          <strong className="text-text-secondary"> Billable = visits beyond the 2 free games allowed each dues year (Jan–Dec).</strong>
           {' '}Unnamed visits can't count toward anyone's trial, so they never become billable.
           {unnamedTotal > 0 && ` ${namedTotal} named · ${unnamedTotal} unnamed.`}
         </p>
@@ -99,7 +99,7 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
             <tr className="text-text-tertiary text-[11px] uppercase tracking-wide">
               <th className="text-left font-medium py-2 pr-2">Guest</th>
               <th className="text-right font-medium py-2 px-2">Visits</th>
-              <th className="text-right font-medium py-2 px-2" title="Visits beyond the 2 free trial games each dues year">Billable</th>
+              <th className="text-right font-medium py-2 px-2" title="Visits beyond the 2 free trial games each dues year (Jan-Dec)">Billable</th>
               <th className="text-left font-medium py-2 px-2 whitespace-nowrap">First</th>
               <th className="text-left font-medium py-2 px-2 whitespace-nowrap">Last</th>
               <th className="text-left font-medium py-2 pl-2">Usual host</th>

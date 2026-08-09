@@ -31,6 +31,7 @@ export const createPlayerSchema = z.object({
   phone: phoneSchema,
   onRoster: z.boolean().optional(),
   isAlumni: z.boolean().optional(),
+  memberSince: z.number().int().min(1900).max(2100).nullable().optional(),
 });
 
 export const updatePlayerSchema = z.object({
@@ -40,6 +41,7 @@ export const updatePlayerSchema = z.object({
   phone: phoneSchema,
   onRoster: z.boolean().optional(),
   isAlumni: z.boolean().optional(),
+  memberSince: z.number().int().min(1900).max(2100).nullable().optional(),
 });
 
 export type CreatePlayerInput = z.infer<typeof createPlayerSchema>;

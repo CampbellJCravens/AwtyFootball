@@ -29,6 +29,7 @@ export interface DuesPaymentDto {
 }
 
 export interface DuesMemberRow {
+  entryId: string;
   playerId: string;
   name: string;
   onRoster: boolean;
@@ -150,6 +151,7 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
     const owed = D(entry.amountOwed);
     const paid = paidByPlayer.get(entry.playerId) ?? ZERO;
     return {
+      entryId: entry.id,
       playerId: entry.playerId,
       name: player?.name ?? '(deleted player)',
       onRoster: player?.onRoster ?? false,
