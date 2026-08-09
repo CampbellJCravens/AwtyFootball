@@ -79,18 +79,18 @@ function Stepper({
   activeClass: string;
 }) {
   return (
-    <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip={tooltip}>
+    <div className="flex items-center gap-0.5 flex-shrink-0" data-tooltip={tooltip}>
       <button
         onClick={() => onChange(-1)}
-        className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
+        className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
         aria-label={`Decrease ${label}`}
       >-</button>
-      <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${value > 0 ? activeClass : 'text-text-tertiary'}`}>
+      <span className={`text-sm font-semibold min-w-[1rem] text-center tabular-nums ${value > 0 ? activeClass : 'text-text-tertiary'}`}>
         {value}
       </span>
       <button
         onClick={() => onChange(1)}
-        className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
+        className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
         aria-label={`Increase ${label}`}
       >+</button>
     </div>
@@ -289,6 +289,9 @@ export default function ActivePlayersSection({
                         )}
                       </div>
                       {!isAdmin && renderStatBadges(player.id)}
+                    </div>
+                    {isAdmin && (
+                    <div className="flex flex-wrap items-center justify-end gap-1 mt-1.5 pt-1.5 border-t border-border">
                       {isAdmin && onSportsmanshipChange && (
                         <Stepper
                           value={sportsmanship[player.id] || 0}
@@ -311,7 +314,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Goal"
                             data-tooltip="Goal"
                           >
@@ -333,22 +336,22 @@ export default function ActivePlayersSection({
                         {isAdmin && onOwnGoalClick && (
                           <button
                             onClick={() => onOwnGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Own goal"
                             data-tooltip="Own Goal"
                           >
-                            <ArrowUUpLeft size={18} weight="bold" className="text-red-400" />
+                            <ArrowUUpLeft size={20} weight="bold" className="text-red-400" />
                           </button>
                         )}
                         {isAdmin && (
                           <button
                             onClick={() => onSwapTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Swap"
                             data-tooltip="Swap Team"
                           >
                             <svg
-                              className="w-4 h-4 text-text-primary"
+                              className="w-5 h-5 text-text-primary"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -366,7 +369,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onLeaveTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
                             aria-label="Mark player as left"
                             data-tooltip="Player left"
                           >
@@ -388,6 +391,7 @@ export default function ActivePlayersSection({
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
                 ))
               )}
@@ -518,6 +522,9 @@ export default function ActivePlayersSection({
                         )}
                       </div>
                       {!isAdmin && renderStatBadges(player.id)}
+                    </div>
+                    {isAdmin && (
+                    <div className="flex flex-wrap items-center justify-end gap-1 mt-1.5 pt-1.5 border-t border-border">
                       {isAdmin && onSportsmanshipChange && (
                         <Stepper
                           value={sportsmanship[player.id] || 0}
@@ -540,7 +547,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Goal"
                             data-tooltip="Goal"
                           >
@@ -562,22 +569,22 @@ export default function ActivePlayersSection({
                         {isAdmin && onOwnGoalClick && (
                           <button
                             onClick={() => onOwnGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Own goal"
                             data-tooltip="Own Goal"
                           >
-                            <ArrowUUpLeft size={18} weight="bold" className="text-red-400" />
+                            <ArrowUUpLeft size={20} weight="bold" className="text-red-400" />
                           </button>
                         )}
                         {isAdmin && (
                           <button
                             onClick={() => onSwapTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Swap"
                             data-tooltip="Swap Team"
                           >
                             <svg
-                              className="w-4 h-4 text-text-primary"
+                              className="w-5 h-5 text-text-primary"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -595,7 +602,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onLeaveTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
                             aria-label="Mark player as left"
                             data-tooltip="Player left"
                           >
@@ -617,6 +624,7 @@ export default function ActivePlayersSection({
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
                 ))
               )}
