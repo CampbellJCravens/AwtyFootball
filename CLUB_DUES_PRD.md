@@ -407,16 +407,46 @@ Player → guest.
 Answers the truncated question from 2026-08-07 and PRD Q6 of the settlement
 spec.
 
-Conversion creates a `Player` and links the `Guest` to it (`Guest.playerId`).
-Two decisions this forces, both flagged in Open questions:
+Conversion creates a `Player` and links the `Guest` to it via a **new
+`Guest.playerId` field — which does not exist yet.** Phase 3 therefore needs a
+schema change, unlike Phases 0–2b.
 
-- **Does their on-pitch history migrate?** It now *can* — `GuestVisit` records
-  which human held which slot in which game, so their goals and assists are
-  recoverable. But migrating rewrites historical leaderboards, and putting them
-  on rosters they never RSVP'd for makes them look like a serial ghost.
-  *Recommend: migrate the on-pitch record, exclude pre-membership games from
-  reliability denominators.*
-- **Does joining settle the guest debt?** Policy, not code.
+**Both policy questions RESOLVED 2026-08-08 (owner):**
+
+- ✅ **On-pitch history migrates, reliability does not.** Goals and assists move
+  onto the new `Player` record; games played before membership are **excluded
+  from reliability denominators**, so a convert doesn't read as a serial ghost
+  for games they were never asked to RSVP to. `GuestVisit` makes this possible —
+  it records which human held which slot in which game.
+- ✅ **Joining wipes the guest balance.** Membership covers it. This is the
+  pitch — *"pay the $175 and we're square"* — and it is what makes uncapped
+  guest charging work as a conversion lever rather than just a debt.
+
+### What that costs, and why it is not free
+
+Migrating goals means **rewriting `Game.goals` JSON on historical games**, remapping
+`scorerId`/`assisterId` from the `GuestN` slot id to the new player id. That is a
+mutation of finished match records, and it moves season totals, chemistry
+pairings and MOTM. Consequences to respect when building it:
+
+- **Back up every touched game's JSON before writing**, and make the whole
+  conversion one `$transaction`.
+- **Dry-run pass first**, per standing practice for bulk prod writes.
+- **It is not cleanly reversible** once leaderboards have been recomputed and
+  seen — the backup is the undo.
+- The reliability exclusion needs a "member since" boundary per converted
+  player, which `Guest.playerId` plus the new `Player.memberSince` can carry.
+
+### Sequencing — there is nothing to convert yet
+
+As of 2026-08-08 production holds **one named guest (Ricky), one visit, zero
+billable games, zero conversion candidates.** The prompt fires at 6 billable
+games — the 8th visit in a dues year — so the first real case is months away.
+
+**Recommend building this after the October collection**, not before. October is
+the fixed deadline and its screens are still unsmoked; conversion has no pending
+cases and would be built entirely on speculation. The decisions above are the
+perishable part and they are now recorded.
 
 ## Smallest viable cut — SELECTED 2026-08-08
 
