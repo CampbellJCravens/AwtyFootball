@@ -99,6 +99,11 @@ model DuesRosterEntry {
   exemption  String?   // "alumni" | "discount:top_scorer" | … ; null = pays full
   note       String?   // per person per year, independent of any payment
   joinedAt   DateTime? // null = present when the year opened
+  // Left the group during this dues year. Separate from `exemption` on purpose:
+  // exemption is a pricing reason (alumni, and later the top-scorer discount),
+  // leaving is a lifecycle event, and one must never overwrite the other.
+  // Person-level fact is Player.onRoster = false; this is the per-year fact.
+  leftAt     DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 

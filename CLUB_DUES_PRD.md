@@ -652,10 +652,202 @@ balance arithmetic. All five, three to four days.
 6. **What does the achievement celebrate?** Consecutive years, or total? Does a
    gap year reset it? *Recommend total years, no reset — a gap year is life,
    not failure, and the Highlander already covers the streak flavour.*
-7. **Does paying dues auto-flip `onRoster` for next season?** Recommend
-   proposing it in the UI with a confirm, never silently. Note: with
-   installments, "paid" for this purpose should mean balance ≤ 0, not
-   "has any payment".
+7. ~~**Does paying dues auto-flip `onRoster` for next season?**~~ **Yes, proposed
+   with a confirm, never silent** (2026-08-10). "Paid" means balance ≤ 0, not
+   "has any payment". Offered as an end-of-collection sweep rather than a
+   per-payment prompt — October is worked in passes, so "31 paid in full, roll
+   them into 2027?" is one decision instead of thirty-one.
+
+---
+
+## Roster lifecycle — decided 2026-08-10
+
+The October loop the owner described: paying in full keeps you on next season's
+roster and your player card stays with the roster; leaving takes you off it and
+moves the card to prior members. Three of the four pieces did not exist.
+
+**What "Sync roster" actually does, since it was assumed to do this.** It runs
+roster → dues list, not payment → roster: `openDuesYear()` copies every
+`onRoster: true` player into the year's snapshot, skipping `GuestN` slots, with
+alumni at 0. Nothing in the app has ever written `onRoster` except the hand
+toggle in `EditPlayerModal`.
+
+### Leaving — `amountOwed = amountPaid`
+
+**People who leave are leaving the city, and dues are not refunded** (owner,
+2026-08-10) unless they tell him within a few weeks, which is rare enough to be
+a manual correction rather than a feature.
+
+One rule covers every case, and it *is* "I keep the dues" written into the
+ledger:
+
+| Situation | Owed becomes | Balance | Reads as |
+|---|---|---|---|
+| Paid in full, then leaves | unchanged | 0 | Settled |
+| Part paid $75 of $150, then leaves | $75 | 0 | Settled — kept |
+| Never paid, then leaves | $0 | 0 | Not billed |
+
+A flat zero-out was the first proposal and was **wrong**: it would have made
+every part-payer read as having overpaid by what they'd handed over.
+
+Consequences:
+
+- **Never a delete.** A deleted row makes reinstatement indistinguishable from a
+  fresh join, and people who leave do come back.
+- **The original bill is auto-noted** — *"Left — billed $150.00, kept $75.00"* —
+  because the flip otherwise destroys what they were billed, against success
+  criterion 8.
+- **Refunds are out of scope.** The only mechanism today is deleting the payment
+  row, which erases the record that money moved; `recordPayment` rejects
+  amounts ≤ 0, so there are no negative payments. The Left confirm states what
+  it is keeping so the choice is visible: *"Keeping the $75 paid. Refunding
+  instead? Delete the payment first."*
+- **`onRoster` flips to false**, so the next year's sync never picks them up.
+  That is the whole "removed from next season's roster" ask.
+
+### Alumni and Left are separate statuses (owner, 2026-08-10)
+
+They must never share a bucket, and this **corrects the "no schema change"
+estimate given earlier in the discussion**. `exemption` is a *pricing reason*
+and is destined to hold `discount:top_scorer` in 2028; leaving is a *lifecycle
+event*. Stacking them collides — an alumnus who leaves would overwrite
+`'alumni'` with `'left'` and lose why they were at zero.
+
+So: one nullable column, `DuesRosterEntry.leftAt DateTime?`. Person-level fact
+stays `Player.onRoster = false`; year-level fact is `leftAt`. No `leftAt` on
+`Player` — leaving is recorded against the year it happened in.
+
+`classify()` gains the entry and a precedence order: `leftAt` set → `left`,
+else zero owed → `exempt`, else the existing paid/partial/unpaid. Six chips, and
+`left` rows sit behind their own chip rather than cluttering the working list.
+Leavers are also excluded from `totals.billed`.
+
+### Defect — zero-owed rows swallow payments
+
+`classify()` tests `owed.isZero()` **before** it looks at what was paid, so any
+payment against a zero-owed row renders as "Alumni · Not billed" with a balance
+of `—`, while `totals.amountCollected` silently adds it to the progress bar.
+Money recorded, row says otherwise, progress bar disagrees with the row.
+
+This is live today for **an alumnus who chips in voluntarily**; it is not
+introduced by the Left work, it is merely made routine by it. Falls through to
+`overpaid` instead.
+
+### Adding people mid-year — the missing door
+
+`DuesRosterEntry` rows are created in exactly one place, the bulk `createMany`
+inside `openDuesYear`. There is no single-person add and no delete, so the only
+way to bill a new or returning member is Players tab → set Current → Dues tab →
+Sync roster. It works, and it is neither discoverable nor correct: everyone
+lands at full `memberAmount`, and **`joinedAt` is never written by anything**
+despite being in the schema, returned by the API, and rendered on the row.
+
+Q5's pro-rata rule is in the same state — `monthsRemainingInDuesYear` and
+`isProrataWindow` are written, exported, and **called by nothing**. Both are
+waiting on an add-person flow.
+
+`POST /api/dues/:year/entry` is that flow, and it doubles as the reinstate path
+for someone who left and later decides to pay: it must restore `amountOwed`
+rather than merely accept the payment, or the defect above swallows it.
+
+**Where `joinedAt` gets captured — three points, decided 2026-08-10.**
+
+1. **The add-person modal**, as a date defaulting to today, sitting directly
+   above the amount. It is the input that decides whether the pro-rata rule
+   fires, so changing it re-computes the amount hint off `isProrataWindow`, and
+   in Oct–Dec it triggers the "bill for next year instead?" offer. Default plus
+   editable also covers backfilling someone who actually joined in March.
+2. **`openDuesYear` stamps it**, for anyone added once `config.openedAt` is
+   already set. This closes a hole that would otherwise be hit within a week:
+   Sync roster is the button the owner will actually reach for when someone new
+   turns up, and today it would file them as founding members at full price
+   with no join date. The first sync of a year runs while `openedAt` is still
+   null, so the founding cohort correctly stays null; every sync after it is by
+   definition mid-year. No new input, one conditional.
+3. **`PATCH /api/dues/entry/:id` accepts it**, for correcting a date after the
+   fact. The route already takes `amountOwed`, `exemption` and `note`.
+
+**`joinedAt` is not `memberSince` and must not be merged into it.**
+
+| | Lives on | Means | Drives |
+|---|---|---|---|
+| `joinedAt` | `DuesRosterEntry`, per year | joined *this* dues year mid-flight | pro-rata, this year's bill |
+| `memberSince` | `Player`, permanent | first dues year ever | tenure stat, future achievement |
+
+Someone who leaves in 2027 and returns in 2029 gets a fresh `joinedAt` on the
+2029 row and keeps `memberSince: 2021`. Merging them breaks tenure for exactly
+the longest-standing members. Display stays on the dues row, correctly hidden
+when null; it never goes on the player card.
+
+### Guest filter chips
+
+The chip row filters `members` only — `GuestSection` renders every guest
+whatever is selected. The chips will filter guests too, with **Convert**
+(already computed as `shouldConvert`) standing in for Alumni, which has no
+meaning for a guest. *Assumption, stated 2026-08-10 after the question went
+twice unanswered.* Tagging a guest **as** alumni so they bill $0 is a pricing
+rule, not a filter, and is additive later if that was the intent.
+
+### Dues leaves the Stats hub
+
+Dues and Guests become one admin-only bottom-nav tab wedged between Stats and
+Profile — bill-and-ball icon — so Stats is performance data again. `BottomNav`
+has no auth awareness today and will need it. Six tabs is tight on a 375px
+phone, not broken.
+
+### Opening a year is manual, and closing one had no mechanism
+
+There is **no scheduler anywhere in this app** — no cron, no dependency, nothing
+on a clock but the WhatsApp listener's reconnect. A dues year exists only once
+someone selects it and fills the setup form, which is the right default (nobody
+wants a year auto-opened at rates nobody announced) but has two consequences
+that were invisible until asked about directly.
+
+**Opening the year ahead.** Four steps, every October: Dues tab → year dropdown
+→ rates → "Open <year> and copy the roster". The snapshot is taken at that
+instant, so departures must be marked **Left** *before* opening the next year —
+which the lifecycle work now makes automatic, since Left flips `onRoster` off
+and the sync only picks up people who are on it.
+
+Nothing announced that October had arrived, so a **collection-window banner**
+now appears on the Dues page when the window is open and the year ahead has no
+config row, with a one-tap route into setup. It reads `duesYearConfig` rows that
+already existed rather than inventing state.
+
+**Closing the year out — the hole the lifecycle work left.** Staying on the
+roster is the default and only *leaving* is an action, so someone who never paid
+and never said they were going rolls silently into next year's bill. That is
+precisely the ~8-person unpaid tail the "who actually owes" section predicted,
+and nothing caught it: paying needed no action, so Q7's roster flip turned out
+to be a non-problem, while its mirror image had no mechanism at all.
+
+`POST /api/dues/:year/sweep` is that mechanism — one transaction over the people
+whose status is `unpaid`, reusing the same Left rule. Design calls worth keeping:
+
+- **Nobody is pre-selected.** This list is exactly the people who might be
+  mid-conversation about paying, and sweeping one by accident is worse than an
+  extra tap. "Select all" is one tap away.
+- **Part-payers are never listed.** Someone mid-installment is not a leaver.
+- **Rows already marked, or from another year, are skipped rather than failing
+  the batch**, so re-running is safe.
+- **One transaction**, so a failure halfway does not leave the roster
+  half-swept.
+
+### Rates are set once and then unreachable
+
+`targetAmount`, `memberAmount` and `guestGameRate` are editable only in the
+`SetupYear` form, which renders only while the year has **no** config row. After
+that they are read-only text. `PUT /api/dues/:year/config` and the frontend
+`saveDuesConfig` both already exist — this is a missing edit affordance, nothing
+more.
+
+**Changing the rate will not recalculate anybody**, and that is deliberate:
+`amountOwed` is captured per person, which is what lets alumni sit at 0 and
+hand-adjusted amounts survive. The target has never driven a balance; per-head
+is entered, never derived (see "Why both a target and a per-member figure").
+The edit form will show a live hint — *"$6,000 ÷ 43 billable = $139.53"* — and
+keep the entered figure authoritative. A mass re-apply after a rate change is
+**out** unless asked for; it needs its own rules about who it skips.
 
 ---
 
@@ -666,6 +858,23 @@ balance arithmetic. All five, three to four days.
       Phases 0–2** (2026-08-08)
 - [x] Q1 (year boundary), Q3 (`memberSince` availability), Q4 (amounts) answered
 - [x] **Q8 answered** — $6,000 target, uniform pricing (2026-08-08)
-- [ ] Data model approved — `DuesPayment`, **`DuesYearConfig`**,
-      `DuesRosterEntry` (snapshot), `Player.memberSince` — **last gate before
-      Phase 0**
+- [x] Data model approved — `DuesPayment`, **`DuesYearConfig`**,
+      `DuesRosterEntry` (snapshot), `Player.memberSince` — shipped
+- [x] **Q7 answered** — paid-in-full proposes the roster flip, confirmed, as a
+      sweep (2026-08-10)
+- [x] **Refund policy answered** — dues are kept, not refunded (2026-08-10)
+- [x] **Alumni and Left must be separate statuses** (2026-08-10) — costs one
+      nullable column, `DuesRosterEntry.leftAt`
+- [x] **Roster lifecycle build approved and built** (2026-08-10) — the six items
+      below, plus **G** and **H** added after the "what do I do in 2028"
+      question exposed them:
+      **A** `POST /api/dues/:year/entry` (add + reinstate, writes `joinedAt`,
+      fires the pro-rata default) ·
+      **B** "Add someone" picker on the Dues page ·
+      **C** Left → `amountOwed = amountPaid`, `leftAt`, `onRoster` false ·
+      **D** `classify()` zero-owed defect + `left` precedence ·
+      **E** Dues promoted to its own bottom-nav tab, Guests folded under it ·
+      **F** editable rates bar + per-head hint ·
+      **G** end-of-collection sweep (`POST /:year/sweep`) ·
+      **H** collection-window banner
+- [x] Guest chips confirmed as **(a) filter-only** (2026-08-10)

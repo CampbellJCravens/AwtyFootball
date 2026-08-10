@@ -18,7 +18,7 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 // owner's discretion rather than the full rate.
 export const PRORATA_MONTHS_REMAINING = 3;
 
-export type DuesStatus = 'exempt' | 'unpaid' | 'partial' | 'paid' | 'overpaid';
+export type DuesStatus = 'left' | 'exempt' | 'unpaid' | 'partial' | 'paid' | 'overpaid';
 
 export interface DuesPaymentDto {
   id: string;
@@ -42,6 +42,7 @@ export interface DuesMemberRow {
   exemption: string | null;
   note: string | null;
   joinedAt: string | null;
+  leftAt: string | null;
   payments: DuesPaymentDto[];
 }
 
@@ -68,6 +69,7 @@ export interface DuesYearReport {
   totals: {
     billed: number;
     exempt: number;
+    left: number;
     paidInFull: number;
     partPaid: number;
     unpaid: number;
@@ -91,8 +93,22 @@ export class DuesYearNotConfiguredError extends Error {
   }
 }
 
-export const classify = (owed: Prisma.Decimal, paid: Prisma.Decimal): DuesStatus => {
-  if (owed.isZero()) return 'exempt';
+// Leaving is a lifecycle state and outranks everything: a leaver is settled by
+// definition (amountOwed was set to amountPaid), so they must not be sorted in
+// with alumni, and must never appear on the chase list.
+//
+// Zero owed only means "exempt" when nothing was paid. A payment against a
+// zero-owed row used to fall into `exempt` and render as "Not billed" with no
+// balance, while still counting toward amountCollected — money recorded, row
+// denying it, progress bar disagreeing. That is live today for an alumnus who
+// chips in voluntarily, so the fall-through matters beyond the Left work.
+export const classify = (
+  owed: Prisma.Decimal,
+  paid: Prisma.Decimal,
+  leftAt?: Date | null
+): DuesStatus => {
+  if (leftAt) return 'left';
+  if (owed.isZero()) return paid.isZero() ? 'exempt' : 'overpaid';
   if (paid.isZero()) return 'unpaid';
   if (paid.lessThan(owed)) return 'partial';
   if (paid.greaterThan(owed)) return 'overpaid';
@@ -160,10 +176,11 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
       amountOwed: money(owed),
       amountPaid: money(paid),
       balance: money(owed.minus(paid)),
-      status: classify(owed, paid),
+      status: classify(owed, paid, entry.leftAt),
       exemption: entry.exemption,
       note: entry.note,
       joinedAt: entry.joinedAt?.toISOString() ?? null,
+      leftAt: entry.leftAt?.toISOString() ?? null,
       payments: paymentsByPlayer.get(entry.playerId) ?? [],
     };
   });
@@ -211,7 +228,7 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
   // it as if it did would understate the chase list.
   let amountOutstanding = ZERO;
   let amountOverpaid = ZERO;
-  let exempt = 0, paidInFull = 0, partPaid = 0, unpaid = 0;
+  let exempt = 0, left = 0, paidInFull = 0, partPaid = 0, unpaid = 0;
 
   for (const m of members) {
     amountBilled = amountBilled.plus(m.amountOwed);
@@ -219,7 +236,8 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
     const balance = D(m.balance);
     if (balance.isPositive()) amountOutstanding = amountOutstanding.plus(balance);
     else amountOverpaid = amountOverpaid.plus(balance.abs());
-    if (m.status === 'exempt') exempt++;
+    if (m.status === 'left') left++;
+    else if (m.status === 'exempt') exempt++;
     else if (m.status === 'paid' || m.status === 'overpaid') paidInFull++;
     else if (m.status === 'partial') partPaid++;
     else unpaid++;
@@ -234,8 +252,11 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
     members,
     guests,
     totals: {
-      billed: members.length - exempt,
+      // Leavers are settled and gone; counting them as billed would keep an
+      // October number climbing with people who are no longer in the city.
+      billed: members.length - exempt - left,
       exempt,
+      left,
       paidInFull,
       partPaid,
       unpaid,
@@ -263,12 +284,21 @@ export const openDuesYear = async (duesYear: number) => {
   // billed. Same string match the rest of the app uses to exclude them.
   const billable = players.filter(p => !already.has(p.id) && !/^Guest\d+$/.test(p.name));
 
+  // Sync roster is the button that actually gets pressed when someone new turns
+  // up, so anyone it sweeps in after the year is already open is a mid-year
+  // joiner and must be dated as one — otherwise they are indistinguishable from
+  // the founding cohort and silently skip the pro-rata question. The first sync
+  // of a year runs while openedAt is still null, which is exactly the cohort
+  // that should stay null.
+  const joinedAt = config.openedAt ? new Date() : null;
+
   const created = await prisma.duesRosterEntry.createMany({
     data: billable.map(p => ({
       duesYear,
       playerId: p.id,
       amountOwed: p.isAlumni ? new Prisma.Decimal(0) : config.memberAmount,
       exemption: p.isAlumni ? 'alumni' : null,
+      joinedAt,
     })),
     skipDuplicates: true,
   });
@@ -279,6 +309,135 @@ export const openDuesYear = async (duesYear: number) => {
 
   return { added: created.count, alreadyPresent: already.size };
 };
+
+// What the amount field pre-fills with for a mid-year joiner. Full price until
+// the season is nearly over, then a share of the year — offered as an editable
+// default, never as a rule: the last three months are explicitly the owner's
+// discretion, and whatever gets saved is what is stored.
+export const prorataSuggestion = (memberAmount: Prisma.Decimal, joinedAt: Date): Prisma.Decimal => {
+  if (!isProrataWindow(joinedAt)) return memberAmount;
+  return memberAmount.times(monthsRemainingInDuesYear(joinedAt)).dividedBy(12).toDecimalPlaces(2);
+};
+
+// Add one person to a dues year, or bring back someone who left. Until this
+// existed the only way onto the bill was Players tab → set Current → Sync
+// roster, which billed everyone at full price and never wrote joinedAt.
+export const addDuesEntry = async (input: {
+  duesYear: number;
+  playerId: string;
+  amountOwed?: Prisma.Decimal.Value | null;
+  joinedAt?: Date | null;
+  note?: string | null;
+}) => {
+  const config = await getDuesYearConfig(input.duesYear);
+  const player = await prisma.player.findUnique({ where: { id: input.playerId } });
+  if (!player) throw new Error('No such player.');
+  if (/^Guest\d+$/.test(player.name)) {
+    throw new Error('Guest pool slots are per-game placeholders, not people, and are never billed.');
+  }
+
+  const joinedAt = input.joinedAt ?? new Date();
+  const owed =
+    input.amountOwed !== undefined && input.amountOwed !== null
+      ? new Prisma.Decimal(input.amountOwed)
+      : player.isAlumni
+        ? ZERO
+        : prorataSuggestion(D(config.memberAmount), joinedAt);
+  if (!owed.isFinite() || owed.isNegative()) {
+    throw new Error('amountOwed must be a non-negative number.');
+  }
+
+  const existing = await prisma.duesRosterEntry.findUnique({
+    where: { duesYear_playerId: { duesYear: input.duesYear, playerId: input.playerId } },
+  });
+
+  return prisma.$transaction(async tx => {
+    // Reinstating has to restore what they owe, not just accept their money:
+    // the Left flip pulled amountOwed down to amountPaid, so a bare payment
+    // against that figure would read as settled or overpaid.
+    const entry = existing
+      ? await tx.duesRosterEntry.update({
+          where: { id: existing.id },
+          data: {
+            amountOwed: owed,
+            leftAt: null,
+            joinedAt,
+            ...(input.note !== undefined && { note: input.note }),
+          },
+        })
+      : await tx.duesRosterEntry.create({
+          data: {
+            duesYear: input.duesYear,
+            playerId: input.playerId,
+            amountOwed: owed,
+            exemption: player.isAlumni ? 'alumni' : null,
+            joinedAt,
+            note: input.note ?? null,
+          },
+        });
+
+    // Being billed for a year and being on the roster are the same statement,
+    // so adding someone puts them back on it and next year's sync finds them.
+    if (!player.onRoster) {
+      await tx.player.update({ where: { id: player.id }, data: { onRoster: true } });
+    }
+    return entry;
+  });
+};
+
+// Someone left — in practice, left the city. Dues are kept, not refunded, so
+// whatever they paid becomes what they owed: the balance goes to zero, they
+// drop off the chase list, and a part-payer does not read as having overpaid
+// what was kept. The original bill survives in the note, because the flip
+// otherwise destroys the only record of what they were asked for.
+// Returns null when there is nothing to do — already left, or not in the year
+// the caller meant. The sweep skips those rather than aborting a whole batch
+// because one row was already handled.
+const applyLeft = async (
+  tx: Prisma.TransactionClient,
+  entryId: string,
+  expectedYear?: number
+) => {
+  const entry = await tx.duesRosterEntry.findUnique({ where: { id: entryId } });
+  if (!entry) throw new Error('No such dues entry.');
+  if (entry.leftAt) return null;
+  if (expectedYear !== undefined && entry.duesYear !== expectedYear) return null;
+
+  const payments = await tx.duesPayment.findMany({
+    where: { duesYear: entry.duesYear, playerId: entry.playerId },
+  });
+  const paid = payments.reduce((sum, p) => sum.plus(p.amount), ZERO);
+  const billed = D(entry.amountOwed);
+  const note = [entry.note, `Left — billed $${money(billed)}, kept $${money(paid)}.`]
+    .filter(Boolean)
+    .join(' · ');
+
+  const updated = await tx.duesRosterEntry.update({
+    where: { id: entryId },
+    data: { amountOwed: paid, leftAt: new Date(), note },
+  });
+  await tx.player.update({ where: { id: entry.playerId }, data: { onRoster: false } });
+  return updated;
+};
+
+export const markPlayerLeft = async (entryId: string) => {
+  const row = await prisma.$transaction(tx => applyLeft(tx, entryId));
+  if (!row) throw new Error('Already marked as having left.');
+  return row;
+};
+
+// Closing out a collection: the people who never paid and never said they were
+// going are the ones who would otherwise roll silently into next year's bill,
+// because staying on the roster is the default and only leaving is an action.
+// One transaction, so a failure halfway does not leave the roster half-swept.
+export const markManyLeft = async (duesYear: number, entryIds: string[]) =>
+  prisma.$transaction(async tx => {
+    let left = 0;
+    for (const id of entryIds) {
+      if (await applyLeft(tx, id, duesYear)) left++;
+    }
+    return { left, skipped: entryIds.length - left };
+  });
 
 export const recordPayment = async (input: {
   duesYear: number;

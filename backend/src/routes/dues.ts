@@ -2,8 +2,11 @@ import { Router, Response } from 'express';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import prisma from '../prisma';
 import {
+  addDuesEntry,
   computeDuesYearReport,
   currentDuesYear,
+  markManyLeft,
+  markPlayerLeft,
   openDuesYear,
   recordPayment,
   DuesYearNotConfiguredError,
@@ -95,10 +98,80 @@ router.post('/:year/open', requireAdmin, async (req: AuthenticatedRequest, res: 
   }
 });
 
+// POST /api/dues/:year/entry - put one person on the bill, or bring back
+// someone who left. The only other way in is the bulk roster sync, which bills
+// everyone at full price; this is the door for mid-year joiners and returning
+// members, and it is what writes joinedAt.
+router.post('/:year/entry', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const year = parseYear(req.params.year, NaN);
+  if (year === null || Number.isNaN(year)) return res.status(400).json({ error: 'Invalid year.' });
+
+  const { playerId, amountOwed, joinedAt, note } = req.body ?? {};
+  if (typeof playerId !== 'string' || !playerId) {
+    return res.status(400).json({ error: 'playerId is required.' });
+  }
+  let joined: Date | null = null;
+  if (joinedAt !== undefined && joinedAt !== null) {
+    joined = new Date(joinedAt);
+    if (Number.isNaN(joined.getTime())) return res.status(400).json({ error: 'Invalid joinedAt.' });
+  }
+
+  try {
+    const row = await addDuesEntry({ duesYear: year, playerId, amountOwed, joinedAt: joined, note });
+    res.status(201).json({ ...row, amountOwed: row.amountOwed.toFixed(2) });
+  } catch (error) {
+    if (error instanceof DuesYearNotConfiguredError) {
+      return res.status(409).json({ error: error.message, duesYear: error.duesYear });
+    }
+    if (error instanceof Error && !(error as { code?: string }).code) {
+      return res.status(400).json({ error: error.message });
+    }
+    fail(res, error, 'Failed to add dues entry');
+  }
+});
+
+// POST /api/dues/entry/:id/left - they left, and the dues are kept. Sets what
+// they owed to what they paid, so the row reads settled instead of carrying a
+// balance nobody will collect. Reversed by POST /:year/entry.
+router.post('/entry/:id/left', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const row = await markPlayerLeft(req.params.id);
+    res.json({ ...row, amountOwed: row.amountOwed.toFixed(2) });
+  } catch (error) {
+    if (error instanceof Error && !(error as { code?: string }).code) {
+      return res.status(400).json({ error: error.message });
+    }
+    fail(res, error, 'Failed to mark as left');
+  }
+});
+
+// POST /api/dues/:year/sweep - close out a collection by marking the people who
+// never paid as having left, in one pass. Rows already marked, or belonging to
+// another year, are skipped rather than failing the batch.
+router.post('/:year/sweep', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const year = parseYear(req.params.year, NaN);
+  if (year === null || Number.isNaN(year)) return res.status(400).json({ error: 'Invalid year.' });
+
+  const { entryIds } = req.body ?? {};
+  if (!Array.isArray(entryIds) || entryIds.some(id => typeof id !== 'string')) {
+    return res.status(400).json({ error: 'entryIds must be an array of entry ids.' });
+  }
+  if (entryIds.length === 0) return res.status(400).json({ error: 'Nobody selected.' });
+
+  try {
+    res.json(await markManyLeft(year, entryIds));
+  } catch (error) {
+    if (error instanceof Error && !(error as { code?: string }).code) {
+      return res.status(400).json({ error: error.message });
+    }
+    fail(res, error, 'Failed to close out the year');
+  }
+});
+
 // PATCH /api/dues/entry/:id - adjust what one person owes, or leave a note.
 // This is where alumni exemptions, mid-year pro-rata and future discounts land.
 router.patch('/entry/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const { amountOwed, exemption, note } = req.body ?? {};
+  const { amountOwed, exemption, note, joinedAt } = req.body ?? {};
   const data: Record<string, unknown> = {};
   if (amountOwed !== undefined) {
     if (Number.isNaN(Number(amountOwed)) || Number(amountOwed) < 0) {
@@ -108,6 +181,16 @@ router.patch('/entry/:id', requireAdmin, async (req: AuthenticatedRequest, res: 
   }
   if (exemption !== undefined) data.exemption = exemption || null;
   if (note !== undefined) data.note = note || null;
+  // Correcting a join date after the fact - added in June, actually started in
+  // March - without having to delete and re-add the row.
+  if (joinedAt !== undefined) {
+    if (joinedAt === null) data.joinedAt = null;
+    else {
+      const when = new Date(joinedAt);
+      if (Number.isNaN(when.getTime())) return res.status(400).json({ error: 'Invalid joinedAt.' });
+      data.joinedAt = when;
+    }
+  }
   if (Object.keys(data).length === 0) return res.status(400).json({ error: 'Nothing to update.' });
 
   try {
