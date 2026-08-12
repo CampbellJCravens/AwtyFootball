@@ -25,6 +25,7 @@ import {
 import prisma from '../../prisma';
 import { combineSelections } from './options';
 import { findGameForPollTitle } from './gameMatch';
+import { bufferPendingVote, takePendingVotes } from './pendingVotes';
 
 // Sentinel written to GameRsvp.setByUserId so listener-sourced votes are
 // distinguishable from self ("null") and admin (a real user id) votes.
@@ -156,7 +157,11 @@ export function isPollCreation(message: any): boolean {
  * Persist a newly-seen poll and try to auto-match it to a game. `raw` is the
  * Baileys WAMessage ({ key, message, pushName }).
  */
-export async function capturePoll(raw: any): Promise<void> {
+export async function capturePoll(
+  raw: any,
+  meId?: string,
+  meLid?: string
+): Promise<void> {
   const creation = getPollCreation(raw.message);
   if (!creation) return;
 
@@ -195,6 +200,39 @@ export async function capturePoll(raw: any): Promise<void> {
     `[whatsapp] Captured poll "${question}" (${pollMessageId})` +
       (gameId ? ` → auto-matched game ${gameId}` : ' → no game match, awaiting manual link')
   );
+
+  // Anything that voted before we had the poll is now decodable. This is the
+  // payoff for buffering: a poll whose creation message failed to decrypt first
+  // time round recovers its whole vote history the moment it arrives.
+  await replayPendingVotes(pollMessageId, meId, meLid);
+}
+
+/**
+ * Decode and ingest votes that were parked while this poll was uncaptured.
+ * Safe to call for any poll; no-ops when nothing is held.
+ */
+export async function replayPendingVotes(
+  pollMessageId: string,
+  meId: string | undefined,
+  meLid?: string
+): Promise<number> {
+  forgetMissingPoll(pollMessageId);
+  const held = await takePendingVotes(pollMessageId);
+  if (held.length === 0) return 0;
+
+  console.log(`[whatsapp] Replaying ${held.length} buffered vote(s) for poll ${pollMessageId}.`);
+  let ok = 0;
+  for (const msg of held) {
+    try {
+      // allowBuffer: false — if it still can't be matched, don't loop it back in.
+      await handlePollUpdateMessage(msg, meId, meLid, { allowBuffer: false });
+      ok++;
+    } catch (err) {
+      console.error('[whatsapp] Failed to replay a buffered vote:', err);
+    }
+  }
+  console.log(`[whatsapp] Replayed ${ok}/${held.length} buffered vote(s).`);
+  return ok;
 }
 
 // Display names essentially never change, but this used to write on EVERY group
@@ -275,18 +313,65 @@ function authorCandidates(key: any, meId?: string, meLid?: string): string[] {
   return [...out];
 }
 
+/**
+ * Poll ids we've already looked up and found missing. Votes for an uncaptured
+ * poll repeat constantly (one per voter, plus every vote change), and each one
+ * used to cost a Postgres read — waking the Neon compute for nothing, dozens of
+ * times an hour. Remember the misses and skip the query.
+ */
+const missingPollIds = new Set<string>();
+
+/** Called when a poll IS captured, so a previously-missing id stops being skipped. */
+export function forgetMissingPoll(pollMessageId: string): void {
+  missingPollIds.delete(pollMessageId);
+}
+
+export interface PollUpdateOptions {
+  /** Ask WhatsApp to resend the poll's creation message. Throttled by the caller. */
+  requestResend?: (key: any) => Promise<void>;
+  /** False while replaying buffered votes, so they can't re-buffer themselves. */
+  allowBuffer?: boolean;
+}
+
 export async function handlePollUpdateMessage(
   msg: any,
   meId: string | undefined,
-  meLid?: string
+  meLid?: string,
+  opts: PollUpdateOptions = {}
 ): Promise<void> {
+  const { requestResend, allowBuffer = true } = opts;
   const pum = getPollUpdate(msg.message);
   const creationKey = pum?.pollCreationMessageKey;
   if (!pum || !creationKey?.id) return;
 
-  const poll = await prisma.whatsappPoll.findUnique({ where: { pollMessageId: creationKey.id } });
+  // Skip the database entirely for polls we already know we don't have.
+  const poll = missingPollIds.has(creationKey.id)
+    ? null
+    : await prisma.whatsappPoll.findUnique({ where: { pollMessageId: creationKey.id } });
+
   if (!poll) {
-    console.warn(`[whatsapp] Vote for uncaptured poll ${creationKey.id} — ignored.`);
+    missingPollIds.add(creationKey.id);
+    // Hold the vote rather than discarding it. If the creation message turns up
+    // later, these get replayed and the week's RSVPs are recovered.
+    if (allowBuffer) {
+      const held = await bufferPendingVote(creationKey.id, msg);
+      console.warn(
+        `[whatsapp] Vote for uncaptured poll ${creationKey.id} — buffered (${held} held), ` +
+          `will decode if the poll's creation message turns up.`
+      );
+    } else {
+      // Replay path: the poll still isn't there, so this vote is genuinely lost.
+      console.warn(
+        `[whatsapp] Buffered vote for poll ${creationKey.id} still has no poll — dropped.`
+      );
+    }
+    if (requestResend) {
+      try {
+        await requestResend(creationKey);
+      } catch (err) {
+        console.error('[whatsapp] Failed to request poll creation message:', err);
+      }
+    }
     return;
   }
 

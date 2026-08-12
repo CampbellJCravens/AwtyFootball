@@ -64,6 +64,60 @@ function logUnhandledMessage(message: any): void {
   console.log(`[whatsapp] Unhandled in-scope message type(s): ${types.join(', ')}`);
 }
 
+/**
+ * A message that arrived with no readable content. Baileys emits these as
+ * CIPHERTEXT stubs when decryption fails — typically when the sender's Signal
+ * session is rotating ("identity key changed", "Closing open session in favor of
+ * incoming prekey bundle"). It then asks the phone to resend.
+ *
+ * This was the blind spot that cost three weeks: a poll landing mid-rotation
+ * arrived as an empty stub, every handler said "not mine", and NOTHING was
+ * logged, because the unhandled-type logger above bails when there's no content.
+ * Now it's loud, and we ask for the message back ourselves.
+ */
+async function handleUndecryptableMessage(
+  msg: any,
+  requestResend: (key: any) => Promise<void>
+): Promise<void> {
+  const stub = msg?.messageStubType;
+  console.warn(
+    `[whatsapp] Undecryptable message in scope (stubType=${stub ?? 'none'}, id=${msg?.key?.id}) ` +
+      `from ${msg?.key?.participant ?? msg?.key?.remoteJid}. Requesting a resend — ` +
+      `if this was a poll creation, that is why the poll went missing.`
+  );
+  try {
+    await requestResend(msg.key);
+  } catch (err) {
+    console.error('[whatsapp] Resend request failed:', err);
+  }
+}
+
+/**
+ * Throttle for resend requests. These go out to WhatsApp, and the listener's
+ * whole safety story is that it is read-only and quiet, so we ask sparingly:
+ * a few attempts per message, spaced, and never in a loop. Votes for a missing
+ * poll arrive dozens of times, and each one would otherwise trigger a request.
+ */
+const RESEND_MAX_ATTEMPTS = 3;
+const RESEND_MIN_GAP_MS = 10 * 60 * 1000;
+const resendAttempts = new Map<string, { count: number; last: number }>();
+
+function makeResendRequester(sock: WASocket | null): (key: any) => Promise<void> {
+  return async (key: any) => {
+    const id = key?.id;
+    if (!id || !sock) return;
+    const seen = resendAttempts.get(id) ?? { count: 0, last: 0 };
+    const now = Date.now();
+    if (seen.count >= RESEND_MAX_ATTEMPTS) return;
+    if (now - seen.last < RESEND_MIN_GAP_MS) return;
+    resendAttempts.set(id, { count: seen.count + 1, last: now });
+    console.log(
+      `[whatsapp] Requesting resend of message ${id} (attempt ${seen.count + 1}/${RESEND_MAX_ATTEMPTS}).`
+    );
+    await (sock as any).requestPlaceholderResend?.(key);
+  };
+}
+
 let sock: WASocket | null = null;
 let latestQr: string | null = null;
 let starting = false;
@@ -232,10 +286,15 @@ export async function startWhatsappListener(): Promise<void> {
           if (msg.pushName && msg.key?.participant) {
             await noteContact(msg.key.participant, msg.pushName);
           }
+          const requestResend = makeResendRequester(sock);
           if (isPollCreation(msg.message)) {
-            await capturePoll(msg);
+            await capturePoll(msg, meId, meLid);
           } else if (getPollUpdate(msg.message)) {
-            await handlePollUpdateMessage(msg, meId, meLid);
+            await handlePollUpdateMessage(msg, meId, meLid, { requestResend });
+          } else if (!unwrapMessage(msg.message)) {
+            // No readable content: a failed decrypt. This is the case that was
+            // silently swallowing poll creations.
+            await handleUndecryptableMessage(msg, requestResend);
           } else {
             logUnhandledMessage(msg.message);
           }
