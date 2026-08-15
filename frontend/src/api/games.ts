@@ -27,7 +27,8 @@ export interface TeamChange {
 }
 
 export interface GameEvent {
-  type: 'halfTime' | 'gameOver';
+  type: 'halfTime' | 'gameOver' | 'goldenGoalArmed';
+  n?: number; // goal difference frozen at arming; only on goldenGoalArmed
   timestamp: string; // ISO date string
 }
 

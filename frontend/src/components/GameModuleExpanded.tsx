@@ -68,7 +68,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
-  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver'; timestamp: Date }>>([]);
+  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number }>>([]);
+  // The 80-minute offer, dismissed for this sitting only. Arming stays available
+  // from the button afterwards.
+  const [goldenPromptDismissed, setGoldenPromptDismissed] = useState(false);
   // Kick-off. Distinct from the game date (gameDate/createdAt), which is unchanged.
   const [startedAt, setStartedAt] = useState<Date | null>(null);
   const [clockNow, setClockNow] = useState<Date>(() => new Date());
@@ -192,6 +195,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           gameData.gameEvents.map(event => ({
             type: event.type,
             timestamp: new Date(event.timestamp),
+            n: event.n,
           }))
         );
       }
@@ -254,6 +258,28 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
   })();
 
+  const armedEvent = gameEvents.find(e => e.type === 'goldenGoalArmed') ?? null;
+  const armedN = armedEvent?.n ?? null;
+
+  // 80 minutes is only when the app OFFERS golden goal. Arming itself is not
+  // gated on it (owner 2026-08-15) — the group often doesn't play a full 90.
+  const GOLDEN_GOAL_PROMPT_MINUTES = 80;
+  const elapsedMinutes = startedAt ? ((gameOverAt ?? clockNow).getTime() - startedAt.getTime()) / 60000 : 0;
+  const canArmGolden = isAdmin && !!startedAt && !gameOverAt && !armedEvent;
+  const showGoldenPrompt = canArmGolden && !goldenPromptDismissed && elapsedMinutes >= GOLDEN_GOAL_PROMPT_MINUTES;
+
+  // Frozen at arming: the deciding goal is worth n+1, and n must not move
+  // afterwards. A level game gives n = 0, so the next goal wins by exactly 1.
+  const handleArmGoldenGoal = () => {
+    const colorScore = goals.filter(g => g.team === 'color').length;
+    const whiteScore = goals.filter(g => g.team === 'white').length;
+    setGameEvents(prev => [
+      ...prev,
+      { type: 'goldenGoalArmed', timestamp: new Date(), n: Math.abs(colorScore - whiteScore) },
+    ]);
+    setGoldenPromptDismissed(true);
+  };
+
   const handleStartGame = async () => {
     const when = new Date();
     setStartedAt(when);
@@ -294,6 +320,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const gameEventsData: GameEvent[] = gameEvents.map(event => ({
         type: event.type,
         timestamp: event.timestamp.toISOString(),
+        ...(event.n !== undefined ? { n: event.n } : {}),
       }));
 
       // Only slots still on a team have a visit — dropping a guest from the
@@ -1130,6 +1157,17 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 <span className="text-text-tertiary">
                   {gameOverAt ? 'full time' : `since ${formatTime(startedAt!.toISOString())}`}
                 </span>
+                {armedEvent && (
+                  <span className="flex items-center gap-1 text-gold font-semibold">
+                    <span aria-hidden>⚽</span>
+                    Golden goal{armedN !== null && armedN > 0 ? ` · decider worth ${armedN + 1}` : ' · next goal wins'}
+                  </span>
+                )}
+                {canArmGolden && (
+                  <button onClick={handleArmGoldenGoal} className="text-gold underline underline-offset-2">
+                    Golden goal
+                  </button>
+                )}
               </div>
             ) : isAdmin ? (
               <button
@@ -1142,6 +1180,24 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               <span className="text-sm text-text-tertiary">Not started</span>
             )}
           </div>
+
+          {showGoldenPrompt && (
+            <div className="mt-2 flex items-center justify-center gap-3 rounded-lg border border-gold bg-surface px-3 py-2">
+              <span className="text-sm font-semibold text-text-primary">Golden goal?</span>
+              <button
+                onClick={handleArmGoldenGoal}
+                className="px-3 py-1 rounded-lg bg-gold text-text-on-accent text-sm font-semibold"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setGoldenPromptDismissed(true)}
+                className="px-3 py-1 rounded-lg border border-border text-text-secondary text-sm"
+              >
+                Not yet
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Choose Teams Accordion (admins only) */}

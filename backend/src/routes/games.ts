@@ -439,7 +439,11 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
     // Add game event entries (half time / game over)
     const gameEvents = safeParseJSON<Array<{ type: string; timestamp: string }>>(game.gameEvents, []);
     gameEvents.forEach(event => {
-      const label = event.type === 'halfTime' ? 'half time' : event.type === 'gameOver' ? 'game over' : event.type;
+      const label =
+        event.type === 'halfTime' ? 'half time'
+        : event.type === 'gameOver' ? 'game over'
+        : event.type === 'goldenGoalArmed' ? 'golden goal armed'
+        : event.type;
       gameSummaryData.push({
         EntryType: label,
         Game: gameName,

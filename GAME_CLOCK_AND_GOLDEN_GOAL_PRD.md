@@ -29,6 +29,9 @@ Two gaps, one of which is a prerequisite for the other.
 
 - A **game start button** records kick-off.
 - Once a game passes **80 minutes**, prompt: **"Golden goal?"** with yes/no.
+- **Arming is not gated on 80 minutes (owner, 2026-08-15).** The group often
+  doesn't play a full 90, so an admin can arm golden goal at any point once the
+  game has started; 80 minutes is only when the app *offers* it unprompted.
 - If yes, the deciding goal resolves the game:
   - **Losing team scores** → it counts as **n+1**, where `n` is the goal
     difference at the moment golden goal was armed.
@@ -77,9 +80,28 @@ This is the same shape as the own-goal work: `Game.goals` records are read at
 **~10 sites that credit `scorerId`** into a player's total (enumerated in
 `OWN_GOALS_AND_TURNOUT_PRD.md`). Those sites count *records*, so a goal record
 carrying a `value: 3` is naturally worth 1 to the player and 3 to the scoreline
-**only if the scoreline is computed separately**. Verify how the scoreline is
-derived today before writing anything — if it also counts records, it needs the
-weighting added in exactly one place.
+**only if the scoreline is computed separately**.
+
+**VERIFIED 2026-08-15 — and the news is worse than "one place".** The scoreline
+is derived by counting records, `goals.filter(g => g.team === 'color').length`,
+at **18 separate sites**:
+
+| Where | Count |
+|---|---|
+| `backend/src/routes/stats.ts` | 11 (lines 60, 96, 323, 414, 556, 599, 678, 746, 776, 873) |
+| `backend/src/services/achievements.ts` | 2 (63, 190) |
+| `frontend/src/components/OverallStatsTable.tsx` | 2 (126, 251) |
+| `frontend/src/components/GameModuleExpanded.tsx` | 2 (325, 1085) |
+| `frontend/src/components/GameModuleCondensed.tsx` | 1 (27) |
+| `frontend/src/utils/renderMatchReportImage.ts` | 1 (32) |
+
+A `value: 3` goal reads as **1** at every one of them. Phase 2 therefore needs a
+shared `scoreFor(goals, team)` helper — alongside `isScoringGoal` in
+`services/goals.ts`, with a frontend twin, since the frontend cannot import
+backend services — and all 18 sites converted. Any site missed is a scoreline
+that silently disagrees with the others: results, win/loss records, clean
+sheets and the match-report image would each be right or wrong independently.
+This, not the UI, is the bulk of Phase 2.
 
 ## The Decider — how it sits alongside what already exists
 
@@ -232,17 +254,20 @@ Phase 2's verification rather than its code.
    separate golden-goal column that drives the achievement (2026-08-08).
 3. ~~**Name collision with GOLDEN BOOT?**~~ **Renamed "The Decider"**, golden
    football icon (2026-08-08).
-4. **Freeze `n` at arming, or read it live?** *Recommend frozen* — a value that
-   moves silently is what causes an argument at full time.
-5. **Draw when armed → `n = 0`, so any goal wins by 1.** Confirm that's intended.
+4. ~~**Freeze `n` at arming, or read it live?**~~ **Frozen at arming** —
+   resolved 2026-08-15. The decider's value is knowable the moment it is armed.
+5. ~~**Draw when armed → `n = 0`, so any goal wins by 1.**~~ **Yes, intended**
+   (2026-08-15). Falls out of the rule with no special case in the code.
 6. ~~**Keep "The Dagger" alongside The Decider, or retire it?**~~ **Renamed to
    "Game Winner"; the Dagger name moves to the first golden goal. Both new
    achievements are LIFETIME, plus a separate seasonal most-golden-goals award**
    (2026-08-08). Only the seasonal award's name is still open.
-7. **Who can arm it — any editor, or admin only?** The app is open-edit today;
-   this ends a game, which is heavier than editing a stat.
-8. **Should the 80 minutes be configurable?** One constant either way; only
-   worth a setting if the number actually moves.
+7. ~~**Who can arm it — any editor, or admin only?**~~ **Admin only**
+   (2026-08-15), matching the Start game button. The two actions that bound a
+   game are both admin; recording a goal stays open to anyone.
+8. **Should the 80 minutes be configurable?** Superseded by the arming rule
+   below — 80 is now only the *automatic prompt* threshold, and arming no
+   longer depends on reaching it. Left hard-coded.
 
 None of these block Phase 0 (the start button), which is independent.
 

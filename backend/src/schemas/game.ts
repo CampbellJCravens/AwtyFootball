@@ -20,8 +20,13 @@ export const teamChangeSchema = z.object({
 });
 
 export const gameEventSchema = z.object({
-  type: z.enum(['halfTime', 'gameOver']),
+  type: z.enum(['halfTime', 'gameOver', 'goldenGoalArmed']),
   timestamp: z.string(), // ISO date string
+  // Goal difference at the moment golden goal was armed, frozen there on
+  // purpose: the deciding goal is worth n+1, and a value that moved silently
+  // between arming and the goal is what causes an argument at full time.
+  // Only present on goldenGoalArmed.
+  n: z.number().int().min(0).optional(),
 });
 
 // One guest appearance. slotPlayerId is the GuestN pool Player carrying the
