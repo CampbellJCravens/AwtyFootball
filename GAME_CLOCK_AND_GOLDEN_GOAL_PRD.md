@@ -185,7 +185,9 @@ achievement would re-lock every January, which nothing else does.
   `Stats.tsx`). Follows the existing `marquee(...)` pattern, so it is a one-line
   addition once the golden-goal count exists per player per year.
 
-Award name still unnamed — *Clutch*, *Sudden Death*, *Ice in the Veins*. Not
+**Award named "THE DECIDER" — owner confirmed 2026-08-15**, matching the
+achievement rather than splitting the idea across two names. *Clutch*, *Sudden
+Death* and *Ice in the Veins* were the alternatives. Shipped in `ee3b7a2`. Not
 blocking; can be decided when the tile is built.
 
 ## Data model
@@ -265,7 +267,7 @@ Phase 2's verification rather than its code.
 6. ~~**Keep "The Dagger" alongside The Decider, or retire it?**~~ **Renamed to
    "Game Winner"; the Dagger name moves to the first golden goal. Both new
    achievements are LIFETIME, plus a separate seasonal most-golden-goals award**
-   (2026-08-08). Only the seasonal award's name is still open.
+   (2026-08-08). Seasonal award named **The Decider** (2026-08-15). **Closed.**
 7. ~~**Who can arm it — any editor, or admin only?**~~ **Admin only**
    (2026-08-15), matching the Start game button. The two actions that bound a
    game are both admin; recording a goal stays open to anyone.
