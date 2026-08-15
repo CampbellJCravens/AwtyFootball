@@ -1,7 +1,9 @@
 # PRD — WhatsApp Poll Capture Reliability
 
-Status: **SIGNED OFF 2026-08-15.** Nothing built yet. Phase 0 approved to ship
-before Wed 19 Aug; Phases 1-2 gated on the Render log line (Q2); Phase 3 deferred.
+Status: **SIGNED OFF 2026-08-15. Phase 0 BUILT but NOT MERGED** — it sits on
+branch `feat/whatsapp-capture-phase0` (`e8ed6e7`) and is not deployed, so the
+health endpoint in production is still the one that reported ok through two
+dropped weeks. Phases 1-2 gated on the Render log line (Q2); Phase 3 deferred.
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-15
 

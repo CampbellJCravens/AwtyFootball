@@ -1,7 +1,11 @@
 # PRD — Game Clock and Golden Goal
 
-Status: **Phase 0 SIGNED OFF 2026-08-15 — cleared to build, not yet built.**
-Phases 1-3 remain draft pending Q4/Q5/Q6. Two in-game features, requested 2026-08-08.
+Status: **Phases 0-2 BUILT AND DEPLOYED 2026-08-15** (`981a06b`, `72629ed`,
+`1ce17f5`, `9f17253` on `main`). Kick-off clock, arming, and the weighted
+decider are live. **Phase 3 (the three achievements + the seasonal award) is
+NOT built** — golden goals are recorded and categorised, nothing reads the
+category yet. Not browser-smoked; first live use is the smoke test.
+Two in-game features, requested 2026-08-08.
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-08
 
