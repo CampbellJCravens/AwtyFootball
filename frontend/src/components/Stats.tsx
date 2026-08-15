@@ -67,6 +67,7 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
       const playerOfTheYear = tile(data.awards.playerOfTheYear, 'PLAYER OF THE YEAR', a => `${a.value} pt${a.value === 1 ? '' : 's'}`);
       const awardTiles = [
         tile(data.awards.goldenBoot, 'GOLDEN BOOT', a => `${a.value} goal${a.value === 1 ? '' : 's'}`),
+        tile(data.awards.theDecider, 'THE DECIDER', a => `${a.value} golden goal${a.value === 1 ? '' : 's'}`),
         tile(data.awards.playmaker, 'PLAYMAKER', a => `${a.value} assist${a.value === 1 ? '' : 's'}`),
         tile(data.awards.ironMan, 'IRON MAN', a => `${a.value} game${a.value === 1 ? '' : 's'}`),
         tile(data.awards.sportsman, 'SPORTSMAN', a => `${a.value} SP`),

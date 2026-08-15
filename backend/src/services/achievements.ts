@@ -85,7 +85,7 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
   const allGames = await loadAllGames();
 
   let wins = 0, ties = 0, goals = 0, ownGoals = 0, assists = 0, gamesPlayed = 0, cleanSheets = 0, totalSportsmanship = 0;
-  let comebackWins = 0, gameWinningGoals = 0;
+  let comebackWins = 0, gameWinningGoals = 0, goldenGoals = 0;
   const matchResults: ('W' | 'L' | 'T')[] = [];
 
   const sortedGames = [...allGames].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -101,6 +101,9 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     else if (result === 'T') ties++;
 
     goals += game.goals.filter(g => g.scorerId === playerId && isScoringGoal(g)).length;
+    // Golden goals are counted as RECORDS, never by their scoreline weight: a
+    // decider worth 3 is one golden goal. Own goals never credit the scorer.
+    goldenGoals += game.goals.filter(g => g.scorerId === playerId && isScoringGoal(g) && g.goldenGoal === true).length;
     ownGoals += game.goals.filter(g => g.scorerId === playerId && isOwnGoal(g)).length;
     assists += game.goals.filter(g => g.assisterId === playerId).length;
 
@@ -327,7 +330,12 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     { id: 'first_sportsmanship', name: 'My First Gold Star!', description: 'Earn your first sportsmanship point', current: Math.max(0, Math.min(totalSportsmanship, 1)), target: 1 },
     { id: 'sportsmanship_10', name: 'Ted Lasso', description: 'Earn 10 sportsmanship points', current: Math.max(0, Math.min(totalSportsmanship, 10)), target: 10 },
     { id: 'comeback_3', name: 'They Had Us in the First Half', description: 'Come back to win after losing at halftime 3 times', current: Math.min(comebackWins, 3), target: 3 },
-    { id: 'game_winner', name: 'The Dagger', description: 'Score a game-winning goal', current: Math.min(gameWinningGoals, 1), target: 1 },
+    // The id must NOT change - UserAchievementSeen is keyed on it, so a new id
+    // would re-fire the "new achievement" notification for every existing holder.
+    // Only the display name moves; the Dagger name goes to first_golden_goal.
+    { id: 'game_winner', name: 'Game Winner', description: 'Score a game-winning goal', current: Math.min(gameWinningGoals, 1), target: 1 },
+    { id: 'first_golden_goal', name: 'The Dagger', description: 'Score a golden goal', current: Math.min(goldenGoals, 1), target: 1 },
+    { id: 'golden_goals_3', name: 'The Decider', description: 'Score 3 golden goals', current: Math.min(goldenGoals, 3), target: 3 },
     { id: 'first_own_goal', name: 'Wrong Net', description: 'Score an own goal', current: Math.min(ownGoals, 1), target: 1 },
     { id: 'own_goals_3', name: 'Sponsored by the Opposition', description: 'Score 3 own goals', current: Math.min(ownGoals, 3), target: 3 },
   ];

@@ -673,7 +673,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     const allPlayers = await prisma.player.findMany();
     const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
 
-    type YStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
+    type YStat = { points: number; wins: number; ties: number; goals: number; goldenGoals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
     const stats = new Map<string, YStat>();
 
     for (const game of yearGames) {
@@ -682,7 +682,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
       for (const [pid, team] of Object.entries(game.teamAssignments)) {
         if (!playerMap.has(pid)) continue;
         if (playerMap.get(pid)!.name.includes('Guest')) continue;
-        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, goldenGoals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
         const s = stats.get(pid)!;
         s.games++;
         s.sportsmanship += (game.sportsmanship[pid] || 0) - (game.fouls[pid] || 0);
@@ -694,7 +694,13 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         s.goalsAllowed += team === 'color' ? whiteGoals : colorGoals;
       }
       for (const goal of game.goals) {
-        if (stats.has(goal.scorerId) && isScoringGoal(goal)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
+        if (stats.has(goal.scorerId) && isScoringGoal(goal)) {
+          stats.get(goal.scorerId)!.goals++;
+          stats.get(goal.scorerId)!.goalInvolvements++;
+          // Counted as a record, never by scoreline weight: a decider worth 3 is
+          // one golden goal, and its scorer's regular total already got exactly 1.
+          if (goal.goldenGoal === true) stats.get(goal.scorerId)!.goldenGoals++;
+        }
         if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
       }
     }
@@ -715,6 +721,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
 
     const points = rankList(s => s.points);
     const goals = rankList(s => s.goals);
+    const goldenGoals = rankList(s => s.goldenGoals);
     const assists = rankList(s => s.assists);
     const goalInvolvements = rankList(s => s.goalInvolvements);
     const appearances = rankList(s => s.games);
@@ -795,6 +802,9 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
       awards: {
         playerOfTheYear: marquee(points),
         goldenBoot: marquee(goals),
+        // Most golden goals in the season. Distinct from goldenBoot, which is most
+        // goals — a player can win one without the other.
+        theDecider: marquee(goldenGoals),
         playmaker: marquee(assists),
         ironMan: marquee(appearances),
         topDefender: marquee(defensiveRating),

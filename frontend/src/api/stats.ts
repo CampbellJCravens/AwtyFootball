@@ -181,6 +181,8 @@ export interface YearlyStatsResponse {
   awards: {
     playerOfTheYear: MonthlyAward[] | null;
     goldenBoot: MonthlyAward[] | null;
+    // Most golden goals in the season. Separate from goldenBoot (most goals).
+    theDecider: MonthlyAward[] | null;
     playmaker: MonthlyAward[] | null;
     ironMan: MonthlyAward[] | null;
     topDefender: MonthlyAward[] | null;
