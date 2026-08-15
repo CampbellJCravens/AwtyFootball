@@ -1,6 +1,7 @@
 # PRD — Game Clock and Golden Goal
 
-Status: **DRAFT — awaiting sign-off.** Two in-game features, requested 2026-08-08.
+Status: **Phase 0 SIGNED OFF 2026-08-15 — cleared to build, not yet built.**
+Phases 1-3 remain draft pending Q4/Q5/Q6. Two in-game features, requested 2026-08-08.
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-08
 
@@ -253,6 +254,9 @@ None of these block Phase 0 (the start button), which is independent.
 - [x] Separate category, named **The Decider**, golden football — 2026-08-08
 - [x] Credit split: scoreline n+1 · regular goals 1 · own column drives the
       achievement — 2026-08-08
+- [x] **Phase 0 cleared to build** — `Game.startedAt` + start button + elapsed
+      clock, approved 2026-08-15. Independent of everything below.
 - [ ] Q4 (frozen `n`), Q5 (draw case), Q6 (keep The Dagger) answered
-- [ ] Data model approved (`Game.startedAt`, `goldenGoal`/`value` in the goals JSON)
+- [ ] Data model approved for Phases 1-3 (`goldenGoal`/`value` in the goals JSON;
+      `Game.startedAt` is settled under Phase 0)
 - [ ] Sequencing agreed — after the dues cut, not interleaved
