@@ -12,9 +12,22 @@ awaiting sign-off" line was stale; the data model shipped on 2026-08-08.
 | 2b — Guest balances + conversion prompt | **Built.** Guest owed/balance on the ledger tab, sortable by owed, with the `shouldConvert` prompt (`GuestLedgerTab.tsx:73`). Balances come from the dues report so there is one calculation, not two. |
 | 3 — Buckets, filters, merged list, full conversion flow | **Not built.** |
 
-🔴 **Still not browser-smoked.** The plan says "stop here and smoke before
-anything below", and that smoke has not happened — it is the open risk on a
-feature that handles money, against an October deadline.
+🟡 **Partially smoked 2026-08-15** — owner walked the dues pages in a browser,
+reported "looks good so far". That clears the gate the plan set for Phase 3,
+and retires the risk that the pages simply don't render.
+
+It does **not** yet cover the Phase 1 arithmetic cases, which is where a dues
+bug would actually live and where the consequence is a wrong number in a
+conversation about money:
+
+- [ ] no payments → unpaid, balance = full
+- [ ] one payment below the figure → partially paid, balance = remainder
+- [ ] several payments summing exactly → paid in full, balance 0
+- [ ] several summing **over** → negative balance surfaced, not clamped to zero
+- [ ] payment recorded against the wrong year → does not leak into this year
+- [ ] player with no `DuesYearConfig` row → explicit error, not a silent zero owed
+
+Worth clearing before October, not before Phase 3.
 
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-07, decisions recorded 2026-08-08
