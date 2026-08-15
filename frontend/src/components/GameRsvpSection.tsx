@@ -1,9 +1,12 @@
 import { CSSProperties, useCallback, useEffect, useState } from 'react';
-import { RsvpStatus, GamePoll, GamePollEntry, fetchGamePoll } from '../api/rsvps';
+import { RsvpStatus, GamePoll, GamePollEntry, fetchGamePoll, fetchRsvps, resetRsvps } from '../api/rsvps';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TurnoutProjection from './TurnoutProjection';
 
 interface GameRsvpSectionProps {
   gameId: string;
+  // Named in the reset confirm so an admin can see which game they are wiping.
+  gameNumber?: number | null;
   // Bump to force a refetch (e.g. after an admin links a number to a player).
   refreshSignal?: number;
   isAdmin?: boolean;
@@ -137,10 +140,49 @@ function AttendeeRow({ entry, status }: { entry: GamePollEntry; status: RsvpStat
   );
 }
 
-export default function GameRsvpSection({ gameId, refreshSignal, isAdmin = false }: GameRsvpSectionProps) {
+export default function GameRsvpSection({ gameId, gameNumber, refreshSignal, isAdmin = false }: GameRsvpSectionProps) {
   const [poll, setPoll] = useState<GamePoll | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Row count to be deleted, fetched when reset is tapped. Null = not confirming.
+  const [confirmCount, setConfirmCount] = useState<number | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  /**
+   * Count the RSVP rows that would actually be deleted, which is NOT the poll
+   * view's totals: the poll view also counts WhatsApp voters who aren't linked
+   * to a player, and those have no GameRsvp row. Showing the poll count on a
+   * destructive confirm would overstate what is about to be destroyed.
+   */
+  const handleResetClick = async () => {
+    setNotice(null);
+    try {
+      const rows = await fetchRsvps(gameId);
+      if (rows.length === 0) {
+        setNotice('There are no saved RSVPs on this game to clear.');
+        return;
+      }
+      setConfirmCount(rows.length);
+    } catch {
+      setNotice('Could not read the saved RSVPs — nothing was changed.');
+    }
+  };
+
+  const handleResetConfirm = async () => {
+    setResetting(true);
+    try {
+      const { deleted } = await resetRsvps(gameId);
+      setConfirmCount(null);
+      setNotice(`Cleared ${deleted} RSVP${deleted === 1 ? '' : 's'}.`);
+      await load();
+    } catch {
+      setConfirmCount(null);
+      setNotice('Failed to clear the poll.');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -213,6 +255,34 @@ export default function GameRsvpSection({ gameId, refreshSignal, isAdmin = false
             </div>
           ))}
         </div>
+      )}
+
+      {notice && (
+        <p className="text-xs text-text-tertiary text-center">{notice}</p>
+      )}
+
+      {isAdmin && (
+        <div className="pt-1 flex justify-center">
+          <button
+            onClick={handleResetClick}
+            disabled={resetting}
+            className="text-xs text-text-tertiary underline underline-offset-2 disabled:opacity-50"
+          >
+            Reset poll
+          </button>
+        </div>
+      )}
+
+      {confirmCount !== null && (
+        <DeleteConfirmationModal
+          onCancel={() => setConfirmCount(null)}
+          onConfirm={handleResetConfirm}
+          message={
+            `Delete all ${confirmCount} saved RSVP${confirmCount === 1 ? '' : 's'} for ` +
+            `${gameNumber != null ? `game #${gameNumber}` : 'this game'}? ` +
+            `This cannot be undone, and it does not re-link the WhatsApp listener.`
+          }
+        />
       )}
     </div>
   );

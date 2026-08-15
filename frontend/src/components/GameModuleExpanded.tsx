@@ -1166,7 +1166,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 onResolved={() => setPollVersion((v) => v + 1)}
               />
             )}
-            <GameRsvpSection gameId={gameId} refreshSignal={pollVersion} isAdmin={isAdmin} />
+            <GameRsvpSection gameId={gameId} gameNumber={gameNumber} refreshSignal={pollVersion} isAdmin={isAdmin} />
           </>
         )}
 
