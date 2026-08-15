@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { Player } from '../api/players';
 import { Game, isOwnGoal } from '../api/games';
+import { scoreFor } from '../utils/goals';
 
 
 interface PlayerStats {
@@ -123,8 +124,8 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
       const goals = game.goals;
 
       // Count goals by team
-      const colorGoals = goals.filter(g => g.team === 'color').length;
-      const whiteGoals = goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(goals, 'color');
+      const whiteGoals = scoreFor(goals, 'white');
 
       // Determine winner or tie
       const colorWon = colorGoals > whiteGoals;
@@ -248,8 +249,8 @@ export default function OverallStatsTable({ players, games, onPlayerClick, curre
         if (!playerTeam) continue;
 
         // Count goals by team
-        const colorGoals = goals.filter(g => g.team === 'color').length;
-        const whiteGoals = goals.filter(g => g.team === 'white').length;
+        const colorGoals = scoreFor(goals, 'color');
+        const whiteGoals = scoreFor(goals, 'white');
 
         // Determine result for this player
         const isTie = colorGoals === whiteGoals;

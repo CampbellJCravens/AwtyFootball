@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
-import { isScoringGoal, isOwnGoal } from '../services/goals';
+import { isScoringGoal, isOwnGoal, scoreFor } from '../services/goals';
 import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
 import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
 
@@ -24,6 +24,8 @@ interface GoalData {
   timestamp: string;
   team: 'color' | 'white' | null;
   ownGoal?: boolean;
+  goldenGoal?: boolean;
+  value?: number; // scoreline weight; player credit is always 1
 }
 
 interface ParsedGame {
@@ -57,8 +59,8 @@ const hasSportsmanshipData = (year: number, month: number) => year > 2026 || (ye
 const hasFoulsData = (year: number, month: number) => year > 2026 || (year === 2026 && month >= 7);
 
 function getGameResult(game: ParsedGame, team: 'color' | 'white'): 'W' | 'L' | 'T' {
-  const colorGoals = game.goals.filter(g => g.team === 'color').length;
-  const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+  const colorGoals = scoreFor(game.goals, 'color');
+  const whiteGoals = scoreFor(game.goals, 'white');
   if (colorGoals === whiteGoals) return 'T';
   if (team === 'color') return colorGoals > whiteGoals ? 'W' : 'L';
   return whiteGoals > colorGoals ? 'W' : 'L';
@@ -93,8 +95,8 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
 
       const points = result === 'W' ? 3 : result === 'T' ? 1 : 0;
 
-      const colorScore = game.goals.filter(g => g.team === 'color').length;
-      const whiteScore = game.goals.filter(g => g.team === 'white').length;
+      const colorScore = scoreFor(game.goals, 'color');
+      const whiteScore = scoreFor(game.goals, 'white');
       const goalsScored = game.goals.filter(g => g.scorerId === player.id && isScoringGoal(g)).length;
       const ownGoalsScored = game.goals.filter(g => g.scorerId === player.id && isOwnGoal(g)).length;
       const assistsMade = game.goals.filter(g => g.assisterId === player.id).length;
@@ -320,8 +322,8 @@ router.get('/chemistry', async (req: AuthenticatedRequest, res: Response) => {
       const assignments = game.teamAssignments;
       if (!assignments || Object.keys(assignments).length === 0) continue;
 
-      const colorGoals = game.goals.filter(g => g.team === 'color').length;
-      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(game.goals, 'color');
+      const whiteGoals = scoreFor(game.goals, 'white');
       const isTie = colorGoals === whiteGoals;
 
       for (const team of ['color', 'white'] as const) {
@@ -411,8 +413,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     type PlayerStat = { points: number; wins: number; ties: number; goals: number; ownGoals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
 
     for (const game of monthGames) {
-      const colorGoals = game.goals.filter(g => g.team === 'color').length;
-      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(game.goals, 'color');
+      const whiteGoals = scoreFor(game.goals, 'white');
 
       for (const [pid, team] of Object.entries(game.teamAssignments)) {
         if (!playerMap.has(pid)) continue;
@@ -553,8 +555,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     // goal-combo like the duo — this is results-based (mirrors chemistry trios).
     const trioTracker = new Map<string, { ids: string[]; games: number; wins: number; ties: number }>();
     for (const game of monthGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       const isTie = c === w;
       for (const team of ['color', 'white'] as const) {
         const teamPlayers = Object.entries(game.teamAssignments)
@@ -596,8 +598,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     // Highest-scoring game of the month (most total goals).
     let highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null = null;
     for (const game of monthGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       const total = c + w;
       if (total > 0 && (!highestScoringGame || total > highestScoringGame.totalGoals)) {
         highestScoringGame = { gameNumber: game.gameNumber, date: game.createdAt.toISOString(), colorScore: c, whiteScore: w, totalGoals: total };
@@ -675,8 +677,8 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     const stats = new Map<string, YStat>();
 
     for (const game of yearGames) {
-      const colorGoals = game.goals.filter(g => g.team === 'color').length;
-      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(game.goals, 'color');
+      const whiteGoals = scoreFor(game.goals, 'white');
       for (const [pid, team] of Object.entries(game.teamAssignments)) {
         if (!playerMap.has(pid)) continue;
         if (playerMap.get(pid)!.name.includes('Guest')) continue;
@@ -743,8 +745,8 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     // Best Trio (teammates by PPG, min 3 games together across the year)
     const trioTracker = new Map<string, { ids: string[]; games: number; wins: number; ties: number }>();
     for (const game of yearGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       const isTie = c === w;
       for (const team of ['color', 'white'] as const) {
         const teamPlayers = Object.entries(game.teamAssignments)
@@ -773,8 +775,8 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     let highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null = null;
     let totalGoals = 0;
     for (const game of yearGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       totalGoals += c + w;
       const total = c + w;
       if (total > 0 && (!highestScoringGame || total > highestScoringGame.totalGoals)) {
@@ -870,8 +872,8 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
 
       const stats = new Map<string, PlayerStat>();
       for (const game of monthGames) {
-        const colorGoals = game.goals.filter(g => g.team === 'color').length;
-        const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+        const colorGoals = scoreFor(game.goals, 'color');
+        const whiteGoals = scoreFor(game.goals, 'white');
         for (const [pid, team] of Object.entries(game.teamAssignments)) {
           if (!playerMap.has(pid)) continue;
           if (playerMap.get(pid)!.name.includes('Guest')) continue;

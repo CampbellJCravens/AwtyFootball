@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import EditGameModal from './EditGameModal';
 import { updateGame, Goal, GameField } from '../api/games';
+import { scoreFor } from '../utils/goals';
 
 interface GameModuleCondensedProps {
   gameId: string;
@@ -24,8 +25,8 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, field = 
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
   };
 
-  const colorGoals = goals?.filter(g => g.team === 'color').length ?? 0;
-  const whiteGoals = goals?.filter(g => g.team === 'white').length ?? 0;
+  const colorGoals = scoreFor(goals ?? [], 'color');
+  const whiteGoals = scoreFor(goals ?? [], 'white');
   const playerCount = teamAssignments ? Object.keys(teamAssignments).length : 0;
 
   const handleEdit = async (updates: { dateIso: string; gameNumber: number; field: GameField | null }) => {

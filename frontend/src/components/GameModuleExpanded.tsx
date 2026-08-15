@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
 import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { scoreFor } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
 import ActivePlayersSection from './ActivePlayersSection';
@@ -32,6 +33,8 @@ type LocalGoal = {
   timestamp: Date;
   team: 'color' | 'white' | null;
   ownGoal?: boolean;
+  goldenGoal?: boolean;
+  value?: number;
 };
 
 interface GameModuleExpandedProps {
@@ -68,7 +71,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
-  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number }>>([]);
+  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
   // The 80-minute offer, dismissed for this sitting only. Arming stays available
   // from the button afterwards.
   const [goldenPromptDismissed, setGoldenPromptDismissed] = useState(false);
@@ -183,6 +186,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             timestamp: new Date(goal.timestamp),
             team: goal.team,
             ownGoal: goal.ownGoal,
+            goldenGoal: goal.goldenGoal,
+            value: goal.value,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -196,6 +201,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             type: event.type,
             timestamp: new Date(event.timestamp),
             n: event.n,
+            trailing: event.trailing,
           }))
         );
       }
@@ -271,14 +277,34 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // Frozen at arming: the deciding goal is worth n+1, and n must not move
   // afterwards. A level game gives n = 0, so the next goal wins by exactly 1.
   const handleArmGoldenGoal = () => {
-    const colorScore = goals.filter(g => g.team === 'color').length;
-    const whiteScore = goals.filter(g => g.team === 'white').length;
+    const colorScore = scoreFor(goals, 'color');
+    const whiteScore = scoreFor(goals, 'white');
     setGameEvents(prev => [
       ...prev,
-      { type: 'goldenGoalArmed', timestamp: new Date(), n: Math.abs(colorScore - whiteScore) },
+      {
+        type: 'goldenGoalArmed',
+        timestamp: new Date(),
+        n: Math.abs(colorScore - whiteScore),
+        trailing: colorScore === whiteScore ? null : colorScore < whiteScore ? 'color' : 'white',
+      },
     ]);
     setGoldenPromptDismissed(true);
   };
+
+  /**
+   * The weight this goal carries on the scoreline. Only the first goal after
+   * arming is the decider: worth n+1 to the team that was behind (putting them
+   * exactly one ahead) and 1 to the team that was in front. An own goal can
+   * decide it too — `team` is already the credited side, so the same rule
+   * applies without special-casing.
+   */
+  const deciderValueFor = (creditedTeam: 'color' | 'white' | null): number => {
+    if (!armedEvent || gameOverAt || creditedTeam === null) return 1;
+    const trailing = armedEvent.trailing ?? null;
+    return creditedTeam === trailing ? (armedEvent.n ?? 0) + 1 : 1;
+  };
+
+  const isDecider = () => !!armedEvent && !gameOverAt;
 
   const handleStartGame = async () => {
     const when = new Date();
@@ -304,6 +330,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         timestamp: goal.timestamp.toISOString(),
         team: goal.team,
         ...(goal.ownGoal ? { ownGoal: true } : {}),
+        ...(goal.goldenGoal ? { goldenGoal: true } : {}),
+        ...(goal.value !== undefined ? { value: goal.value } : {}),
       }));
       
       // Convert team changes to API format
@@ -321,6 +349,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         type: event.type,
         timestamp: event.timestamp.toISOString(),
         ...(event.n !== undefined ? { n: event.n } : {}),
+        ...(event.trailing !== undefined ? { trailing: event.trailing } : {}),
       }));
 
       // Only slots still on a team have a visit — dropping a guest from the
@@ -384,8 +413,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     try {
       setSharing(true);
 
-      const colorScore = goals.filter(g => g.team === 'color').length;
-      const whiteScore = goals.filter(g => g.team === 'white').length;
+      const colorScore = scoreFor(goals, 'color');
+      const whiteScore = scoreFor(goals, 'white');
 
       // Man of the Match = most goal involvements (goals + assists), guests
       // excluded. Ties surface all winners. Omitted when nobody was involved.
@@ -525,6 +554,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             timestamp: new Date(goal.timestamp),
             team: goal.team,
             ownGoal: goal.ownGoal,
+            goldenGoal: goal.goldenGoal,
+            value: goal.value,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -811,7 +842,21 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     const gameDateObj = new Date(gameDate);
     const now = new Date(gameDateObj);
     now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
-    setGoals(prev => [...prev, { scorer: player, assister: null, timestamp: now, team: creditedTeam, ownGoal: true }]);
+    recordGoal({ scorer: player, assister: null, timestamp: now, team: creditedTeam, ownGoal: true });
+  };
+
+  /**
+   * Append a goal, applying the golden-goal weighting and closing the game out
+   * if this was the decider. Every goal-scoring path goes through here so the
+   * decider cannot be missed by whichever button happened to be tapped.
+   */
+  const recordGoal = (goal: LocalGoal) => {
+    const decider = isDecider();
+    const value = decider ? deciderValueFor(goal.team) : 1;
+    setGoals(prev => [...prev, decider ? { ...goal, goldenGoal: true, value } : goal]);
+    if (decider) {
+      setGameEvents(prev => [...prev, { type: 'gameOver', timestamp: new Date() }]);
+    }
   };
 
   const handleAssisterSelected = (assister: Player | null) => {
@@ -821,7 +866,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const gameDateObj = new Date(gameDate);
       const now = new Date(gameDateObj);
       now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
-      setGoals(prev => [...prev, { scorer: goalScorer, assister, timestamp: now, team: scorerTeam }]);
+      recordGoal({ scorer: goalScorer, assister, timestamp: now, team: scorerTeam });
       setGoalScorer(null);
     }
   };
@@ -1144,7 +1189,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             {/* Score Box (centered, overlapping) */}
             <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gold rounded-xl px-4 py-2 border-2 border-gold shadow-glow-gold z-10">
               <span className="text-text-on-accent font-bold text-xl">
-                {goals.filter(g => g.team === 'color').length} - {goals.filter(g => g.team === 'white').length}
+                {scoreFor(goals, 'color')} - {scoreFor(goals, 'white')}
               </span>
             </div>
           </div>

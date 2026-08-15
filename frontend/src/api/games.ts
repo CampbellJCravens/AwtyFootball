@@ -10,6 +10,10 @@ export interface Goal {
   // The team CREDITED with the goal — for an own goal, the scorer's opponent.
   team: 'color' | 'white' | null;
   ownGoal?: boolean;
+  // Ended the game under sudden death. Categorisation only.
+  goldenGoal?: boolean;
+  // Scoreline weight; absent or 1 = normal. Player credit is ALWAYS 1.
+  value?: number;
 }
 
 // Own goals credit the opposition, so `team` handles the scoreline. Never
@@ -29,6 +33,7 @@ export interface TeamChange {
 export interface GameEvent {
   type: 'halfTime' | 'gameOver' | 'goldenGoalArmed';
   n?: number; // goal difference frozen at arming; only on goldenGoalArmed
+  trailing?: 'color' | 'white' | null; // team behind at arming; null = level
   timestamp: string; // ISO date string
 }
 

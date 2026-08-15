@@ -8,6 +8,13 @@ export const goalSchema = z.object({
   // opponent, which is what keeps the scoreline right with no special-casing.
   team: z.enum(['color', 'white']).nullable(),
   ownGoal: z.boolean().optional(),
+  // This record ended the game under sudden death. Categorisation only — it is
+  // what the golden-goal count and The Decider achievement read.
+  goldenGoal: z.boolean().optional(),
+  // Scoreline weight. Absent or 1 = a normal goal. The scorer's own total is
+  // ALWAYS credited 1 regardless of this, or one freak comeback distorts a
+  // season's leaderboards.
+  value: z.number().int().min(1).optional(),
 });
 
 export const teamChangeSchema = z.object({
@@ -27,6 +34,10 @@ export const gameEventSchema = z.object({
   // between arming and the goal is what causes an argument at full time.
   // Only present on goldenGoalArmed.
   n: z.number().int().min(0).optional(),
+  // Which team was BEHIND at arming, frozen alongside n. Needed because the
+  // decider is worth n+1 only to the trailing team; the leading team's goal is
+  // worth 1. null = level, where n is 0 and either team wins by 1.
+  trailing: z.enum(['color', 'white']).nullable().optional(),
 });
 
 // One guest appearance. slotPlayerId is the GuestN pool Player carrying the

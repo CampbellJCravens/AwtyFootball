@@ -1,5 +1,5 @@
 import prisma from '../prisma';
-import { isScoringGoal, isOwnGoal } from './goals';
+import { isScoringGoal, isOwnGoal, scoreFor } from './goals';
 
 // Types mirrored from stats.ts — kept local so this module is self-contained.
 interface GoalData {
@@ -8,6 +8,8 @@ interface GoalData {
   timestamp: string;
   team: 'color' | 'white' | null;
   ownGoal?: boolean;
+  goldenGoal?: boolean;
+  value?: number; // scoreline weight; player credit is always 1
 }
 
 interface GameEventData {
@@ -60,8 +62,8 @@ async function loadAllGames(): Promise<ParsedGame[]> {
 }
 
 function getGameResult(game: ParsedGame, team: 'color' | 'white'): 'W' | 'L' | 'T' {
-  const colorGoals = game.goals.filter(g => g.team === 'color').length;
-  const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+  const colorGoals = scoreFor(game.goals, 'color');
+  const whiteGoals = scoreFor(game.goals, 'white');
   if (colorGoals === whiteGoals) return 'T';
   if (team === 'color') return colorGoals > whiteGoals ? 'W' : 'L';
   return whiteGoals > colorGoals ? 'W' : 'L';
@@ -187,8 +189,8 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
 
     const stats = new Map<string, PlayerStat>();
     for (const game of monthGames) {
-      const colorGoals = game.goals.filter(g => g.team === 'color').length;
-      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(game.goals, 'color');
+      const whiteGoals = scoreFor(game.goals, 'white');
       for (const [pid, team] of Object.entries(game.teamAssignments)) {
         if (!playerMap.has(pid)) continue;
         if (playerMap.get(pid)!.name.includes('Guest')) continue;
