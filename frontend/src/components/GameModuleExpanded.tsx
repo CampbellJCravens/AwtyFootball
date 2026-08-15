@@ -1194,7 +1194,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             </div>
           </div>
 
-          {/* Kick-off: start button until the game starts, then the running clock. */}
+          {/* Kick-off clock. The Start Game button lives with the other game
+              event controls below, beside Half Time. */}
           <div className="mt-2 flex items-center justify-center">
             {elapsedLabel !== null ? (
               <div className="flex items-center gap-2 text-sm">
@@ -1214,13 +1215,6 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                   </button>
                 )}
               </div>
-            ) : isAdmin ? (
-              <button
-                onClick={handleStartGame}
-                className="px-4 py-1.5 rounded-lg bg-gold text-text-on-accent text-sm font-semibold"
-              >
-                Start game
-              </button>
             ) : (
               <span className="text-sm text-text-tertiary">Not started</span>
             )}
@@ -1304,6 +1298,15 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         {/* Game Event Controls (admin only) */}
         {!loading && !error && isAdmin && (
           <div className="mb-4 flex gap-2 flex-shrink-0">
+            {!startedAt && (
+              <button
+                onClick={handleStartGame}
+                className="flex-1 px-4 py-2 bg-success text-text-on-accent text-sm font-medium rounded-xl transition-colors"
+                data-tooltip="Record kick-off and start the clock"
+              >
+                Start Game
+              </button>
+            )}
             <button
               onClick={() => handleRecordGameEvent('halfTime')}
               className="flex-1 px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover active:bg-accent-active transition-colors"
