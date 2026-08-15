@@ -7,6 +7,10 @@ owes.
 
 Takes about five minutes. Clears 5 of the 6 open cases in `CLUB_DUES_PRD.md`.
 
+> ✅ **Run 2026-08-15 by the owner: all six steps passed, no defects.** Cleanup
+> verified at the database — 0 payment rows, both years back to baseline. Re-run
+> this after any change to `services/dues.ts` or the payment routes.
+
 ---
 
 ## Before you start — why this is safe

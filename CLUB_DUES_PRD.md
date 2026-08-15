@@ -12,22 +12,24 @@ awaiting sign-off" line was stale; the data model shipped on 2026-08-08.
 | 2b — Guest balances + conversion prompt | **Built.** Guest owed/balance on the ledger tab, sortable by owed, with the `shouldConvert` prompt (`GuestLedgerTab.tsx:73`). Balances come from the dues report so there is one calculation, not two. |
 | 3 — Buckets, filters, merged list, full conversion flow | **Not built.** |
 
-🟡 **Partially smoked 2026-08-15** — owner walked the dues pages in a browser,
-reported "looks good so far". That clears the gate the plan set for Phase 3,
-and retires the risk that the pages simply don't render.
+✅ **SMOKED BY HAND 2026-08-15.** Owner walked the pages, then ran all six
+steps of `DUES_SMOKE_TEST.md` against a live roster member. **Every step
+behaved as specified; no defects found.** Cleanup verified at the database
+afterwards — 0 `DuesPayment` rows, both years back to 57 clean entries, no
+stray `leftAt` or notes, matching the pre-test baseline exactly.
 
-It does **not** yet cover the Phase 1 arithmetic cases, which is where a dues
-bug would actually live and where the consequence is a wrong number in a
-conversation about money:
+- [x] no payments → unpaid, balance = full
+- [x] one payment below the figure → partially paid, balance = remainder
+- [x] several payments summing exactly → paid in full, balance 0
+- [x] several summing **over** → negative balance surfaced, not clamped to zero
+- [x] payment recorded against one year → does not leak into another
+- [ ] player with no `DuesYearConfig` row → explicit error, not a silent zero
+      owed. **Not reachable today** — 2026 and 2027 are both configured. Clears
+      when 2028 is opened in October.
 
-- [ ] no payments → unpaid, balance = full
-- [ ] one payment below the figure → partially paid, balance = remainder
-- [ ] several payments summing exactly → paid in full, balance 0
-- [ ] several summing **over** → negative balance surfaced, not clamped to zero
-- [ ] payment recorded against the wrong year → does not leak into this year
-- [ ] player with no `DuesYearConfig` row → explicit error, not a silent zero owed
-
-Worth clearing before October, not before Phase 3.
+The overpayment case is the one worth noting: `amountOutstanding` was once
+`billed − collected`, so one person's overpayment masked another's debt (fixed
+2026-08-08). That fix is now confirmed by a human rather than assumed.
 
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-07, decisions recorded 2026-08-08
