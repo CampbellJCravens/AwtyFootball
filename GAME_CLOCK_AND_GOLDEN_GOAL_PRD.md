@@ -1,11 +1,11 @@
 # PRD — Game Clock and Golden Goal
 
-Status: **Phases 0-2 BUILT AND DEPLOYED 2026-08-15** (`981a06b`, `72629ed`,
-`1ce17f5`, `9f17253` on `main`). Kick-off clock, arming, and the weighted
-decider are live. **Phase 3 (the three achievements + the seasonal award) is
-NOT built** — golden goals are recorded and categorised, nothing reads the
-category yet. Not browser-smoked; first live use is the smoke test.
-Two in-game features, requested 2026-08-08.
+Status: **ALL FOUR PHASES BUILT AND DEPLOYED 2026-08-15** (`981a06b`,
+`72629ed`, `1ce17f5`, `9f17253`, `ee3b7a2` on `main`). Kick-off clock, arming,
+the weighted decider, and the two achievements plus the seasonal award are all
+live. The seasonal award is named **The Decider**, matching the achievement
+(*Clutch* / *Sudden Death* were the alternatives). **Not browser-smoked** —
+first live use is the smoke test. Two in-game features, requested 2026-08-08.
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-08
 
