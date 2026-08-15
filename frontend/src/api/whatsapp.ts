@@ -6,6 +6,18 @@ export interface WhatsappStatus {
   enabled: boolean;
   linked: boolean;
   hasQr: boolean;
+  connectionState: 'connecting' | 'open' | 'closed';
+  lastMessageAt: string | null;
+  lastVoteAt: string | null;
+  lastPollCapturedAt: string | null;
+  lastPollCapturedTitle: string | null;
+  lastCaptureFailureAt: string | null;
+  lastCaptureFailure: string | null;
+  // Votes seen for a poll that was never captured — i.e. RSVPs being dropped
+  // right now. The signal that was missing when 8 Aug and 15 Aug went silently.
+  orphanVoteCount: number;
+  orphanPollCount: number;
+  lastOrphanVoteAt: string | null;
 }
 
 export interface WhatsappPoll {

@@ -34,6 +34,7 @@ import {
   getPollUpdate,
   unwrapMessage,
 } from './polls';
+import { noteConnectionState, noteMessageSeen, noteVoteSeen, getActivity } from './activity';
 
 // Ordinary chatter we deliberately ignore. Anything in scope that isn't one of
 // these, and isn't a poll, gets its shape logged once so a message type we don't
@@ -126,6 +127,23 @@ export function getLatestWhatsappQr(): string | null {
 
 export function isWhatsappLinked(): boolean {
   return sock !== null && latestQr === null;
+}
+
+/**
+ * What the listener has actually seen, for the public health endpoint.
+ *
+ * `linked` is deliberately kept separate from `capturing`: a socket can be open
+ * and receiving while capture is broken, which is exactly the state that went
+ * unnoticed for two weeks. Reads in-memory counters only — no database — so an
+ * uptime monitor polling this cannot hold the Neon compute awake.
+ */
+export function getWhatsappHealth() {
+  const activity = getActivity();
+  return {
+    linked: isWhatsappLinked(),
+    hasQr: latestQr !== null,
+    ...activity,
+  };
 }
 
 /**
@@ -229,12 +247,14 @@ export async function startWhatsappListener(): Promise<void> {
         try {
           // Ignore anything outside the configured group (if one is set).
           if (!isInScope(msg.key?.remoteJid)) continue;
+          noteMessageSeen();
           if (msg.pushName && msg.key?.participant) {
             await noteContact(msg.key.participant, msg.pushName);
           }
           if (isPollCreation(msg.message)) {
             await capturePoll(msg);
           } else if (getPollUpdate(msg.message)) {
+            noteVoteSeen();
             await handlePollUpdateMessage(msg, meId, meLid);
           } else {
             logUnhandledMessage(msg.message);
@@ -258,10 +278,14 @@ export async function startWhatsappListener(): Promise<void> {
       if (connection === 'open') {
         latestQr = null;
         reconnectAttempts = 0; // healthy again, reset the backoff
+        noteConnectionState('open');
         console.log('[whatsapp] Linked and listening (read-only).');
       }
 
+      if (connection === 'connecting') noteConnectionState('connecting');
+
       if (connection === 'close') {
+        noteConnectionState('closed');
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason.loggedOut;
         teardownSocket();

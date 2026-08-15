@@ -44,7 +44,7 @@ import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
 import whatsappRouter from './routes/whatsapp';
-import { startWhatsappListener, isWhatsappLinked } from './services/whatsapp/listener';
+import { startWhatsappListener, getWhatsappHealth } from './services/whatsapp/listener';
 
 const PgSession = pgSession(session);
 
@@ -114,8 +114,21 @@ app.get('/api/whatsapp/health', (req: Request, res: Response) => {
   if (!env.WHATSAPP_LISTENER_ENABLED) {
     return res.json({ status: 'disabled', linked: false });
   }
-  const linked = isWhatsappLinked();
-  res.status(linked ? 200 : 503).json({ status: linked ? 'ok' : 'down', linked });
+  const health = getWhatsappHealth();
+
+  // Three distinct states, because the old endpoint could only tell "a socket
+  // exists" and reported ok through two dropped weeks:
+  //   down     - not connected; the session needs attention
+  //   degraded - connected, but votes are arriving for a poll we never captured,
+  //              which means we are actively dropping RSVPs right now
+  //   ok       - connected, nothing being dropped
+  // A quiet week is still ok: orphanVoteCount is 0 when nobody is voting, so
+  // this cannot page on an ordinary lull.
+  const down = !health.linked || health.connectionState !== 'open';
+  const degraded = !down && health.orphanVoteCount > 0;
+  const status = down ? 'down' : degraded ? 'degraded' : 'ok';
+
+  res.status(down || degraded ? 503 : 200).json({ status, ...health });
 });
 
 app.use('/api/whatsapp', whatsappRouter);

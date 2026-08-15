@@ -9,7 +9,7 @@ import { Router, Response, NextFunction } from 'express';
 import QRCode from 'qrcode';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { env } from '../env';
-import { getLatestWhatsappQr, isWhatsappLinked, listWhatsappGroups, relinkWhatsapp, requestWhatsappPairingCode } from '../services/whatsapp/listener';
+import { getLatestWhatsappQr, getWhatsappHealth, listWhatsappGroups, relinkWhatsapp, requestWhatsappPairingCode } from '../services/whatsapp/listener';
 import {
   listPolls,
   linkPollToGame,
@@ -23,12 +23,14 @@ const router = Router();
 
 router.use(requireAdmin);
 
-// Connection status for the admin panel.
+// Connection status for the admin panel. Deliberately touches NO database: the
+// status banner polls this every 60s, so a query here would hold the Neon
+// compute awake for as long as an admin has the app open — the exact burn
+// 470acf2 was written to stop. Poll history comes from /polls instead.
 router.get('/status', (_req: AuthenticatedRequest, res: Response) => {
   res.json({
     enabled: env.WHATSAPP_LISTENER_ENABLED,
-    linked: isWhatsappLinked(),
-    hasQr: getLatestWhatsappQr() !== null,
+    ...getWhatsappHealth(),
   });
 });
 

@@ -25,6 +25,7 @@ import {
 import prisma from '../../prisma';
 import { combineSelections } from './options';
 import { findGameForPollTitle } from './gameMatch';
+import { noteCaptureFailure, notePollCaptured, noteOrphanVote } from './activity';
 
 // Sentinel written to GameRsvp.setByUserId so listener-sourced votes are
 // distinguishable from self ("null") and admin (a real user id) votes.
@@ -176,16 +177,30 @@ export async function capturePoll(raw: any): Promise<void> {
 
   const gameId = await findGameForPollTitle(question);
 
-  await prisma.whatsappPoll.create({
-    data: {
-      pollMessageId,
-      remoteJid,
-      question,
-      pollMessage: enc({ key: raw.key, message: raw.message }),
-      gameId: gameId ?? undefined,
-      linkedBy: gameId ? null : undefined, // null = auto-matched
-    },
-  });
+  try {
+    await prisma.whatsappPoll.create({
+      data: {
+        pollMessageId,
+        remoteJid,
+        question,
+        pollMessage: enc({ key: raw.key, message: raw.message }),
+        gameId: gameId ?? undefined,
+        linkedBy: gameId ? null : undefined, // null = auto-matched
+      },
+    });
+  } catch (err) {
+    // The creation message arrives exactly once. If this write is lost the poll
+    // is unrecoverable and every later vote is discarded, so name it loudly
+    // rather than letting it surface as an anonymous handler error.
+    noteCaptureFailure(question, err);
+    console.error(
+      `[whatsapp] FAILED to persist poll "${question}" (${pollMessageId}) — ` +
+        `votes for it will be dropped: ${err instanceof Error ? err.message : String(err)}`
+    );
+    throw err;
+  }
+
+  notePollCaptured(question, pollMessageId);
 
   if (raw.pushName && raw.key?.participant) {
     await upsertContact(phoneFromJid(raw.key.participant), raw.pushName);
@@ -286,6 +301,7 @@ export async function handlePollUpdateMessage(
 
   const poll = await prisma.whatsappPoll.findUnique({ where: { pollMessageId: creationKey.id } });
   if (!poll) {
+    noteOrphanVote(creationKey.id);
     console.warn(`[whatsapp] Vote for uncaptured poll ${creationKey.id} — ignored.`);
     return;
   }
