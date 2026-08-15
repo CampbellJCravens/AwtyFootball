@@ -43,6 +43,11 @@ model Game {
   // "cancelled" | null. null = "N/A FIELD" in the UI.
   field           String?
 
+  // Kick-off, set by the start button. null = not started. This is NOT the game
+  // date: createdAt remains the date everywhere in the app, and reading
+  // startedAt in date logic would silently break every schedule and stat.
+  startedAt       DateTime?
+
   rsvps           GameRsvp[]
   whatsappPolls   WhatsappPoll[]
   guestVisits     GuestVisit[]

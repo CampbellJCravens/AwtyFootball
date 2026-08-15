@@ -64,6 +64,9 @@ export interface Game {
   sportsmanship?: Record<string, number>;
   fouls?: Record<string, number>;
   field?: GameField | null;
+  // Kick-off, set by the start button. null/absent = not started. Never use this
+  // as the game date — createdAt is the date everywhere.
+  startedAt?: string | null;
   guestVisits?: GuestVisit[]; // only returned by fetchGame/updateGame, not the list
 }
 
@@ -78,6 +81,7 @@ export interface UpdateGameData {
   createdAt?: string; // ISO date string
   gameNumber?: number; // Add game number
   field?: GameField | null;
+  startedAt?: string | null; // ISO date string; null clears a mis-tapped start
 }
 
 // Fetch all games

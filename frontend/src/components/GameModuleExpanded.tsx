@@ -69,6 +69,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver'; timestamp: Date }>>([]);
+  // Kick-off. Distinct from the game date (gameDate/createdAt), which is unchanged.
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
+  const [clockNow, setClockNow] = useState<Date>(() => new Date());
   const [sportsmanship, setSportsmanship] = useState<Record<string, number>>({});
   const [fouls, setFouls] = useState<Record<string, number>>({});
   const [gameEventToDelete, setGameEventToDelete] = useState<number | null>(null);
@@ -156,6 +159,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         )
       );
 
+      setStartedAt(gameData.startedAt ? new Date(gameData.startedAt) : null);
+
       // Restore goals - guests are now regular players, so just use playersData
       if (gameData.goals && gameData.goals.length > 0) {
         const allPlayersWithGuests = [...playersData];
@@ -230,6 +235,36 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   useEffect(() => {
     loadGameData();
   }, [gameId, loadGameData]);
+
+  // The clock freezes at full time rather than running forever on a finished game.
+  const gameOverAt = gameEvents.find(e => e.type === 'gameOver')?.timestamp ?? null;
+
+  useEffect(() => {
+    if (!startedAt || gameOverAt) return;
+    const id = setInterval(() => setClockNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt, gameOverAt]);
+
+  // Football convention: minutes keep counting past 60 rather than rolling into
+  // an hours field, so a game in its 87th minute reads "87:04".
+  const elapsedLabel = (() => {
+    if (!startedAt) return null;
+    const ms = (gameOverAt ?? clockNow).getTime() - startedAt.getTime();
+    const total = Math.max(0, Math.floor(ms / 1000));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  })();
+
+  const handleStartGame = async () => {
+    const when = new Date();
+    setStartedAt(when);
+    setClockNow(when);
+    try {
+      await updateGame(gameId, { startedAt: when.toISOString() });
+    } catch (err) {
+      setStartedAt(null); // never leave a kick-off showing that wasn't saved
+      setError(err instanceof Error ? err.message : 'Failed to start the game');
+    }
+  };
 
   // Save game data to backend
   const saveGameData = useCallback(async () => {
@@ -1085,6 +1120,27 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 {goals.filter(g => g.team === 'color').length} - {goals.filter(g => g.team === 'white').length}
               </span>
             </div>
+          </div>
+
+          {/* Kick-off: start button until the game starts, then the running clock. */}
+          <div className="mt-2 flex items-center justify-center">
+            {elapsedLabel !== null ? (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-mono font-semibold text-text-primary tabular-nums">{elapsedLabel}</span>
+                <span className="text-text-tertiary">
+                  {gameOverAt ? 'full time' : `since ${formatTime(startedAt!.toISOString())}`}
+                </span>
+              </div>
+            ) : isAdmin ? (
+              <button
+                onClick={handleStartGame}
+                className="px-4 py-1.5 rounded-lg bg-gold text-text-on-accent text-sm font-semibold"
+              >
+                Start game
+              </button>
+            ) : (
+              <span className="text-sm text-text-tertiary">Not started</span>
+            )}
           </div>
         </div>
 

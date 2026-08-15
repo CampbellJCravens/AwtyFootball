@@ -230,6 +230,10 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       updateData.field = data.field; // null clears, 'stadium'/'grass' sets
     }
 
+    if (data.startedAt !== undefined) {
+      updateData.startedAt = data.startedAt === null ? null : new Date(data.startedAt);
+    }
+
     // Guest visits are relational, not a JSON column, so they ride the same
     // transaction as the game update — the sideline auto-save must not be able
     // to land a roster without its guest attribution.
