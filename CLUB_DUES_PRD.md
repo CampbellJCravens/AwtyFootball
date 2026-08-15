@@ -1,6 +1,21 @@
 # PRD — Club Dues Tracking
 
-Status: **DRAFT — scope decided, data model awaiting sign-off.**
+Status: **The selected cut (Phases 0–2) plus 2b is BUILT AND DEPLOYED.**
+Verified against code 2026-08-15 — the previous "scope decided, data model
+awaiting sign-off" line was stale; the data model shipped on 2026-08-08.
+
+| Phase | State |
+|---|---|
+| 0 — Schema | **Built**, and larger than planned: `DuesYearConfig`, `DuesPayment`, `Player.memberSince` as specced, **plus `DuesRosterEntry`** added for the roster lifecycle decided 2026-08-10. |
+| 1 — Routes + status service | **Built.** 9 admin-only routes in `routes/dues.ts`, including payments write/delete, year config, open-year, per-entry Left, and a sweep. |
+| 2 — Dues page | **Built.** `DuesPage.tsx`, `DuesTab.tsx`, `RecordPaymentModal.tsx`, `AddDuesEntryModal.tsx`. |
+| 2b — Guest balances + conversion prompt | **Built.** Guest owed/balance on the ledger tab, sortable by owed, with the `shouldConvert` prompt (`GuestLedgerTab.tsx:73`). Balances come from the dues report so there is one calculation, not two. |
+| 3 — Buckets, filters, merged list, full conversion flow | **Not built.** |
+
+🔴 **Still not browser-smoked.** The plan says "stop here and smoke before
+anything below", and that smoke has not happened — it is the open risk on a
+feature that handles money, against an October deadline.
+
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-08-07, decisions recorded 2026-08-08
 Deadline: **October 2026** — the annual collection.

@@ -1,6 +1,15 @@
 # PRD — RSVP Reliability, Guest Tracking & Poll Reset
 
-Status: DRAFT — awaiting sign-off
+Status: **Phases 1 and 2 BUILT AND DEPLOYED. Phase 0 is HALF BUILT.**
+Verified against code 2026-08-15 — the previous "DRAFT — awaiting sign-off"
+line had been wrong since July.
+
+| Phase | State |
+|---|---|
+| 0 — Reset poll | **Backend only.** `DELETE /api/games/:gameId/rsvps` ships (`rsvps.ts:143`) and the client function `resetRsvps()` exists (`api/rsvps.ts:106`), but **nothing calls it** — the button and confirm modal were never built, so an admin cannot reset a poll from the UI. |
+| 1 — Reliability | **Built.** `services/reliability.ts` computes response rate, show-when-committed, no-show, ghost and attendance with N; served admin-only at `GET /api/stats/reliability` (`stats.ts:1234`), rendered by `ReliabilityTab.tsx`. Ghost was later split into silent vs ghost, going beyond this spec. |
+| 2 — Guest frequency | **Built.** `guestsBrought`, `gamesWithGuests` and `guestAttachRate` in the same service and view. |
+
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-07-14
 
