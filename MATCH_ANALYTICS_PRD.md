@@ -1,9 +1,10 @@
 # Match Analytics PRD — competitive balance, match tempo, roster churn
 
-**Status:** BUILT 2026-08-17 on `feat/match-analytics` — all three phases, plus Game of the
-Month (Q2). All open questions resolved. Both packages `tsc --noEmit` clean, frontend prod
-build passes, 58 assertions green against the real season.
-**NOT merged, NOT deployed, NOT browser-smoked.**
+**Status:** ✅ **MERGED to `main` + PUSHED 2026-08-17** (`b041fe1`, fast-forward from
+`26b21f3`) — all three phases plus Game of the Month and the full-time nudge. All open
+questions resolved. Both packages `tsc --noEmit` clean, frontend prod build passes, 58
+assertions green against the real season. Render auto-deploying.
+**NOT browser-smoked** — the standing open risk.
 
 **Date:** 2026-08-17
 **App:** Awty Football Club (awtyfootballclub.com)
