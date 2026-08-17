@@ -123,11 +123,15 @@ export function summariseBalance(balances: MatchBalance[]): BalanceSummary {
 }
 
 /**
- * Game of the Season: the tightest game, tie-broken by drama then by goals.
- * A draw is not automatically the winner — a 0-0 is tight and dull, so lead
+ * The standout game in a window — Game of the Season over a year, Game of the
+ * Month over a month. The tightest game, tie-broken by drama then by goals: a
+ * draw is not automatically the winner, since a 0-0 is tight and dull, so lead
  * changes and total goals do the separating.
+ *
+ * Returns null when no game was scored in, which is what keeps the award
+ * conditional — a thin month must render no tile rather than an empty one.
  */
-export function pickGameOfTheSeason<T extends { balance: MatchBalance }>(games: T[]): T | null {
+export function pickStandoutGame<T extends { balance: MatchBalance }>(games: T[]): T | null {
   const played = games.filter(g => g.balance.totalGoals > 0);
   if (played.length === 0) return null;
   return played.slice().sort((a, b) =>

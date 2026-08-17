@@ -256,6 +256,18 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
         awards.push({ label: 'HIGHEST-SCORING GAME', names: [d], value: `${hsg.colorScore}–${hsg.whiteScore} · ${hsg.totalGoals} goals` });
       }
 
+      // Game of the Month sits beside Highest-Scoring Game: both name a fixture,
+      // not a person. Conditional — a month with no scored game gets no tile.
+      const gotm = data.gameOfTheMonth;
+      if (gotm) {
+        const d = new Date(gotm.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        awards.push({
+          label: 'GAME OF THE MONTH',
+          names: [d],
+          value: `${gotm.colorScore}\u2013${gotm.whiteScore}${gotm.leadChanges ? ` \u00b7 ${gotm.leadChanges} lead change${gotm.leadChanges === 1 ? '' : 's'}` : ''}`,
+        });
+      }
+
       // Top Trio is deferred to the yearly report.
       const banners: MonthlyAwardItem[] = [];
       const duo = data.awards.topDuo?.[0];
@@ -376,6 +388,30 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
             {data.balance && data.balance.games > 0 && (
               <div className="mb-4">
                 <BalanceSummaryCard balance={data.balance} title="How the games went" />
+              </div>
+            )}
+
+            {/* Names a fixture, never a player. Absent in a month with no
+                scored game rather than rendering an empty award. */}
+            {data.gameOfTheMonth && (
+              <div className="mb-4 border border-border rounded-xl bg-surface/40 p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-wide text-gold font-bold">Game of the Month</p>
+                  <p className="text-sm font-bold text-text-primary mt-0.5">
+                    {data.gameOfTheMonth.gameNumber ? `Game ${data.gameOfTheMonth.gameNumber}` : ''}
+                    <span className="text-text-tertiary font-medium">
+                      {data.gameOfTheMonth.gameNumber ? ' · ' : ''}
+                      {new Date(data.gameOfTheMonth.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-text-tertiary mt-0.5">
+                    {data.gameOfTheMonth.qualityLabel}
+                    {data.gameOfTheMonth.leadChanges > 0 && ` · ${data.gameOfTheMonth.leadChanges} lead change${data.gameOfTheMonth.leadChanges === 1 ? '' : 's'}`}
+                  </p>
+                </div>
+                <div className="shrink-0 text-lg font-bold text-text-primary tabular-nums">
+                  {data.gameOfTheMonth.colorScore}&ndash;{data.gameOfTheMonth.whiteScore}
+                </div>
               </div>
             )}
 

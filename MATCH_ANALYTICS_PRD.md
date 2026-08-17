@@ -1,8 +1,10 @@
 # Match Analytics PRD — competitive balance, match tempo, roster churn
 
-**Status:** BUILT 2026-08-17 on `feat/match-analytics` — all three phases. Both packages
-`tsc --noEmit` clean, frontend prod build passes, 41 assertions green against the real
-season. **NOT merged, NOT deployed, NOT browser-smoked.**
+**Status:** BUILT 2026-08-17 on `feat/match-analytics` — all three phases, plus Game of the
+Month (Q2). All open questions resolved. Both packages `tsc --noEmit` clean, frontend prod
+build passes, 58 assertions green against the real season.
+**NOT merged, NOT deployed, NOT browser-smoked.**
+
 **Date:** 2026-08-17
 **App:** Awty Football Club (awtyfootballclub.com)
 **Related:** `OWN_GOALS_AND_TURNOUT_PRD.md` (turnout projection, admin-only by decision),
@@ -261,14 +263,17 @@ differently on each of the three families:
 
 ## Open questions
 
-- **Q1.** Match Quality buckets — are `Classic / Close / Competitive / One-sided` the right
+- **Q1. RESOLVED 2026-08-17 (owner): keep as built.** Match Quality buckets — are `Classic / Close / Competitive / One-sided` the right
   four, and are the cut-points right? Run against the 32 real 2026 games the split is
   **Classic 6 · Close 4 · Competitive 15 · One-sided 7**. That is a reasonable spread with no
   bucket collapsing to zero, but the naming is a club-culture call, not a technical one.
-- **Q2.** Should "Game of the Season" have a monthly sibling ("Game of the Month")? Cheap —
-  same computation, different window — but it adds an award slot to every monthly report,
-  including thin months.
-- **Q3.** Final ids and display names for the two new achievements. **Downgraded from a
+- **Q2. RESOLVED 2026-08-17 (owner): yes, add Game of the Month.** Same picker over a month
+  window (`pickStandoutGame`, renamed from `pickGameOfTheSeason` now that it serves both).
+  Conditional by construction — `null` when no game in the window was scored in — so a thin
+  month renders no tile rather than an empty one. Appears as an in-app card and as a tile in
+  the monthly report PNG, beside Highest-Scoring Game: both name a FIXTURE, not a person.
+- **Q3. RESOLVED 2026-08-17 (owner): keep as built** — `half_hat_trick` "Forty-Five Minutes of
+  Fame" and `second_half_goals_5` "The Late Show". Final ids and display names for the two new achievements. **Downgraded from a
   one-way door:** renaming later costs ≤8 duplicate popups (see Constraints), so this is a
   naming preference, not an irreversible commitment. Placeholders stand until you pick.
 - **Q4.** Is a 28-day quiet threshold right? Median gap for a regular is 7 days and p75 is 21,

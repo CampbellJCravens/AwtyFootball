@@ -5,7 +5,7 @@ import { computePlayerAchievements, earnedAchievementIds } from '../services/ach
 import { isScoringGoal, isOwnGoal, scoreFor } from '../services/goals';
 import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
 import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
-import { computeBalance, summariseBalance, pickGameOfTheSeason, MATCH_QUALITY_LABEL } from '../services/matchQuality';
+import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL } from '../services/matchQuality';
 import { summariseTempo } from '../services/tempo';
 import { computeChurn } from '../services/churn';
 
@@ -634,6 +634,21 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
       highestScoringGame,
       // Month-level competitiveness. Games, not players.
       balance: summariseBalance(monthGames.map(g => computeBalance(g.goals))),
+      // Conditional by construction: null in a month with no scored game, so the
+      // UI renders no tile rather than an empty one.
+      gameOfTheMonth: (() => {
+        const pick = pickStandoutGame(monthGames.map(g => ({ game: g, balance: computeBalance(g.goals) })));
+        return pick ? {
+          gameNumber: pick.game.gameNumber,
+          date: pick.game.createdAt.toISOString(),
+          colorScore: pick.balance.colorScore,
+          whiteScore: pick.balance.whiteScore,
+          leadChanges: pick.balance.leadChanges,
+          totalGoals: pick.balance.totalGoals,
+          quality: pick.balance.quality,
+          qualityLabel: MATCH_QUALITY_LABEL[pick.balance.quality],
+        } : null;
+      })(),
       awards: {
         playerOfTheMonth,
         topGoalContributor,
@@ -808,7 +823,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     const balance = summariseBalance(balanced.map(b => b.balance));
     const tempo = summariseTempo(yearGames.map(g => ({ startedAt: g.startedAt, goals: g.goals, events: g.gameEvents })));
 
-    const gotsPick = pickGameOfTheSeason(balanced);
+    const gotsPick = pickStandoutGame(balanced);
     const gameOfTheSeason = gotsPick ? {
       gameNumber: gotsPick.game.gameNumber,
       date: gotsPick.game.createdAt.toISOString(),

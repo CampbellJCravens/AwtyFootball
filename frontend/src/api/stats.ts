@@ -122,6 +122,8 @@ export interface MonthlyStatsResponse {
   availableMonths: { month: number; year: number }[];
   highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null;
   balance: BalanceSummary;
+  // Null in a month with no scored game — the tile is conditional, not empty.
+  gameOfTheMonth: StandoutGame | null;
   awards: {
     playerOfTheMonth: MonthlyAward[] | null;
     topGoalContributor: MonthlyAward[] | null;
@@ -207,7 +209,9 @@ export interface TempoSummary {
   ceilingApplied: number;
 }
 
-export interface GameOfTheSeason {
+// One standout fixture — Game of the Season over a year, Game of the Month over
+// a month. Names a GAME, never a player.
+export interface StandoutGame {
   gameNumber: number | null;
   date: string;
   colorScore: number;
@@ -259,7 +263,7 @@ export interface YearlyStatsResponse {
   highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null;
   balance: BalanceSummary;
   tempo: TempoSummary;
-  gameOfTheSeason: GameOfTheSeason | null;
+  gameOfTheSeason: StandoutGame | null;
   awards: {
     playerOfTheYear: MonthlyAward[] | null;
     goldenBoot: MonthlyAward[] | null;
