@@ -297,6 +297,18 @@ differently on each of the three families:
   - **This makes the "overwrite" requirement free.** Because nothing is ever stamped early,
     there is no premature value to overwrite — a real tap simply *is* the value whenever it is
     under the ceiling. The requirement is satisfied by construction rather than by logic.
+- **Q7b. RESOLVED 2026-08-17 (owner): build the nudge.** BUILT. At 90 minutes of running
+  clock with no `gameOver` recorded, an admin with the game open sees *"Clock still running.
+  Full time?"* with **End game** / **Still playing**, mirroring the existing golden-goal
+  prompt idiom. **Deliberately does NOT auto-stamp** — writing a full time nobody observed is
+  worse than not having one. **"Still playing" SNOOZES for 20 minutes rather than dismissing:**
+  a permanent dismiss would silence the nudge for exactly the game that then gets forgotten,
+  which is the case it exists to catch.
+  **Known limits, both accepted:** the nudge only fires while an admin has the game open —
+  there is no push, so a phone in a pocket still misses it; and a late tap still stamps the
+  late time, because the button records when it is pressed. The 150-minute read-side ceiling
+  remains the backstop for both. A time-picker variant (backdate full time to the last goal)
+  was offered and NOT built.
 - **Q7a. NEW — what is N?** Owner proposed 100; measured data says that clamps 15 of 30 real
   games. Recommend **150**. See the Evidence section. This is the one number still to confirm.
 

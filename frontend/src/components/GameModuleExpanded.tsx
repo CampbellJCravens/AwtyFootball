@@ -90,6 +90,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // The 80-minute offer, dismissed for this sitting only. Arming stays available
   // from the button afterwards.
   const [goldenPromptDismissed, setGoldenPromptDismissed] = useState(false);
+  // Elapsed minutes at the last 'Still playing'. A boolean would be wrong here:
+  // dismissing once would silence the nudge for good, which is precisely the
+  // forgotten-tap case it exists to catch.
+  const [fullTimeSnoozedAt, setFullTimeSnoozedAt] = useState<number | null>(null);
   // Kick-off. Distinct from the game date (gameDate/createdAt), which is unchanged.
   const [startedAt, setStartedAt] = useState<Date | null>(null);
   const [clockNow, setClockNow] = useState<Date>(() => new Date());
@@ -290,6 +294,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const elapsedMinutes = startedAt ? ((gameOverAt ?? clockNow).getTime() - startedAt.getTime()) / 60000 : 0;
   const canArmGolden = isAdmin && !!startedAt && !gameOverAt && !armedEvent;
   const showGoldenPrompt = canArmGolden && !goldenPromptDismissed && elapsedMinutes >= GOLDEN_GOAL_PROMPT_MINUTES;
+
+  // Nudge to record full time, because nobody is reminded otherwise and the
+  // button stamps whenever it is pressed — that is how a game ends up recorded
+  // as 482 minutes long (tapped hours later, from the car). The nudge only
+  // helps while someone still has the game open; a missed one still needs the
+  // 150-minute read-side ceiling behind it. Deliberately does NOT auto-stamp:
+  // writing a full time nobody observed is worse than not having one.
+  const FULL_TIME_PROMPT_MINUTES = 90;
+  const FULL_TIME_SNOOZE_MINUTES = 20;
+  const showFullTimePrompt =
+    isAdmin && !!startedAt && !gameOverAt && !showGoldenPrompt
+    && elapsedMinutes >= FULL_TIME_PROMPT_MINUTES
+    && (fullTimeSnoozedAt === null || elapsedMinutes >= fullTimeSnoozedAt + FULL_TIME_SNOOZE_MINUTES);
 
   // Frozen at arming: the deciding goal is worth n+1, and n must not move
   // afterwards. A level game gives n = 0, so the next goal wins by exactly 1.
@@ -1252,6 +1269,24 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 className="px-3 py-1 rounded-lg border border-border text-text-secondary text-sm"
               >
                 Not yet
+              </button>
+            </div>
+          )}
+
+          {showFullTimePrompt && (
+            <div className="mt-2 flex items-center justify-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+              <span className="text-sm font-semibold text-text-primary">Clock still running. Full time?</span>
+              <button
+                onClick={() => handleRecordGameEvent('gameOver')}
+                className="px-3 py-1 rounded-lg bg-gold text-text-on-accent text-sm font-semibold"
+              >
+                End game
+              </button>
+              <button
+                onClick={() => setFullTimeSnoozedAt(elapsedMinutes)}
+                className="px-3 py-1 rounded-lg border border-border text-text-secondary text-sm"
+              >
+                Still playing
               </button>
             </div>
           )}
