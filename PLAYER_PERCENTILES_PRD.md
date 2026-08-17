@@ -1,9 +1,9 @@
 # Player Percentiles PRD — horizontal percentile bars on the player page
 
-**Status:** BUILT 2026-08-17 on `feat/player-percentiles` — all six bars, threshold 8,
-own-profile-only. All questions resolved. Both packages `tsc --noEmit` clean, frontend prod
-build passes, 28 assertions green against the real season.
-**NOT merged, NOT deployed, NOT browser-smoked.**
+**Status:** MERGED to `main` + PUSHED 2026-08-17 (`d0bcfcb`) — all six bars, threshold 8,
+own-profile-only, plus admin guest renaming. All questions resolved. Both packages
+`tsc --noEmit` clean, frontend prod build passes, 35 assertions green against the real season.
+Render auto-deploying. **NOT browser-smoked** — the standing open risk.
 **Date:** 2026-08-17
 **App:** Awty Football Club (awtyfootballclub.com)
 **Related:** `MATCH_ANALYTICS_PRD.md` (shipped 2026-08-17), `OWN_GOALS_AND_TURNOUT_PRD.md`
@@ -268,3 +268,28 @@ proven itself on a metric where being wrong is cheap.
   tooltip nobody reads.
 - **Cohort size is printed per bar**, because it varies by metric (27 vs 7) and a percentile
   is meaningless without its denominator.
+
+
+## Shipped alongside — admin guest renaming (owner ask, 2026-08-17)
+
+Not in the original scope; added before merge at the owner's request, and it turned out to
+depend on finding 3.
+
+**Where it lives, and why not in-game.** `GuestVisit.slotPlayerId` points at a GuestN pool
+Player, and those get deleted — **both** existing visits reference slot players that no longer
+exist, so their chips cannot render on the game screen and the names were *unreachable for
+editing*. Renaming therefore lives on the **Guest identity** in the admin ledger, which
+survives slot deletion. `PATCH /api/guests/:id`, admin only.
+
+**Rename is also merge, unavoidably.** `Guest.normalizedName` is unique precisely because a
+split identity is a silently wrong dues count. So a rename onto an existing name cannot just
+fail: the server returns **409** with the clashing guest and its visit count, and merges only
+when re-sent with `merge: true`. The merge moves `GuestVisit` **and `DuesPayment`** rows in one
+transaction — dues follow the guest, and half a merge splits the balance across two rows, which
+is the exact failure the unique constraint exists to prevent. The UI confirms before sending.
+
+Case- and spacing-only edits resolve to the same `normalizedName`, so relabelling `stevo` →
+`Stevo` is a plain edit and never prompts a merge.
+
+**Guest data at time of writing:** 2 identities (Stevo, Emilia), 2 visits, both in game 33,
+0 dues payments attached to a guest.
