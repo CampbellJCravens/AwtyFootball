@@ -8,6 +8,7 @@ import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../se
 import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL } from '../services/matchQuality';
 import { summariseTempo } from '../services/tempo';
 import { computeChurn } from '../services/churn';
+import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
 
 const router = Router();
 
@@ -264,9 +265,28 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
       legacyTotals.wins += rec.wins;
     }
 
+    /*
+     * Percentile bars, OWN PROFILE ONLY (owner 2026-08-17), admins excepted.
+     * The gate is enforced HERE and not merely hidden in the UI: a client-side
+     * gate would still ship every player's percentiles to every browser.
+     */
+    const maySeePercentiles =
+      !!req.user && (req.user.playerId === player.id || req.user.role === 'admin');
+    const percentiles = maySeePercentiles
+      ? computePercentiles(
+          allGames.map(g => ({
+            createdAt: g.createdAt, field: g.field, teamAssignments: g.teamAssignments,
+            goals: g.goals, sportsmanship: g.sportsmanship, fouls: g.fouls,
+          })),
+          allPlayers.map(p => ({ id: p.id, name: p.name })),
+        ).get(player.id) ?? null
+      : null;
+
     res.json({
       player: { id: player.id, name: player.name, pictureUrl: player.pictureUrl },
       aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, ownGoals: totalOwnGoals, assists: totalAssists },
+      percentiles,
+      percentileMinGames: DEFAULT_MIN_GAMES,
       ranks,
       matchHistory,
       bestPartnersByPPG,

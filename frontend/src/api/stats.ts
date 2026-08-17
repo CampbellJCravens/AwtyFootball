@@ -36,6 +36,31 @@ export interface BestGroup {
   size: number;
 }
 
+
+// ── Player percentiles (PLAYER_PERCENTILES_PRD.md) ──
+// Present ONLY on your own profile (or to an admin). The server omits the field
+// entirely otherwise, so this type being null is the normal case.
+export interface PercentileMetric {
+  id: string;
+  label: string;
+  unit: string;
+  higherIsBetter: boolean;
+  value: number | null;
+  percentile: number | null;
+  cohortMedian: number | null;
+  cohortSize: number;
+  games: number;
+  qualified: boolean;
+  reason?: 'notEnoughGames' | 'noCohort';
+}
+
+export interface PlayerPercentiles {
+  playerId: string;
+  qualified: boolean;
+  minGames: number;
+  metrics: PercentileMetric[];
+}
+
 export interface PlayerStatsResponse {
   player: PlayerStatsPlayer;
   aggregate: {
@@ -48,6 +73,9 @@ export interface PlayerStatsResponse {
     goals: number;
     assists: number;
   };
+  // Null unless this is your own profile, or you are an admin.
+  percentiles: PlayerPercentiles | null;
+  percentileMinGames: number;
   ranks: {
     games: number;
     points: number;

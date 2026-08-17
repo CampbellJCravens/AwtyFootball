@@ -1,6 +1,9 @@
 # Player Percentiles PRD — horizontal percentile bars on the player page
 
-**Status:** DRAFT — awaiting sign-off, nothing built
+**Status:** BUILT 2026-08-17 on `feat/player-percentiles` — all six bars, threshold 8,
+own-profile-only. All questions resolved. Both packages `tsc --noEmit` clean, frontend prod
+build passes, 28 assertions green against the real season.
+**NOT merged, NOT deployed, NOT browser-smoked.**
 **Date:** 2026-08-17
 **App:** Awty Football Club (awtyfootballclub.com)
 **Related:** `MATCH_ANALYTICS_PRD.md` (shipped 2026-08-17), `OWN_GOALS_AND_TURNOUT_PRD.md`
@@ -32,16 +35,18 @@ The data to answer it already exists. Nothing needs collecting.
 
 **Cohort size by qualification threshold** (32 non-cancelled games, guests excluded):
 ```
-  >= 3 games: 56 players (39 on roster)   <- today's MIN_QUALIFIED_GAMES
-  >= 5 games: 41 players (32 on roster)
-  >= 8 games: 31 players (26 on roster)   <- recommended
-  >=10 games: 27 players (23 on roster)
-  >=12 games: 24 players (21 on roster)
-  >=15 games: 18 players (16 on roster)
-  >=20 games: 11 players ( 9 on roster)
+  >= 3 games: 41 players
+  >= 5 games: 33 players
+  >= 8 games: 27 players   <- CHOSEN
+  >=10 games: 24 players
+  >=12 games: 21 players
+  >=15 games: 16 players
+  >=20 games:  9 players
 ```
+WARNING: these were CORRECTED during the build. An earlier draft read 31 / 27 / 11 because
+the exploratory analysis counted `teamAssignments` keys directly. See finding 3.
 
-**Metric spread among >=8-game players** — does a percentile mean anything here?
+**Metric spread among qualified players** — does a percentile mean anything here?
 ```
   goals/game           min 0.00  med 0.20  max 1.23   zeros:  4/31
   assists/game         min 0.00  med 0.22  max 0.73   zeros:  3/31
@@ -52,7 +57,7 @@ The data to answer it already exists. Nothing needs collecting.
 Real spread on every metric, so the bars will not all sit at the middle. Two problems visible
 already: the zero blocks (below), and sportsmanship (worse than it looks — see finding 1).
 
-## Two findings that shape the design
+## Three findings that shape the design
 
 ### 1. 🔴 The metric windows do not match the career window — and it hits longstanding players hardest
 
@@ -85,6 +90,33 @@ and its own denominator: sportsmanship/game is sportsmanship points ÷ games pla
 2026*. A player can clear the overall threshold on 15 career games and still not qualify for
 the sportsmanship bar on 2 games in-window — in which case that one bar reads "not enough
 games yet" while the others render.
+
+### 3. Deleted players leave orphaned ids in every game they played
+
+`Game.teamAssignments` is a JSON string column with **no foreign key**, so deleting a Player
+leaves their id sitting in every game they appeared in. Found during the build:
+
+```
+Player rows in DB: 69      pids in games NOT in the Player table: 20
+four heaviest orphans: 31, 25, 13 and 9 games
+players whose name contains "Guest": 0
+```
+
+The 31-game orphan is the single most-appearing id in the whole dataset. These are the
+**GuestN slot players**, since deleted: two of the four are confirmed against
+`GuestVisit.slotPlayerId`, and a reusable per-game guest slot showing up in 31 of 32 games is
+exactly the expected profile.
+
+**Two consequences:**
+
+1. **Guest exclusion by name no longer works, and no longer needs to.** Every guest-exclusion
+   site in this app string-matches `Guest` on `Player.name`, but there are now zero such rows
+   — the slots are excluded by *absence* instead. Any code that iterates `teamAssignments`
+   keys **without joining to the Player table** will silently rank four deleted guest slots as
+   the club's most dedicated members. `computePercentiles` joins, which is why it is correct.
+2. **It invalidated my own first analysis.** The cohort figures above originally read
+   31 / 27 / 11 because the exploratory script counted keys. The service disagreed with the
+   script, and the service was right.
 
 ### 2. Ties need an explicit rule, or a third of the club shares last place
 
@@ -189,15 +221,13 @@ so a 2025 regular who left is not punished against a 2026 regular.
 
 ## Open questions
 
-- **Q1. Qualification threshold?** Recommend **8 games** → 31 players, 26 on roster. That is a
-  cohort big enough for percentiles to mean something (~3-point granularity) while genuinely
-  reading as "longstanding". 5 is too loose (41, includes drop-ins); 12 is defensible but
-  drops the cohort to 24 and excludes several current regulars.
-- **Q2. Same threshold for qualifying to *see* a bar and to *be in* the cohort?** Recommend
-  yes — one number, and it keeps the denominator honest.
-- **Q3. Are the six metrics right?** Defence is the shakiest: goals allowed is a team outcome
-  attributed to an individual, and the app already publishes it as `defensiveRating`, so this
-  is not new exposure — but it is the one bar most likely to feel unfair.
+- **Q1. RESOLVED (owner): 8 games** → 27 qualified players (corrected from 31, see finding 3).
+  Cohort granularity is ~3.7 percentile points, which is fine.
+- **Q2. RESOLVED (defaulted, unchallenged): yes**, one threshold for both. Keeps the
+  denominator honest.
+- **Q3. RESOLVED (owner): all six as specced**, Defence included. Rationale for keeping the
+  caveat on record: goals allowed is a team outcome attributed to an individual, though the
+  app already publishes it as `defensiveRating`, so it is not new exposure.
 - **Q4. RESOLVED 2026-08-17 (owner): OWN PROFILE ONLY, for now.** A signed-in user sees
   percentile bars on their own linked player's profile and nowhere else. Rationale kept
   because it is the reason not to widen this casually: the app already publishes leaderboards
@@ -209,8 +239,8 @@ so a 2025 regular who left is not punished against a 2026 regular.
   **Implementation note:** the gate is `user.playerId === player.id || isAdmin`. It must be
   enforced **server-side** in the `/player/:id` payload, not merely hidden in the UI — a
   client-side-only gate ships everyone's percentiles to every browser.
-- **Q5.** Should the median marker be the cohort median or the cohort mean? Recommend median —
-  it is what the bar's percentile is actually relative to.
+- **Q5. RESOLVED (defaulted, unchallenged): median.** It falls at exactly 50% on a percentile
+  scale by construction, which makes the reference line honest rather than decorative.
 - **Q6. RESOLVED 2026-08-17 (owner): gates on the SUBJECT's data sufficiency.** "Longstanding"
   described the expected *effect* — enough games for the numbers to mean something, which in
   practice is longstanding players — not a viewer-tenure permission. The PRD as written is
@@ -223,3 +253,18 @@ The service, the API field, and **four bars** — Scoring, Creating, Winning, Av
 four are all-time metrics with no data-window problem, so the whole of finding 1 can be
 deferred with them. Add Defence and Sportsmanship once the per-metric window machinery has
 proven itself on a metric where being wrong is cheap.
+
+
+## Built — deviations and things found
+
+- **Sportsmanship qualifies only 7 players.** Only 12 games fall inside its window, so at a
+  threshold of 8 just seven players clear it. The bar renders with `vs 7 players` printed
+  beside it rather than hiding that, but a percentile out of seven is coarse and will stay
+  that way until roughly November 2026. Worth revisiting then, not now.
+- **One accent for every bar, never red-for-low.** Position already encodes magnitude, and
+  colouring a low bar red adds a value judgement the data does not support — on the one page
+  a player cannot avoid looking at.
+- **Values are printed, not hovered.** Phone-first: a tooltip you have to press for is a
+  tooltip nobody reads.
+- **Cohort size is printed per bar**, because it varies by metric (27 vs 7) and a percentile
+  is meaningless without its denominator.

@@ -58,7 +58,7 @@ FINAL MARGIN  median 2  mean 2.44  max 7
 2nd half late    37 goals  20%
 ```
 
-**Roster churn today (70 non-guest players fielded, 41 with 5+ games):**
+**Roster churn today (50 real players fielded, 33 with 5+ games):**
 ```
 REGULARS ON ROSTER, NOT SEEN 28+ DAYS: 6
   Arsany Fahim      5 games   last 2026-03-07  160d
@@ -69,6 +69,12 @@ REGULARS ON ROSTER, NOT SEEN 28+ DAYS: 6
   Robert Peresich  16 games   last 2026-07-18   28d
 days-since-last for regulars: median 7  p75 21  max 160
 ```
+CORRECTION 2026-08-17: the headline counts originally read "70 non-guest players / 41 with 5+"
+because the exploratory script counted `teamAssignments` keys, which include four DELETED
+GuestN slot ids (31/25/13/9 games each — `Game.teamAssignments` is JSON with no foreign key).
+The shipped `churn.ts` joins to the Player table and was never affected; the six quiet
+regulars below were computed by the service and are correct. See PLAYER_PERCENTILES_PRD.md
+finding 3.
 
 ## Two data-quality findings that shape the design
 
