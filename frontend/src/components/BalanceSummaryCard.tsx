@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BalanceSummary, BalanceGame, MatchQuality } from '../api/stats';
+import { BalanceSummary, BalanceGame, StandoutGame, MatchQuality } from '../api/stats';
 
 /**
  * How competitive a set of games was. Public by design, and safe to be public
@@ -40,16 +40,28 @@ function Stat({ value, label }: { value: string | number; label: string }) {
 export default function BalanceSummaryCard({
   balance,
   games = [],
+  pick = null,
+  pickLabel = 'Game of the Month',
   title = 'How the games went',
   defaultOpen = false,
 }: {
   balance: BalanceSummary;
   games?: BalanceGame[];
+  /** The standout game, highlighted in place rather than repeated above. */
+  pick?: StandoutGame | null;
+  pickLabel?: string;
   title?: string;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   if (!balance || balance.games === 0) return null;
+
+  // gameNumber is nullable on older games, so fall back to the date rather than
+  // matching null to null and highlighting the wrong row.
+  const isPick = (g: BalanceGame) =>
+    !!pick && (g.gameNumber !== null && pick.gameNumber !== null
+      ? g.gameNumber === pick.gameNumber
+      : g.date === pick.date);
 
   const pct = (n: number) => Math.round((n / balance.games) * 100);
   const showDistribution = balance.games >= DISTRIBUTION_MIN_GAMES;
@@ -105,28 +117,46 @@ export default function BalanceSummaryCard({
             </div>
           ) : games.length > 0 ? (
             <div className="mt-3">
-              {games.map(g => (
-                <div
-                  key={`${g.gameNumber ?? g.date}`}
-                  className="flex items-center justify-between gap-2 py-1.5 border-t border-border/60"
-                >
-                  <div className="min-w-0">
-                    <span className="text-xs font-semibold text-text-primary">
-                      {g.gameNumber ? `Game ${g.gameNumber}` : fmtDate(g.date)}
-                    </span>
-                    <span className="text-[11px] text-text-tertiary"> · {fmtDate(g.date)}</span>
+              {/* Three zones — identity, award, verdict — so every row lines up on
+                  the same columns whether or not it carries the award. */}
+              {games.map(g => {
+                const picked = isPick(g);
+                return (
+                  <div
+                    key={`${g.gameNumber ?? g.date}`}
+                    className={`flex items-center gap-2 py-1.5 ${
+                      picked
+                        ? 'border-l-[3px] border-gold bg-gold-subtle -ml-3 pl-2.5'
+                        : 'border-t border-border/60'
+                    }`}
+                  >
+                    <div className="shrink-0">
+                      <span className={`text-xs font-semibold ${picked ? 'text-gold' : 'text-text-primary'}`}>
+                        {g.gameNumber ? `Game ${g.gameNumber}` : fmtDate(g.date)}
+                      </span>
+                      <span className="text-[11px] text-text-tertiary whitespace-nowrap"> · {fmtDate(g.date)}</span>
+                    </div>
+
+                    <div className="flex-1 flex justify-center min-w-0">
+                      {picked && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-text-on-accent bg-gold px-1.5 py-0.5 rounded whitespace-nowrap">
+                          {pickLabel}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-2">
+                      <span className={`text-[11px] whitespace-nowrap ${picked ? 'text-gold' : 'text-text-tertiary'}`}>
+                        {g.qualityLabel}
+                        {g.comeback ? ' · comeback' : ''}
+                      </span>
+                      <span className="text-xs font-bold text-text-primary tabular-nums">
+                        {g.colorScore}&ndash;{g.whiteScore}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] text-text-tertiary">
-                      {g.qualityLabel}
-                      {g.comeback ? ' · comeback' : ''}
-                    </span>
-                    <span className="text-xs font-bold text-text-primary tabular-nums">
-                      {g.colorScore}&ndash;{g.whiteScore}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : null}
         </div>

@@ -383,29 +383,6 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
             )}
             <p className="text-xs text-text-tertiary font-medium mb-4">{data.gamesPlayed} game{data.gamesPlayed !== 1 ? 's' : ''} played this month</p>
 
-            {/* Names a fixture, never a player. Absent in a month with no
-                scored game rather than rendering an empty award. */}
-            {data.gameOfTheMonth && (
-              <div className="mb-4 border border-border rounded-xl bg-surface/40 p-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-wide text-gold font-bold">Game of the Month</p>
-                  <p className="text-sm font-bold text-text-primary mt-0.5">
-                    {data.gameOfTheMonth.gameNumber ? `Game ${data.gameOfTheMonth.gameNumber}` : ''}
-                    <span className="text-text-tertiary font-medium">
-                      {data.gameOfTheMonth.gameNumber ? ' · ' : ''}
-                      {new Date(data.gameOfTheMonth.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </span>
-                  </p>
-                  <p className="text-[11px] text-text-tertiary mt-0.5">
-                    {data.gameOfTheMonth.qualityLabel}
-                    {data.gameOfTheMonth.leadChanges > 0 && ` · ${data.gameOfTheMonth.leadChanges} lead change${data.gameOfTheMonth.leadChanges === 1 ? '' : 's'}`}
-                  </p>
-                </div>
-                <div className="shrink-0 text-lg font-bold text-text-primary tabular-nums">
-                  {data.gameOfTheMonth.colorScore}&ndash;{data.gameOfTheMonth.whiteScore}
-                </div>
-              </div>
-            )}
 
             {/* Collapsed by default: it is context for the month, not its headline. */}
             {data.balance && data.balance.games > 0 && (
@@ -413,6 +390,8 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
                 <BalanceSummaryCard
                   balance={data.balance}
                   games={data.balanceGames}
+                  pick={data.gameOfTheMonth}
+                  pickLabel="Game of the Month"
                   title="How the games went"
                 />
               </div>
