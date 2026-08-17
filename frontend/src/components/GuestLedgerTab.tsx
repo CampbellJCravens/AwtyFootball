@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Player } from '../api/players';
-import { GuestLedgerRow, fetchGuestLedger } from '../api/guests';
+import { GuestLedgerRow, fetchGuestLedger, renameGuest } from '../api/guests';
 import { DuesGuestRow, DuesYearNotConfigured, fetchDuesReport } from '../api/dues';
 
 interface GuestLedgerTabProps {
@@ -22,6 +22,14 @@ const fmtDate = (iso: string | null) =>
 // context for who to nudge, not a second thing to total.
 export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
   const [rows, setRows] = useState<GuestLedgerRow[]>([]);
+  // Renaming lives here rather than on the in-game guest chip because the chip
+  // depends on the GuestN slot Player still existing, and those get deleted —
+  // as of 2026-08-17 both real visits point at slot players that are gone, so
+  // in-game was not a reachable place to fix a name. The identity survives.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [renameError, setRenameError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('visits');
@@ -47,6 +55,35 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
         setDues(null);
       });
   }, []);
+
+  async function saveRename(guestId: string, merge = false) {
+    const name = draftName.trim();
+    if (!name) return;
+    setSaving(true);
+    setRenameError('');
+    try {
+      const result = await renameGuest(guestId, name, merge);
+      if ('conflict' in result) {
+        // Two rows for one person is exactly what splits a dues balance, so the
+        // merge is offered rather than refused — but it is confirmed, never
+        // silent, because it moves their visits and their money.
+        const ok = window.confirm(
+          `"${result.name}" already exists with ${result.visits} visit${result.visits === 1 ? '' : 's'}.\n\n` +
+          'Merge these two into one guest? Their visits and any dues will be combined. This cannot be undone.'
+        );
+        if (ok) return saveRename(guestId, true);
+        setSaving(false);
+        return;
+      }
+      setRows(await fetchGuestLedger());
+      setEditingId(null);
+      setDraftName('');
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : 'Could not rename');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const playerNames = useMemo(
     () => new Map(players.map(p => [p.id, p.name])),
@@ -165,11 +202,56 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
                 className={`border-t border-border ${row.guestId === null ? 'text-text-tertiary italic' : ''}`}
               >
                 <td className="py-2 pr-2 text-text-primary font-medium">
-                  {row.name}
-                  {row.guestId && dues?.get(row.guestId)?.shouldConvert && (
-                    <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap">
-                      convert
-                    </span>
+                  {editingId === row.guestId ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        value={draftName}
+                        maxLength={60}
+                        onChange={e => setDraftName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveRename(row.guestId!);
+                          if (e.key === 'Escape') { setEditingId(null); setRenameError(''); }
+                        }}
+                        className="w-28 px-1.5 py-1 text-xs rounded border border-border bg-surface text-text-primary outline-none"
+                      />
+                      <button
+                        onClick={() => saveRename(row.guestId!)}
+                        disabled={saving || !draftName.trim()}
+                        className="text-[11px] font-semibold text-gold disabled:text-text-tertiary"
+                      >
+                        {saving ? '…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => { setEditingId(null); setRenameError(''); }}
+                        className="text-[11px] text-text-tertiary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {row.name}
+                      {/* The unnamed aggregate is not one person, so it has no name to edit. */}
+                      {row.guestId && (
+                        <button
+                          onClick={() => { setEditingId(row.guestId!); setDraftName(row.name); setRenameError(''); }}
+                          className="ml-1.5 text-[11px] text-text-tertiary hover:text-gold"
+                          aria-label={`Rename ${row.name}`}
+                          title="Rename this guest"
+                        >
+                          ✎
+                        </button>
+                      )}
+                      {row.guestId && dues?.get(row.guestId)?.shouldConvert && (
+                        <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap">
+                          convert
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {editingId === row.guestId && renameError && (
+                    <p className="text-[10px] text-red-400 mt-1">{renameError}</p>
                   )}
                 </td>
                 <td className="py-2 px-2 text-right tabular-nums text-text-secondary">{row.visits}</td>

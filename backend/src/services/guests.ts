@@ -65,6 +65,68 @@ export async function replaceGuestVisits(
   });
 }
 
+export interface RenameConflict {
+  conflict: true;
+  guestId: string;
+  name: string;
+  visits: number;
+}
+
+/**
+ * Rename a guest identity, or merge it into an existing one.
+ *
+ * This lives on the GUEST, not on a game's slot, and that is the whole point:
+ * `GuestVisit.slotPlayerId` points at a GuestN pool Player, and those get
+ * deleted — as of 2026-08-17 both existing visits reference slot players that no
+ * longer exist, so their chips cannot render in-game and the names were
+ * unreachable for editing. The Guest identity survives all of that.
+ *
+ * `normalizedName` is unique because a split identity is a silently wrong dues
+ * count. So a rename that collides is not an error to swallow — it is a merge
+ * the caller has to opt into, and merging moves DUES as well as visits, since
+ * dues follow the guest.
+ */
+export async function renameGuest(
+  guestId: string,
+  rawName: string,
+  opts: { merge?: boolean } = {},
+): Promise<{ id: string; name: string; merged: boolean } | RenameConflict> {
+  const name = rawName.trim();
+  if (!name) throw new Error('empty_name');
+  const normalizedName = normalizeGuestName(name);
+
+  const target = await prisma.guest.findUnique({ where: { id: guestId } });
+  if (!target) throw new Error('not_found');
+
+  const clash = await prisma.guest.findUnique({ where: { normalizedName } });
+
+  // Same person, different capitalisation or spacing — a plain relabel.
+  if (!clash || clash.id === guestId) {
+    const updated = await prisma.guest.update({
+      where: { id: guestId },
+      data: { name, normalizedName },
+    });
+    return { id: updated.id, name: updated.name, merged: false };
+  }
+
+  if (!opts.merge) {
+    const visits = await prisma.guestVisit.count({ where: { guestId: clash.id } });
+    return { conflict: true, guestId: clash.id, name: clash.name, visits };
+  }
+
+  // Merge: everything pointing at the renamed guest moves onto the existing one,
+  // then the now-empty identity goes. One transaction — a half-merge would leave
+  // the dues split across two rows, which is the exact failure this prevents.
+  await prisma.$transaction(async tx => {
+    await tx.guestVisit.updateMany({ where: { guestId }, data: { guestId: clash.id } });
+    await tx.duesPayment.updateMany({ where: { guestId }, data: { guestId: clash.id } });
+    await tx.guest.delete({ where: { id: guestId } });
+    await tx.guest.update({ where: { id: clash.id }, data: { name } });
+  });
+
+  return { id: clash.id, name, merged: true };
+}
+
 export async function getGuestVisits(gameId: string): Promise<GuestVisitDto[]> {
   const rows = await prisma.guestVisit.findMany({
     where: { gameId },
