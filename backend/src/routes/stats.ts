@@ -5,6 +5,9 @@ import { computePlayerAchievements, earnedAchievementIds } from '../services/ach
 import { isScoringGoal, isOwnGoal, scoreFor } from '../services/goals';
 import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
 import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
+import { computeBalance, summariseBalance, pickGameOfTheSeason, MATCH_QUALITY_LABEL } from '../services/matchQuality';
+import { summariseTempo } from '../services/tempo';
+import { computeChurn } from '../services/churn';
 
 const router = Router();
 
@@ -37,6 +40,8 @@ interface ParsedGame {
   goals: GoalData[];
   sportsmanship: Record<string, number>;
   fouls: Record<string, number>;
+  startedAt: Date | null;
+  gameEvents: { type: string; timestamp: string }[];
 }
 
 async function loadAllGames(): Promise<ParsedGame[]> {
@@ -50,6 +55,8 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
     fouls: safeParseJSON<Record<string, number>>(g.fouls, {}),
+    startedAt: g.startedAt,
+    gameEvents: safeParseJSON<{ type: string; timestamp: string }[]>(g.gameEvents, []),
   }));
 }
 
@@ -625,6 +632,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
       gamesPlayed: monthGames.length,
       availableMonths: allMonths,
       highestScoringGame,
+      // Month-level competitiveness. Games, not players.
+      balance: summariseBalance(monthGames.map(g => computeBalance(g.goals))),
       awards: {
         playerOfTheMonth,
         topGoalContributor,
@@ -793,12 +802,33 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
 
     const availableYears = [...new Set(allGames.filter(g => g.field !== 'cancelled').map(g => g.createdAt.getFullYear()))].sort((a, b) => b - a);
 
+    // How competitive the season's games were. Describes GAMES, never players —
+    // nothing here is attributed to a person. See MATCH_ANALYTICS_PRD.md.
+    const balanced = yearGames.map(g => ({ game: g, balance: computeBalance(g.goals) }));
+    const balance = summariseBalance(balanced.map(b => b.balance));
+    const tempo = summariseTempo(yearGames.map(g => ({ startedAt: g.startedAt, goals: g.goals, events: g.gameEvents })));
+
+    const gotsPick = pickGameOfTheSeason(balanced);
+    const gameOfTheSeason = gotsPick ? {
+      gameNumber: gotsPick.game.gameNumber,
+      date: gotsPick.game.createdAt.toISOString(),
+      colorScore: gotsPick.balance.colorScore,
+      whiteScore: gotsPick.balance.whiteScore,
+      leadChanges: gotsPick.balance.leadChanges,
+      totalGoals: gotsPick.balance.totalGoals,
+      quality: gotsPick.balance.quality,
+      qualityLabel: MATCH_QUALITY_LABEL[gotsPick.balance.quality],
+    } : null;
+
     res.json({
       year,
       gamesPlayed: yearGames.length,
       totalGoals,
       availableYears,
       highestScoringGame,
+      balance,
+      tempo,
+      gameOfTheSeason,
       awards: {
         playerOfTheYear: marquee(points),
         goldenBoot: marquee(goals),
@@ -1248,6 +1278,31 @@ router.get('/reliability', requireAdmin, async (_req: AuthenticatedRequest, res:
   } catch (error) {
     console.error('Error computing reliability stats:', error);
     res.status(500).json({ error: 'Failed to compute reliability statistics' });
+  }
+});
+
+// ── GET /api/stats/churn ── (admin only)
+// Who has quietly stopped turning up. Admin-only PERMANENTLY: a public list of
+// people's absences is a callout board, and the point of this is to prompt a
+// private word or a roster decision. Never add any of this to a public payload.
+router.get('/churn', requireAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [games, players] = await Promise.all([
+      prisma.game.findMany({ select: { createdAt: true, field: true, teamAssignments: true } }),
+      prisma.player.findMany({ select: { id: true, name: true, onRoster: true } }),
+    ]);
+    const { rows, quiet, asOf } = computeChurn(
+      games.map(g => ({
+        createdAt: g.createdAt,
+        field: g.field,
+        teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
+      })),
+      players,
+    );
+    res.json({ asOf, quiet, rows });
+  } catch (error) {
+    console.error('Error computing churn:', error);
+    res.status(500).json({ error: 'Failed to compute churn' });
   }
 });
 

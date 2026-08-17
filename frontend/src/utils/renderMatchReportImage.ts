@@ -23,6 +23,9 @@ export interface MatchReportData {
   whiteScore: number;
   goals: MatchGoalLine[];        // in scored order
   manOfTheMatch: ManOfTheMatch[] | null; // ties → multiple; null when no goals
+  // How competitive the game was, e.g. "Classic · tight, and the lead changed".
+  // Describes the GAME — never a player, who is not responsible for the teams.
+  balanceNote?: string;
   logoUrl?: string;              // defaults to /afc-logo.png
 }
 
@@ -60,6 +63,7 @@ export async function renderMatchReportImage(data: MatchReportData): Promise<Blo
   const motmH = data.manOfTheMatch && data.manOfTheMatch.length > 0 ? 72 : 0;
   const gapBeforeFooter = 12;
   const footerH = 14;
+  const balanceH = data.balanceNote ? 20 : 0;
 
   // Two side-by-side columns (Google-style), assist stacked under the scorer.
   const centerGap = 22;
@@ -81,7 +85,7 @@ export async function renderMatchReportImage(data: MatchReportData): Promise<Blo
 
   const height =
     padding + crestH + gapAfterCrest + labelH + titleH + gapAfterTitle +
-    scoreH + gapAfterScore + sectionH +
+    scoreH + balanceH + gapAfterScore + sectionH +
     (motmH ? gapBeforeMotm + motmH : 0) + gapBeforeFooter + footerH + padding;
 
   const dpr = 2;
@@ -140,7 +144,18 @@ export async function renderMatchReportImage(data: MatchReportData): Promise<Blo
     ctx.fillText(s.text, sx, scoreMid);
     sx += widths[i] + gap;
   });
-  y += scoreH + gapAfterScore;
+  y += scoreH;
+
+  // How competitive it was. A property of the game; nobody is named.
+  if (data.balanceNote) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = COLORS.textMuted;
+    ctx.font = `600 13px ${FONT_STACK}`;
+    ctx.fillText(truncateToWidth(ctx, data.balanceNote, contentW), cx, y);
+    y += balanceH;
+  }
+  y += gapAfterScore;
 
   // Two side-by-side goal columns with a center divider.
   const sectionTop = y;

@@ -6,6 +6,7 @@ import ChemistrySection from './ChemistrySection';
 import LegacyStatsTable from './LegacyStatsTable';
 import FieldStatsTab from './FieldStatsTab';
 import ReliabilityTab from './ReliabilityTab';
+import ChurnTab from './ChurnTab';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchYearlyStats, MonthlyAward } from '../api/stats';
 import { renderYearlyReportImage, YearlyReportData, YearlyAwardItem, YearlyLeaderboard } from '../utils/renderYearlyReportImage';
@@ -21,7 +22,7 @@ interface StatsProps {
 
 // Guests and dues moved out to their own admin-only nav tab — this hub is
 // performance data, and the money had no business being filed under it.
-type StatsView = 'players' | 'pairings' | 'groups' | 'legacy' | 'field' | 'reliability';
+type StatsView = 'players' | 'pairings' | 'groups' | 'legacy' | 'field' | 'reliability' | 'churn';
 
 export default function Stats({ players, games, onPlayerClick, currentPlayerId }: StatsProps) {
   const { isAdmin } = useAuth();
@@ -90,8 +91,27 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
       const trio = data.bestTrio?.[0];
       if (trio) banners.push({ label: 'BEST TRIO', names: trio.players.map(p => p.name).join(' · '), value: `${trio.value} PPG` });
 
+      // Game of the Season attaches to a GAME, so it is a banner naming a
+      // fixture rather than an award tile naming a person. Conditional: a
+      // season with no scored game has no winner, and AwardSection-style
+      // always-render would print an empty tile.
+      const gots = data.gameOfTheSeason;
+      if (gots) {
+        banners.push({
+          label: 'GAME OF THE SEASON',
+          names: gots.gameNumber ? `Game ${gots.gameNumber}` : new Date(gots.date).toLocaleDateString(),
+          value: `${gots.colorScore}–${gots.whiteScore}${gots.leadChanges ? ` · ${gots.leadChanges} lead change${gots.leadChanges === 1 ? '' : 's'}` : ''}`,
+        });
+      }
+
+      const b = data.balance;
+      const balanceLine = b && b.games > 0
+        ? `${Math.round(((b.oneGoalGames + b.ties) / b.games) * 100)}% tight`
+        : undefined;
+
       const reportData: YearlyReportData = {
         year: data.year, gamesPlayed: data.gamesPlayed, totalGoals: data.totalGoals,
+        balanceLine,
         playerOfTheYear, awardTiles, leaderboards, banners,
       };
 
@@ -135,6 +155,9 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
     { id: 'field', label: 'Field' },
     // Admin-only: RSVP reliability (who says In and actually shows).
     ...(isAdmin ? [{ id: 'reliability' as const, label: 'Reliability' }] : []),
+    // Admin-only, permanently: a public list of who has stopped coming is a
+    // callout board. See MATCH_ANALYTICS_PRD.md.
+    ...(isAdmin ? [{ id: 'churn' as const, label: 'Attendance' }] : []),
   ];
 
   return (
@@ -270,6 +293,10 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
 
         {activeView === 'field' && (
           <FieldStatsTab />
+        )}
+
+        {activeView === 'churn' && isAdmin && (
+          <ChurnTab />
         )}
 
         {activeView === 'reliability' && isAdmin && (

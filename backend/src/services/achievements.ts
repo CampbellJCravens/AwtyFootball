@@ -86,6 +86,7 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
 
   let wins = 0, ties = 0, goals = 0, ownGoals = 0, assists = 0, gamesPlayed = 0, cleanSheets = 0, totalSportsmanship = 0;
   let comebackWins = 0, gameWinningGoals = 0, goldenGoals = 0;
+  let secondHalfGoals = 0, halfHatTricks = 0;
   const matchResults: ('W' | 'L' | 'T')[] = [];
 
   const sortedGames = [...allGames].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -112,6 +113,24 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     if (opponentGoals === 0) cleanSheets++;
 
     totalSportsmanship += (game.sportsmanship[playerId] || 0) - (game.fouls[playerId] || 0);
+
+    // Half-split scoring, for the tempo achievements. halfTime is the anchor the
+    // data supports; gameOver is tapped whenever someone remembers, so it is not
+    // read here. A game with no halfTime event contributes nothing rather than
+    // guessing where the break fell.
+    {
+      const halfTime = game.gameEvents.find(e => e.type === 'halfTime');
+      if (halfTime) {
+        const ht = new Date(halfTime.timestamp).getTime();
+        let firstHalf = 0;
+        for (const g of game.goals) {
+          if (g.scorerId !== playerId || !isScoringGoal(g)) continue;
+          if (new Date(g.timestamp).getTime() <= ht) firstHalf++;
+          else secondHalfGoals++;
+        }
+        if (firstHalf >= 3) halfHatTricks++;
+      }
+    }
 
     // Comeback win: losing at halftime but won the game
     if (result === 'W') {
@@ -336,6 +355,10 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     { id: 'game_winner', name: 'Game Winner', description: 'Score a game-winning goal', current: Math.min(gameWinningGoals, 1), target: 1 },
     { id: 'first_golden_goal', name: 'The Dagger', description: 'Score a golden goal', current: Math.min(goldenGoals, 1), target: 1 },
     { id: 'golden_goals_3', name: 'The Decider', description: 'Score 3 golden goals', current: Math.min(goldenGoals, 3), target: 3 },
+    // Tempo achievements (MATCH_ANALYTICS_PRD.md). Lifetime, like every other
+    // achievement here; the seasonal equivalents are awards, not these.
+    { id: 'half_hat_trick', name: 'Forty-Five Minutes of Fame', description: 'Score 3 goals in a single half', current: Math.min(halfHatTricks, 1), target: 1 },
+    { id: 'second_half_goals_5', name: 'The Late Show', description: 'Score 5 second-half goals', current: Math.min(secondHalfGoals, 5), target: 5 },
     { id: 'first_own_goal', name: 'Wrong Net', description: 'Score an own goal', current: Math.min(ownGoals, 1), target: 1 },
     { id: 'own_goals_3', name: 'Sponsored by the Opposition', description: 'Score 3 own goals', current: Math.min(ownGoals, 3), target: 3 },
   ];

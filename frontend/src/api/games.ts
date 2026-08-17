@@ -74,6 +74,16 @@ export interface Game {
   // as the game date — createdAt is the date everywhere.
   startedAt?: string | null;
   guestVisits?: GuestVisit[]; // only returned by fetchGame/updateGame, not the list
+  // How competitive the game was, computed server-side. Describes the GAME —
+  // it is never attributed to a player. See MATCH_ANALYTICS_PRD.md.
+  balance?: {
+    margin: number;
+    leadChanges: number;
+    comeback: boolean | null;
+    tie: boolean;
+    quality: 'classic' | 'close' | 'competitive' | 'oneSided';
+    qualityLabel: string;
+  };
 }
 
 export interface UpdateGameData {

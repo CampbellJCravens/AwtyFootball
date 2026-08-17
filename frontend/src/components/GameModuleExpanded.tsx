@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import { scoreFor } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
@@ -46,6 +46,21 @@ interface GameModuleExpandedProps {
   isAdmin?: boolean; // Whether user is admin (can modify games)
   initialTab?: GameViewTab;
 }
+
+
+// One legible phrase for how competitive a game was. Never names a player: the
+// app does not record who picked the teams, so attributing a result to someone
+// would be blaming a person who may not have caused it.
+const balanceNote = (b: Game['balance']): string | undefined => {
+  if (!b || (b.margin === 0 && b.leadChanges === 0 && b.tie && b.quality === 'close')) return undefined;
+  const detail =
+    b.quality === 'classic' ? 'tight, and the lead changed'
+      : b.quality === 'close' ? (b.tie ? 'all square' : 'a one-goal game')
+        : b.quality === 'competitive' ? `${b.margin} goals in it`
+          : `${b.margin} goals in it`;
+  const comeback = b.comeback ? ' · came from behind' : '';
+  return `${b.qualityLabel} · ${detail}${comeback}`;
+};
 
 export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded, isAdmin = false, initialTab = 'game' }: GameModuleExpandedProps) {
   const formatDate = (dateString: string) => {
@@ -103,6 +118,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [activeTab, setActiveTab] = useState<GameViewTab>(initialTab);
   const [pollVersion, setPollVersion] = useState(0); // bump to refresh the RSVP poll view
   const [currentField, setCurrentField] = useState<GameField | null>(null);
+  const [balance, setBalance] = useState<Game['balance']>(undefined);
   const [currentDate, setCurrentDate] = useState<string>(gameDate);
   // Guest name + host, keyed by the GuestN pool player holding the slot.
   const [guestVisits, setGuestVisits] = useState<Record<string, { guestName: string | null; hostPlayerId: string | null }>>({});
@@ -150,6 +166,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       // reflects whatever was last saved (rather than the stale prop).
       setCurrentField(gameData.field ?? null);
       setCurrentDate(gameData.createdAt);
+      setBalance(gameData.balance);
 
       // Restore game state
       if (gameData.teamAssignments) {
@@ -449,6 +466,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           ownGoal: g.ownGoal,
         })),
         manOfTheMatch,
+        balanceNote: balanceNote(balance),
       };
 
       const blob = await renderMatchReportImage(data);

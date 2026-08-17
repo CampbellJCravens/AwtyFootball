@@ -3,6 +3,7 @@ import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward, LeaderboardEntry
 import { useAuth } from '../contexts/AuthContext';
 import { renderMonthlyReportImage, MonthlyReportData, MonthlyAwardItem } from '../utils/renderMonthlyReportImage';
 import ImageLightbox from './ImageLightbox';
+import BalanceSummaryCard from './BalanceSummaryCard';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -369,6 +370,14 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
               <p className="text-xs text-gold font-semibold uppercase tracking-wider mb-2">In Progress</p>
             )}
             <p className="text-xs text-text-tertiary font-medium mb-4">{data.gamesPlayed} game{data.gamesPlayed !== 1 ? 's' : ''} played this month</p>
+
+            {/* How competitive the month's games were. Safe to show publicly
+                because it describes games, never players. */}
+            {data.balance && data.balance.games > 0 && (
+              <div className="mb-4">
+                <BalanceSummaryCard balance={data.balance} title="How the games went" />
+              </div>
+            )}
 
             <AwardSection
               title="Player of the Month"

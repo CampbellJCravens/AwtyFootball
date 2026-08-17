@@ -3,6 +3,7 @@ import prisma from '../prisma';
 import { updateGameSchema, UpdateGameInput } from '../schemas/game';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { isOwnGoal } from '../services/goals';
+import { computeBalance, MATCH_QUALITY_LABEL } from '../services/matchQuality';
 import { getGuestVisits, replaceGuestVisits } from '../services/guests';
 import { google } from 'googleapis';
 import { env } from '../env';
@@ -33,6 +34,14 @@ function computeNextSaturday845(now: Date = new Date()): Date {
 }
 
 const router = Router();
+
+// Per-game competitiveness, attached to both the read and the write response so
+// the UI never has to recompute a scoreline it was just handed.
+const withLabel = (goals: any[]) => {
+  const b = computeBalance(goals);
+  return { ...b, qualityLabel: MATCH_QUALITY_LABEL[b.quality] };
+};
+
 
 // POST /api/games - Create a new game (admin only)
 router.post('/', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -166,6 +175,9 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
       fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
       guestVisits: await getGuestVisits(id),
+      // How competitive this game was. A property of the GAME — no player is
+      // named as responsible. See MATCH_ANALYTICS_PRD.md.
+      balance: withLabel(safeParseJSON(game.goals, [] as any[])),
     };
 
     res.json(parsedGame);
@@ -260,6 +272,9 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
       fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
       guestVisits: await getGuestVisits(id),
+      // How competitive this game was. A property of the GAME — no player is
+      // named as responsible. See MATCH_ANALYTICS_PRD.md.
+      balance: withLabel(safeParseJSON(game.goals, [] as any[])),
     };
 
     res.json(parsedGame);
