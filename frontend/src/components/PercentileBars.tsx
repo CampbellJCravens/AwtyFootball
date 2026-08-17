@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { PlayerPercentiles } from '../api/stats';
 
 /**
@@ -40,6 +41,7 @@ function Bar({ percentile }: { percentile: number }) {
 }
 
 export default function PercentileBars({ data }: { data: PlayerPercentiles }) {
+  const [open, setOpen] = useState(false);
   if (!data) return null;
 
   if (!data.qualified) {
@@ -55,14 +57,33 @@ export default function PercentileBars({ data }: { data: PlayerPercentiles }) {
     );
   }
 
-  return (
-    <div className="border border-border rounded-xl bg-surface/40 p-3">
-      <h3 className="text-sm font-bold text-text-primary">How you compare</h3>
-      <p className="text-[11px] text-text-tertiary mt-0.5">
-        Against everyone with {data.minGames}+ games. The line is the club median.
-      </p>
+  const ranked = data.metrics.filter(m => m.qualified).length;
 
-      <div className="mt-3 space-y-3">
+  return (
+    <div className="border border-border rounded-xl bg-surface/40 overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left"
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-text-primary">How you compare</h3>
+          <p className="text-[11px] text-text-tertiary mt-0.5">
+            {ranked} of {data.metrics.length} ranked · against everyone with {data.minGames}+ games
+          </p>
+        </div>
+        <svg
+          className={`w-4 h-4 text-text-tertiary shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+      <div className="px-3 pb-3">
+      <p className="text-[11px] text-text-tertiary mb-3">The line on each bar is the club median.</p>
+      <div className="space-y-3">
         {data.metrics.map(m => (
           <div key={m.id}>
             <div className="flex items-baseline justify-between gap-2">
@@ -96,6 +117,8 @@ export default function PercentileBars({ data }: { data: PlayerPercentiles }) {
           </div>
         ))}
       </div>
+      </div>
+      )}
     </div>
   );
 }

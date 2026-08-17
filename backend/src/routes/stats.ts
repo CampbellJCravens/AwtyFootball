@@ -654,6 +654,25 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
       highestScoringGame,
       // Month-level competitiveness. Games, not players.
       balance: summariseBalance(monthGames.map(g => computeBalance(g.goals))),
+      // Per-game rows as well as the aggregate: a month holds about three games,
+      // and a four-bucket distribution over three games leaves half its bars
+      // empty. At that size the honest illustration is the games themselves.
+      balanceGames: monthGames
+        .map(g => {
+          const b = computeBalance(g.goals);
+          return {
+            gameNumber: g.gameNumber,
+            date: g.createdAt.toISOString(),
+            colorScore: b.colorScore,
+            whiteScore: b.whiteScore,
+            margin: b.margin,
+            leadChanges: b.leadChanges,
+            comeback: b.comeback,
+            quality: b.quality,
+            qualityLabel: MATCH_QUALITY_LABEL[b.quality],
+          };
+        })
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
       // Conditional by construction: null in a month with no scored game, so the
       // UI renders no tile rather than an empty one.
       gameOfTheMonth: (() => {

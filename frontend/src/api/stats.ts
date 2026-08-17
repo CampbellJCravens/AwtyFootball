@@ -150,6 +150,7 @@ export interface MonthlyStatsResponse {
   availableMonths: { month: number; year: number }[];
   highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null;
   balance: BalanceSummary;
+  balanceGames: BalanceGame[];
   // Null in a month with no scored game — the tile is conditional, not empty.
   gameOfTheMonth: StandoutGame | null;
   awards: {
@@ -224,6 +225,20 @@ export interface BalanceSummary {
   comebacks: number;
   gamesWithLeadChange: number;
   byQuality: Record<MatchQuality, number>;
+}
+
+// One game's competitiveness. Shown per-game in the monthly view, where the
+// aggregate is too coarse to say anything.
+export interface BalanceGame {
+  gameNumber: number | null;
+  date: string;
+  colorScore: number;
+  whiteScore: number;
+  margin: number;
+  leadChanges: number;
+  comeback: boolean | null;
+  quality: MatchQuality;
+  qualityLabel: string;
 }
 
 export interface TempoSummary {
