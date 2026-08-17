@@ -14,5 +14,7 @@ import-poll-backup-*.json
 mark-former-backup-*.json
 dues-*-backup.json
 guest-*-backup.json
+# Player photos, full-resolution originals — never belongs in the repo.
+avatar-backup-*.json
 
 .wa-auth/
