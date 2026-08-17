@@ -198,19 +198,24 @@ so a 2025 regular who left is not punished against a 2026 regular.
 - **Q3. Are the six metrics right?** Defence is the shakiest: goals allowed is a team outcome
   attributed to an individual, and the app already publishes it as `defensiveRating`, so this
   is not new exposure — but it is the one bar most likely to feel unfair.
-- **Q4. 🔴 Public or admin-only?** Player profiles are currently public to signed-in users, and
-  the app already publishes leaderboards and a Dirtiest Player award, so per-player ranking is
-  established. **But a leaderboard only shows the top — a percentile bar tells everyone
-  exactly how far down they are, for every player, permanently.** That is a genuine change in
-  kind, not degree. Recommend shipping it **visible only on your own profile** first, with
-  admins seeing all — it answers "am I any good" without turning every profile into a public
-  ranking. Cheap to open up later; ugly to walk back.
+- **Q4. RESOLVED 2026-08-17 (owner): OWN PROFILE ONLY, for now.** A signed-in user sees
+  percentile bars on their own linked player's profile and nowhere else. Rationale kept
+  because it is the reason not to widen this casually: the app already publishes leaderboards
+  and a Dirtiest Player award, so per-player ranking is established — but a leaderboard only
+  shows the top, whereas a percentile bar tells everyone exactly how far down they are, for
+  every player, permanently. That is a change in kind, not degree.
+  **Assumed unless corrected: admins see all players' bars**, consistent with admins already
+  seeing Reliability and Churn, which are far more sensitive. One line to change if wrong.
+  **Implementation note:** the gate is `user.playerId === player.id || isAdmin`. It must be
+  enforced **server-side** in the `/player/:id` payload, not merely hidden in the UI — a
+  client-side-only gate ships everyone's percentiles to every browser.
 - **Q5.** Should the median marker be the cohort median or the cohort mean? Recommend median —
   it is what the bar's percentile is actually relative to.
-- **Q6.** Confirming the reading of "only longstanding players can see the data": this PRD
-  assumes it gates on the **subject** (bars appear on a qualified player's profile), not on the
-  **viewer** (only long-tenured accounts may look). If the viewer reading was intended, Q4
-  changes shape entirely.
+- **Q6. RESOLVED 2026-08-17 (owner): gates on the SUBJECT's data sufficiency.** "Longstanding"
+  described the expected *effect* — enough games for the numbers to mean something, which in
+  practice is longstanding players — not a viewer-tenure permission. The PRD as written is
+  correct: qualification is about whether a player has enough data, and tenure is the
+  by-product. No account-age check anywhere.
 
 ## Smallest viable cut
 
