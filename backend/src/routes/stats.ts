@@ -9,6 +9,7 @@ import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL
 import { summariseTempo } from '../services/tempo';
 import { computeChurn } from '../services/churn';
 import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
+import { publicPlayer, avatarUrl } from '../services/avatar';
 
 const router = Router();
 
@@ -82,7 +83,8 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
 
     const allGames = await loadAllGames();
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     let wins = 0, losses = 0, ties = 0, totalGoals = 0, totalOwnGoals = 0, totalAssists = 0;
     const matchHistory: any[] = [];
@@ -283,7 +285,7 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
       : null;
 
     res.json({
-      player: { id: player.id, name: player.name, pictureUrl: player.pictureUrl },
+      player: { id: player.id, name: player.name, pictureUrl: avatarUrl(req, player) },
       aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, ownGoals: totalOwnGoals, assists: totalAssists },
       percentiles,
       percentileMinGames: DEFAULT_MIN_GAMES,
@@ -312,7 +314,8 @@ router.get('/chemistry', async (req: AuthenticatedRequest, res: Response) => {
 
     const allGames = await loadAllGames();
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     if (type === 'goalPartners') {
       // Track scorer-assister pairs
@@ -431,7 +434,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     );
 
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     // Compute per-player stats for this month
     const stats = new Map<string, PlayerStat>();
@@ -734,7 +738,8 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     );
 
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     type YStat = { points: number; wins: number; ties: number; goals: number; goldenGoals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
     const stats = new Map<string, YStat>();
@@ -911,7 +916,8 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
     const playerId = req.params.id;
     const allGames = await loadAllGames();
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     if (!playerMap.has(playerId)) return res.status(404).json({ error: 'Player not found' });
 
@@ -1117,7 +1123,7 @@ router.get('/legacy', async (req: AuthenticatedRequest, res: Response) => {
 
     const playerIds = [...new Set(legacyStats.map(s => s.playerId))];
     const players = await prisma.player.findMany({ where: { id: { in: playerIds } } });
-    const playerMap = new Map(players.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    const playerMap = new Map(players.map(p => [p.id, publicPlayer(req, p)]));
 
     // Group by player
     const grouped = new Map<string, { seasons: Record<string, { goals: number; assists: number; wins: number }>; totals: { goals: number; assists: number; wins: number } }>();
@@ -1395,7 +1401,7 @@ router.get('/turnout/:gameId', requireAdmin, async (req: AuthenticatedRequest, r
       return {
         id: p.id,
         name: p.name,
-        pictureUrl: p.pictureUrl,
+        pictureUrl: avatarUrl(req, p),
         bucket,
         probability,
         // Games behind this player's own rate for this bucket. n === 0 means the
