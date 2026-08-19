@@ -26,6 +26,7 @@ import prisma from '../../prisma';
 import { combineSelections } from './options';
 import { findGameForPollTitle } from './gameMatch';
 import { bufferPendingVote, takePendingVotes } from './pendingVotes';
+import { bufferPendingPoll, takePendingPolls } from './pendingPolls';
 
 // Sentinel written to GameRsvp.setByUserId so listener-sourced votes are
 // distinguishable from self ("null") and admin (a real user id) votes.
@@ -157,6 +158,37 @@ export function isPollCreation(message: any): boolean {
  * Persist a newly-seen poll and try to auto-match it to a game. `raw` is the
  * Baileys WAMessage ({ key, message, pushName }).
  */
+/**
+ * Neon suspends after ~5 idle minutes and resumes in ~4-6s, so the first call
+ * after a quiet period can fail outright. The retry that follows a failure
+ * succeeds — the failed attempt is itself what triggers the resume. Costs
+ * nothing when the database is already awake.
+ */
+async function withDbRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      last = err;
+      if (i < attempts) await new Promise((r) => setTimeout(r, i * 1500));
+    }
+  }
+  throw last;
+}
+
+/** Re-attempt every creation message parked by a failed capture. */
+export async function replayPendingPolls(meId?: string, meLid?: string): Promise<void> {
+  const held = await takePendingPolls();
+  if (!held.length) return;
+  console.log(`[whatsapp] Replaying ${held.length} buffered poll creation(s).`);
+  for (const raw of held) {
+    // Re-buffers itself if it fails again; capturePoll is idempotent on the
+    // already-captured check, so a duplicate replay is harmless.
+    await capturePoll(raw, meId, meLid);
+  }
+}
+
 export async function capturePoll(
   raw: any,
   meId?: string,
@@ -176,30 +208,47 @@ export async function capturePoll(
     return;
   }
 
-  const existing = await prisma.whatsappPoll.findUnique({ where: { pollMessageId } });
-  if (existing) return; // already captured
+  // The creation message is the irreplaceable one: it carries the messageSecret,
+  // so losing this write strands every vote for the poll, buffered or not. Retry
+  // before giving up, then park it rather than drop it.
+  try {
+    const stored = await withDbRetry(async () => {
+      const existing = await prisma.whatsappPoll.findUnique({ where: { pollMessageId } });
+      if (existing) return false; // already captured
 
-  const gameId = await findGameForPollTitle(question);
+      const gameId = await findGameForPollTitle(question);
 
-  await prisma.whatsappPoll.create({
-    data: {
-      pollMessageId,
-      remoteJid,
-      question,
-      pollMessage: enc({ key: raw.key, message: raw.message }),
-      gameId: gameId ?? undefined,
-      linkedBy: gameId ? null : undefined, // null = auto-matched
-    },
-  });
+      await prisma.whatsappPoll.create({
+        data: {
+          pollMessageId,
+          remoteJid,
+          question,
+          pollMessage: enc({ key: raw.key, message: raw.message }),
+          gameId: gameId ?? undefined,
+          linkedBy: gameId ? null : undefined, // null = auto-matched
+        },
+      });
 
-  if (raw.pushName && raw.key?.participant) {
-    await upsertContact(phoneFromJid(raw.key.participant), raw.pushName);
+      if (raw.pushName && raw.key?.participant) {
+        await upsertContact(phoneFromJid(raw.key.participant), raw.pushName);
+      }
+
+      console.log(
+        `[whatsapp] Captured poll "${question}" (${pollMessageId})` +
+          (gameId ? ` → auto-matched game ${gameId}` : ' → no game match, awaiting manual link')
+      );
+      return true;
+    });
+    if (!stored) return;
+  } catch (err) {
+    const held = await bufferPendingPoll(raw);
+    console.error(
+      `[whatsapp] Poll "${question}" (${pollMessageId}) could not be stored — buffered for replay ` +
+        `(${held} held). Votes will be parked until it lands.`,
+      err
+    );
+    return;
   }
-
-  console.log(
-    `[whatsapp] Captured poll "${question}" (${pollMessageId})` +
-      (gameId ? ` → auto-matched game ${gameId}` : ' → no game match, awaiting manual link')
-  );
 
   // Anything that voted before we had the poll is now decodable. This is the
   // payoff for buffering: a poll whose creation message failed to decrypt first

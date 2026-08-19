@@ -33,6 +33,7 @@ import {
   refreshScope,
   getPollUpdate,
   unwrapMessage,
+  replayPendingPolls,
 } from './polls';
 
 // Ordinary chatter we deliberately ignore. Anything in scope that isn't one of
@@ -318,6 +319,12 @@ export async function startWhatsappListener(): Promise<void> {
         latestQr = null;
         reconnectAttempts = 0; // healthy again, reset the backoff
         console.log('[whatsapp] Linked and listening (read-only).');
+        // A poll we couldn't persist is parked in Redis. Reconnect is the
+        // natural moment to try again: whatever broke the write — a suspended
+        // database, a restart mid-capture — has usually passed by now.
+        replayPendingPolls(sock?.user?.id, (sock?.user as any)?.lid).catch((err) =>
+          console.error('[whatsapp] Replaying buffered polls failed:', err)
+        );
       }
 
       if (connection === 'close') {

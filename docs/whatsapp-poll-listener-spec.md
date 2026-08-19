@@ -142,7 +142,7 @@ All **145** `prisma.*` call sites are equally unprotected; there is no retry hel
 
 ### Still open (not in this change)
 
-- **`capturePoll` should not lose data on any throw.** `656faa3` now buffers *votes* for an uncaptured poll, which is the bigger half. But the poll **creation** is still discarded on any throw, and the creation is the irreplaceable part — the `messageSecret` rides on it, so buffered votes have nothing to decrypt against if it never lands. A retry or a dead-letter row would close this.
+- ✅ **`capturePoll` no longer loses the creation on a throw.** `656faa3` buffered the *votes*; the creation — the irreplaceable half, since the `messageSecret` rides on it — is now retried 3× with backoff, then parked in `pendingPolls.ts` (Redis, same reasoning as `pendingVotes.ts`: the failure being insured against is Postgres being unreachable, so Postgres can't hold the insurance). Drained on `connection === 'open'`, re-buffering itself if the database is still down. Capped at 50, 14-day TTL.
 - The catch at `listener.ts` swallows every error identically. Capture failures deserve louder handling than parse noise.
 - **At least three distinct failure modes are now on record**: undecryptable CIPHERTEXT stubs (`656faa3`, the historical cause), an unrecognised message shape (25 Jul, `listener.ts:38-41`), and cold-start connect failure (this change). Treat "the poll didn't capture" as a symptom with several causes, not one bug.
 
