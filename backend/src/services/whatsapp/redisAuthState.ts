@@ -62,6 +62,14 @@ function getClient(url: string): Redis {
   return client;
 }
 
+/**
+ * The live connection, for other modules that want Redis (see pendingVotes).
+ * Null when Redis isn't configured, so callers must have a fallback.
+ */
+export function getSharedRedis(): Redis | null {
+  return client;
+}
+
 const encode = (value: unknown) => JSON.stringify(value, BufferJSON.replacer);
 const decode = (raw: string | null) => (raw ? JSON.parse(raw, BufferJSON.reviver) : null);
 
