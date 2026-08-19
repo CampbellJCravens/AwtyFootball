@@ -2,9 +2,14 @@ import { Router, Response } from 'express';
 import prisma from '../prisma';
 import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
-import { isScoringGoal, isOwnGoal } from '../services/goals';
+import { isScoringGoal, isOwnGoal, scoreFor } from '../services/goals';
 import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
 import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
+import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL } from '../services/matchQuality';
+import { summariseTempo } from '../services/tempo';
+import { computeChurn } from '../services/churn';
+import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
+import { publicPlayer, avatarUrl } from '../services/avatar';
 
 const router = Router();
 
@@ -24,6 +29,8 @@ interface GoalData {
   timestamp: string;
   team: 'color' | 'white' | null;
   ownGoal?: boolean;
+  goldenGoal?: boolean;
+  value?: number; // scoreline weight; player credit is always 1
 }
 
 interface ParsedGame {
@@ -35,6 +42,8 @@ interface ParsedGame {
   goals: GoalData[];
   sportsmanship: Record<string, number>;
   fouls: Record<string, number>;
+  startedAt: Date | null;
+  gameEvents: { type: string; timestamp: string }[];
 }
 
 async function loadAllGames(): Promise<ParsedGame[]> {
@@ -48,6 +57,8 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
     fouls: safeParseJSON<Record<string, number>>(g.fouls, {}),
+    startedAt: g.startedAt,
+    gameEvents: safeParseJSON<{ type: string; timestamp: string }[]>(g.gameEvents, []),
   }));
 }
 
@@ -57,8 +68,8 @@ const hasSportsmanshipData = (year: number, month: number) => year > 2026 || (ye
 const hasFoulsData = (year: number, month: number) => year > 2026 || (year === 2026 && month >= 7);
 
 function getGameResult(game: ParsedGame, team: 'color' | 'white'): 'W' | 'L' | 'T' {
-  const colorGoals = game.goals.filter(g => g.team === 'color').length;
-  const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+  const colorGoals = scoreFor(game.goals, 'color');
+  const whiteGoals = scoreFor(game.goals, 'white');
   if (colorGoals === whiteGoals) return 'T';
   if (team === 'color') return colorGoals > whiteGoals ? 'W' : 'L';
   return whiteGoals > colorGoals ? 'W' : 'L';
@@ -72,7 +83,8 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
 
     const allGames = await loadAllGames();
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     let wins = 0, losses = 0, ties = 0, totalGoals = 0, totalOwnGoals = 0, totalAssists = 0;
     const matchHistory: any[] = [];
@@ -93,8 +105,8 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
 
       const points = result === 'W' ? 3 : result === 'T' ? 1 : 0;
 
-      const colorScore = game.goals.filter(g => g.team === 'color').length;
-      const whiteScore = game.goals.filter(g => g.team === 'white').length;
+      const colorScore = scoreFor(game.goals, 'color');
+      const whiteScore = scoreFor(game.goals, 'white');
       const goalsScored = game.goals.filter(g => g.scorerId === player.id && isScoringGoal(g)).length;
       const ownGoalsScored = game.goals.filter(g => g.scorerId === player.id && isOwnGoal(g)).length;
       const assistsMade = game.goals.filter(g => g.assisterId === player.id).length;
@@ -255,9 +267,28 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
       legacyTotals.wins += rec.wins;
     }
 
+    /*
+     * Percentile bars, OWN PROFILE ONLY (owner 2026-08-17), admins excepted.
+     * The gate is enforced HERE and not merely hidden in the UI: a client-side
+     * gate would still ship every player's percentiles to every browser.
+     */
+    const maySeePercentiles =
+      !!req.user && (req.user.playerId === player.id || req.user.role === 'admin');
+    const percentiles = maySeePercentiles
+      ? computePercentiles(
+          allGames.map(g => ({
+            createdAt: g.createdAt, field: g.field, teamAssignments: g.teamAssignments,
+            goals: g.goals, sportsmanship: g.sportsmanship, fouls: g.fouls,
+          })),
+          allPlayers.map(p => ({ id: p.id, name: p.name })),
+        ).get(player.id) ?? null
+      : null;
+
     res.json({
-      player: { id: player.id, name: player.name, pictureUrl: player.pictureUrl },
+      player: { id: player.id, name: player.name, pictureUrl: avatarUrl(req, player) },
       aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, ownGoals: totalOwnGoals, assists: totalAssists },
+      percentiles,
+      percentileMinGames: DEFAULT_MIN_GAMES,
       ranks,
       matchHistory,
       bestPartnersByPPG,
@@ -283,7 +314,8 @@ router.get('/chemistry', async (req: AuthenticatedRequest, res: Response) => {
 
     const allGames = await loadAllGames();
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     if (type === 'goalPartners') {
       // Track scorer-assister pairs
@@ -320,8 +352,8 @@ router.get('/chemistry', async (req: AuthenticatedRequest, res: Response) => {
       const assignments = game.teamAssignments;
       if (!assignments || Object.keys(assignments).length === 0) continue;
 
-      const colorGoals = game.goals.filter(g => g.team === 'color').length;
-      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(game.goals, 'color');
+      const whiteGoals = scoreFor(game.goals, 'white');
       const isTie = colorGoals === whiteGoals;
 
       for (const team of ['color', 'white'] as const) {
@@ -402,7 +434,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     );
 
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     // Compute per-player stats for this month
     const stats = new Map<string, PlayerStat>();
@@ -411,8 +444,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     type PlayerStat = { points: number; wins: number; ties: number; goals: number; ownGoals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
 
     for (const game of monthGames) {
-      const colorGoals = game.goals.filter(g => g.team === 'color').length;
-      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(game.goals, 'color');
+      const whiteGoals = scoreFor(game.goals, 'white');
 
       for (const [pid, team] of Object.entries(game.teamAssignments)) {
         if (!playerMap.has(pid)) continue;
@@ -553,8 +586,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     // goal-combo like the duo — this is results-based (mirrors chemistry trios).
     const trioTracker = new Map<string, { ids: string[]; games: number; wins: number; ties: number }>();
     for (const game of monthGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       const isTie = c === w;
       for (const team of ['color', 'white'] as const) {
         const teamPlayers = Object.entries(game.teamAssignments)
@@ -596,8 +629,8 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
     // Highest-scoring game of the month (most total goals).
     let highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null = null;
     for (const game of monthGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       const total = c + w;
       if (total > 0 && (!highestScoringGame || total > highestScoringGame.totalGoals)) {
         highestScoringGame = { gameNumber: game.gameNumber, date: game.createdAt.toISOString(), colorScore: c, whiteScore: w, totalGoals: total };
@@ -623,6 +656,42 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
       gamesPlayed: monthGames.length,
       availableMonths: allMonths,
       highestScoringGame,
+      // Month-level competitiveness. Games, not players.
+      balance: summariseBalance(monthGames.map(g => computeBalance(g.goals))),
+      // Per-game rows as well as the aggregate: a month holds about three games,
+      // and a four-bucket distribution over three games leaves half its bars
+      // empty. At that size the honest illustration is the games themselves.
+      balanceGames: monthGames
+        .map(g => {
+          const b = computeBalance(g.goals);
+          return {
+            gameNumber: g.gameNumber,
+            date: g.createdAt.toISOString(),
+            colorScore: b.colorScore,
+            whiteScore: b.whiteScore,
+            margin: b.margin,
+            leadChanges: b.leadChanges,
+            comeback: b.comeback,
+            quality: b.quality,
+            qualityLabel: MATCH_QUALITY_LABEL[b.quality],
+          };
+        })
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+      // Conditional by construction: null in a month with no scored game, so the
+      // UI renders no tile rather than an empty one.
+      gameOfTheMonth: (() => {
+        const pick = pickStandoutGame(monthGames.map(g => ({ game: g, balance: computeBalance(g.goals) })));
+        return pick ? {
+          gameNumber: pick.game.gameNumber,
+          date: pick.game.createdAt.toISOString(),
+          colorScore: pick.balance.colorScore,
+          whiteScore: pick.balance.whiteScore,
+          leadChanges: pick.balance.leadChanges,
+          totalGoals: pick.balance.totalGoals,
+          quality: pick.balance.quality,
+          qualityLabel: MATCH_QUALITY_LABEL[pick.balance.quality],
+        } : null;
+      })(),
       awards: {
         playerOfTheMonth,
         topGoalContributor,
@@ -669,18 +738,19 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     );
 
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
-    type YStat = { points: number; wins: number; ties: number; goals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
+    type YStat = { points: number; wins: number; ties: number; goals: number; goldenGoals: number; assists: number; games: number; goalInvolvements: number; goalsAllowed: number; sportsmanship: number; fouls: number };
     const stats = new Map<string, YStat>();
 
     for (const game of yearGames) {
-      const colorGoals = game.goals.filter(g => g.team === 'color').length;
-      const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+      const colorGoals = scoreFor(game.goals, 'color');
+      const whiteGoals = scoreFor(game.goals, 'white');
       for (const [pid, team] of Object.entries(game.teamAssignments)) {
         if (!playerMap.has(pid)) continue;
         if (playerMap.get(pid)!.name.includes('Guest')) continue;
-        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
+        if (!stats.has(pid)) stats.set(pid, { points: 0, wins: 0, ties: 0, goals: 0, goldenGoals: 0, assists: 0, games: 0, goalInvolvements: 0, goalsAllowed: 0, sportsmanship: 0, fouls: 0 });
         const s = stats.get(pid)!;
         s.games++;
         s.sportsmanship += (game.sportsmanship[pid] || 0) - (game.fouls[pid] || 0);
@@ -692,7 +762,13 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         s.goalsAllowed += team === 'color' ? whiteGoals : colorGoals;
       }
       for (const goal of game.goals) {
-        if (stats.has(goal.scorerId) && isScoringGoal(goal)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
+        if (stats.has(goal.scorerId) && isScoringGoal(goal)) {
+          stats.get(goal.scorerId)!.goals++;
+          stats.get(goal.scorerId)!.goalInvolvements++;
+          // Counted as a record, never by scoreline weight: a decider worth 3 is
+          // one golden goal, and its scorer's regular total already got exactly 1.
+          if (goal.goldenGoal === true) stats.get(goal.scorerId)!.goldenGoals++;
+        }
         if (goal.assisterId && stats.has(goal.assisterId)) { stats.get(goal.assisterId)!.assists++; stats.get(goal.assisterId)!.goalInvolvements++; }
       }
     }
@@ -713,6 +789,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
 
     const points = rankList(s => s.points);
     const goals = rankList(s => s.goals);
+    const goldenGoals = rankList(s => s.goldenGoals);
     const assists = rankList(s => s.assists);
     const goalInvolvements = rankList(s => s.goalInvolvements);
     const appearances = rankList(s => s.games);
@@ -743,8 +820,8 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     // Best Trio (teammates by PPG, min 3 games together across the year)
     const trioTracker = new Map<string, { ids: string[]; games: number; wins: number; ties: number }>();
     for (const game of yearGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       const isTie = c === w;
       for (const team of ['color', 'white'] as const) {
         const teamPlayers = Object.entries(game.teamAssignments)
@@ -773,8 +850,8 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
     let highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null = null;
     let totalGoals = 0;
     for (const game of yearGames) {
-      const c = game.goals.filter(g => g.team === 'color').length;
-      const w = game.goals.filter(g => g.team === 'white').length;
+      const c = scoreFor(game.goals, 'color');
+      const w = scoreFor(game.goals, 'white');
       totalGoals += c + w;
       const total = c + w;
       if (total > 0 && (!highestScoringGame || total > highestScoringGame.totalGoals)) {
@@ -784,15 +861,39 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
 
     const availableYears = [...new Set(allGames.filter(g => g.field !== 'cancelled').map(g => g.createdAt.getFullYear()))].sort((a, b) => b - a);
 
+    // How competitive the season's games were. Describes GAMES, never players —
+    // nothing here is attributed to a person. See MATCH_ANALYTICS_PRD.md.
+    const balanced = yearGames.map(g => ({ game: g, balance: computeBalance(g.goals) }));
+    const balance = summariseBalance(balanced.map(b => b.balance));
+    const tempo = summariseTempo(yearGames.map(g => ({ startedAt: g.startedAt, goals: g.goals, events: g.gameEvents })));
+
+    const gotsPick = pickStandoutGame(balanced);
+    const gameOfTheSeason = gotsPick ? {
+      gameNumber: gotsPick.game.gameNumber,
+      date: gotsPick.game.createdAt.toISOString(),
+      colorScore: gotsPick.balance.colorScore,
+      whiteScore: gotsPick.balance.whiteScore,
+      leadChanges: gotsPick.balance.leadChanges,
+      totalGoals: gotsPick.balance.totalGoals,
+      quality: gotsPick.balance.quality,
+      qualityLabel: MATCH_QUALITY_LABEL[gotsPick.balance.quality],
+    } : null;
+
     res.json({
       year,
       gamesPlayed: yearGames.length,
       totalGoals,
       availableYears,
       highestScoringGame,
+      balance,
+      tempo,
+      gameOfTheSeason,
       awards: {
         playerOfTheYear: marquee(points),
         goldenBoot: marquee(goals),
+        // Most golden goals in the season. Distinct from goldenBoot, which is most
+        // goals — a player can win one without the other.
+        theDecider: marquee(goldenGoals),
         playmaker: marquee(assists),
         ironMan: marquee(appearances),
         topDefender: marquee(defensiveRating),
@@ -815,7 +916,8 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
     const playerId = req.params.id;
     const allGames = await loadAllGames();
     const allPlayers = await prisma.player.findMany();
-    const playerMap = new Map(allPlayers.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    // Photos as URLs, not base64 — see services/avatar.ts.
+    const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
     if (!playerMap.has(playerId)) return res.status(404).json({ error: 'Player not found' });
 
@@ -870,8 +972,8 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
 
       const stats = new Map<string, PlayerStat>();
       for (const game of monthGames) {
-        const colorGoals = game.goals.filter(g => g.team === 'color').length;
-        const whiteGoals = game.goals.filter(g => g.team === 'white').length;
+        const colorGoals = scoreFor(game.goals, 'color');
+        const whiteGoals = scoreFor(game.goals, 'white');
         for (const [pid, team] of Object.entries(game.teamAssignments)) {
           if (!playerMap.has(pid)) continue;
           if (playerMap.get(pid)!.name.includes('Guest')) continue;
@@ -1021,7 +1123,7 @@ router.get('/legacy', async (req: AuthenticatedRequest, res: Response) => {
 
     const playerIds = [...new Set(legacyStats.map(s => s.playerId))];
     const players = await prisma.player.findMany({ where: { id: { in: playerIds } } });
-    const playerMap = new Map(players.map(p => [p.id, { id: p.id, name: p.name, pictureUrl: p.pictureUrl }]));
+    const playerMap = new Map(players.map(p => [p.id, publicPlayer(req, p)]));
 
     // Group by player
     const grouped = new Map<string, { seasons: Record<string, { goals: number; assists: number; wins: number }>; totals: { goals: number; assists: number; wins: number } }>();
@@ -1239,6 +1341,31 @@ router.get('/reliability', requireAdmin, async (_req: AuthenticatedRequest, res:
   }
 });
 
+// ── GET /api/stats/churn ── (admin only)
+// Who has quietly stopped turning up. Admin-only PERMANENTLY: a public list of
+// people's absences is a callout board, and the point of this is to prompt a
+// private word or a roster decision. Never add any of this to a public payload.
+router.get('/churn', requireAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [games, players] = await Promise.all([
+      prisma.game.findMany({ select: { createdAt: true, field: true, teamAssignments: true } }),
+      prisma.player.findMany({ select: { id: true, name: true, onRoster: true } }),
+    ]);
+    const { rows, quiet, asOf } = computeChurn(
+      games.map(g => ({
+        createdAt: g.createdAt,
+        field: g.field,
+        teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
+      })),
+      players,
+    );
+    res.json({ asOf, quiet, rows });
+  } catch (error) {
+    console.error('Error computing churn:', error);
+    res.status(500).json({ error: 'Failed to compute churn' });
+  }
+});
+
 // ── GET /api/stats/turnout/:gameId ── (admin only)
 // Forward-looking turnout projection for one game. Admin-only by design: a
 // public projection is self-fulfilling (a low number told to the group depresses
@@ -1274,7 +1401,7 @@ router.get('/turnout/:gameId', requireAdmin, async (req: AuthenticatedRequest, r
       return {
         id: p.id,
         name: p.name,
-        pictureUrl: p.pictureUrl,
+        pictureUrl: avatarUrl(req, p),
         bucket,
         probability,
         // Games behind this player's own rate for this bucket. n === 0 means the

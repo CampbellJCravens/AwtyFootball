@@ -8,6 +8,13 @@ export const goalSchema = z.object({
   // opponent, which is what keeps the scoreline right with no special-casing.
   team: z.enum(['color', 'white']).nullable(),
   ownGoal: z.boolean().optional(),
+  // This record ended the game under sudden death. Categorisation only — it is
+  // what the golden-goal count and The Decider achievement read.
+  goldenGoal: z.boolean().optional(),
+  // Scoreline weight. Absent or 1 = a normal goal. The scorer's own total is
+  // ALWAYS credited 1 regardless of this, or one freak comeback distorts a
+  // season's leaderboards.
+  value: z.number().int().min(1).optional(),
 });
 
 export const teamChangeSchema = z.object({
@@ -20,11 +27,31 @@ export const teamChangeSchema = z.object({
 });
 
 export const gameEventSchema = z.object({
-  type: z.enum(['halfTime', 'gameOver']),
+  type: z.enum(['halfTime', 'gameOver', 'goldenGoalArmed']),
   timestamp: z.string(), // ISO date string
+  // Goal difference at the moment golden goal was armed, frozen there on
+  // purpose: the deciding goal is worth n+1, and a value that moved silently
+  // between arming and the goal is what causes an argument at full time.
+  // Only present on goldenGoalArmed.
+  n: z.number().int().min(0).optional(),
+  // Which team was BEHIND at arming, frozen alongside n. Needed because the
+  // decider is worth n+1 only to the trailing team; the leading team's goal is
+  // worth 1. null = level, where n is 0 and either team wins by 1.
+  trailing: z.enum(['color', 'white']).nullable().optional(),
+});
+
+// One guest appearance. slotPlayerId is the GuestN pool Player carrying the
+// guest through teamAssignments/goals; guestName resolves server-side to a
+// durable Guest identity. Both guestName and hostPlayerId are nullable —
+// naming a guest and crediting a host are each skippable at the sideline.
+export const guestVisitSchema = z.object({
+  slotPlayerId: z.string(),
+  guestName: z.string().trim().min(1).max(60).nullable(),
+  hostPlayerId: z.string().nullable(),
 });
 
 export const updateGameSchema = z.object({
+  guestVisits: z.array(guestVisitSchema).optional(),
   teamAssignments: z.record(z.enum(['color', 'white'])).optional(),
   goals: z.array(goalSchema).optional(),
   teamChanges: z.array(teamChangeSchema).optional(),
@@ -34,8 +61,11 @@ export const updateGameSchema = z.object({
   createdAt: z.string().datetime().optional(), // ISO date string
   gameNumber: z.number().int().positive().optional(), // Add game number support
   field: z.enum(['stadium', 'grass', 'cancelled']).nullable().optional(),
+  // Kick-off. null clears it, so a mis-tap on the start button is undoable.
+  startedAt: z.string().datetime().nullable().optional(),
 });
 
 export type Goal = z.infer<typeof goalSchema>;
+export type GuestVisit = z.infer<typeof guestVisitSchema>;
 export type UpdateGameInput = z.infer<typeof updateGameSchema>;
 

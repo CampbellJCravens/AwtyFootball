@@ -46,6 +46,17 @@ export default {
         warning: {
           DEFAULT: 'var(--color-warning)',
           bg: 'var(--color-warning-bg)',
+          border: 'var(--color-warning-border)',
+        },
+        success: {
+          DEFAULT: 'var(--color-success)',
+          bg: 'var(--color-success-bg)',
+          border: 'var(--color-success-border)',
+        },
+        info: {
+          DEFAULT: 'var(--color-info)',
+          bg: 'var(--color-info-bg)',
+          border: 'var(--color-info-border)',
         },
       },
       fontFamily: {

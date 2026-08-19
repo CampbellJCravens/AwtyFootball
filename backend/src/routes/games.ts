@@ -3,6 +3,8 @@ import prisma from '../prisma';
 import { updateGameSchema, UpdateGameInput } from '../schemas/game';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { isOwnGoal } from '../services/goals';
+import { computeBalance, MATCH_QUALITY_LABEL } from '../services/matchQuality';
+import { getGuestVisits, replaceGuestVisits } from '../services/guests';
 import { google } from 'googleapis';
 import { env } from '../env';
 import Papa from 'papaparse';
@@ -32,6 +34,14 @@ function computeNextSaturday845(now: Date = new Date()): Date {
 }
 
 const router = Router();
+
+// Per-game competitiveness, attached to both the read and the write response so
+// the UI never has to recompute a scoreline it was just handed.
+const withLabel = (goals: any[]) => {
+  const b = computeBalance(goals);
+  return { ...b, qualityLabel: MATCH_QUALITY_LABEL[b.quality] };
+};
+
 
 // POST /api/games - Create a new game (admin only)
 router.post('/', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -164,6 +174,10 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
       gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
       fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
+      guestVisits: await getGuestVisits(id),
+      // How competitive this game was. A property of the GAME — no player is
+      // named as responsible. See MATCH_ANALYTICS_PRD.md.
+      balance: withLabel(safeParseJSON(game.goals, [] as any[])),
     };
 
     res.json(parsedGame);
@@ -228,9 +242,24 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       updateData.field = data.field; // null clears, 'stadium'/'grass' sets
     }
 
-    const game = await prisma.game.update({
-      where: { id },
-      data: updateData,
+    if (data.startedAt !== undefined) {
+      updateData.startedAt = data.startedAt === null ? null : new Date(data.startedAt);
+    }
+
+    // Guest visits are relational, not a JSON column, so they ride the same
+    // transaction as the game update — the sideline auto-save must not be able
+    // to land a roster without its guest attribution.
+    const game = await prisma.$transaction(async tx => {
+      const updated = await tx.game.update({
+        where: { id },
+        data: updateData,
+      });
+
+      if (data.guestVisits !== undefined) {
+        await replaceGuestVisits(tx, id, data.guestVisits);
+      }
+
+      return updated;
     });
 
     // Parse JSON fields for response
@@ -242,6 +271,10 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
       gameEvents: safeParseJSON(game.gameEvents, [] as any[]),
       sportsmanship: safeParseJSON<Record<string, number>>(game.sportsmanship, {}),
       fouls: safeParseJSON<Record<string, number>>(game.fouls, {}),
+      guestVisits: await getGuestVisits(id),
+      // How competitive this game was. A property of the GAME — no player is
+      // named as responsible. See MATCH_ANALYTICS_PRD.md.
+      balance: withLabel(safeParseJSON(game.goals, [] as any[])),
     };
 
     res.json(parsedGame);
@@ -421,7 +454,11 @@ router.post('/:id/export', requireAdmin, async (req: AuthenticatedRequest, res: 
     // Add game event entries (half time / game over)
     const gameEvents = safeParseJSON<Array<{ type: string; timestamp: string }>>(game.gameEvents, []);
     gameEvents.forEach(event => {
-      const label = event.type === 'halfTime' ? 'half time' : event.type === 'gameOver' ? 'game over' : event.type;
+      const label =
+        event.type === 'halfTime' ? 'half time'
+        : event.type === 'gameOver' ? 'game over'
+        : event.type === 'goldenGoalArmed' ? 'golden goal armed'
+        : event.type;
       gameSummaryData.push({
         EntryType: label,
         Game: gameName,

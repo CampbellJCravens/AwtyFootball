@@ -13,6 +13,7 @@ import PlayerList from './components/PlayerList';
 import EditPlayerModal from './components/EditPlayerModal';
 import TopHeader from './components/TopHeader';
 import BottomNav from './components/BottomNav';
+import DuesPage from './components/DuesPage';
 import GameModuleCondensed from './components/GameModuleCondensed';
 import GameModuleExpanded from './components/GameModuleExpanded';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
@@ -482,6 +483,8 @@ function App() {
     <Stats players={players} games={games} onPlayerClick={handleStatsPlayerClick} currentPlayerId={user?.playerId} />
   );
 
+  const renderDuesTab = () => <DuesPage players={players} />;
+
   const renderProfileTab = () => {
     // Google-authed user without a linked player → existing link-setup flow.
     if (user && !user.playerId) {
@@ -621,6 +624,9 @@ function App() {
       case 'games': return renderGamesTab();
       case 'players': return renderPlayersTab();
       case 'stats': return renderStatsTab();
+      // Admin-only, and gated here as well as in the nav so the tab can't be
+      // reached by a stale activeTab after signing out.
+      case 'dues': return isAdmin ? renderDuesTab() : renderHomeTab();
       case 'profile': return renderProfileTab();
       default: return renderHomeTab();
     }
@@ -711,7 +717,7 @@ function App() {
           </div>
         </main>
 
-        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
+        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} isAdmin={isAdmin} />
 
         {/* FAB for Games tab (admin) */}
         {activeTab === 'games' && isAdmin && !expandedGameId && (

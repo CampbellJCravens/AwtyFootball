@@ -36,6 +36,31 @@ export interface BestGroup {
   size: number;
 }
 
+
+// ── Player percentiles (PLAYER_PERCENTILES_PRD.md) ──
+// Present ONLY on your own profile (or to an admin). The server omits the field
+// entirely otherwise, so this type being null is the normal case.
+export interface PercentileMetric {
+  id: string;
+  label: string;
+  unit: string;
+  higherIsBetter: boolean;
+  value: number | null;
+  percentile: number | null;
+  cohortMedian: number | null;
+  cohortSize: number;
+  games: number;
+  qualified: boolean;
+  reason?: 'notEnoughGames' | 'noCohort';
+}
+
+export interface PlayerPercentiles {
+  playerId: string;
+  qualified: boolean;
+  minGames: number;
+  metrics: PercentileMetric[];
+}
+
 export interface PlayerStatsResponse {
   player: PlayerStatsPlayer;
   aggregate: {
@@ -48,6 +73,9 @@ export interface PlayerStatsResponse {
     goals: number;
     assists: number;
   };
+  // Null unless this is your own profile, or you are an admin.
+  percentiles: PlayerPercentiles | null;
+  percentileMinGames: number;
   ranks: {
     games: number;
     points: number;
@@ -121,6 +149,10 @@ export interface MonthlyStatsResponse {
   gamesPlayed: number;
   availableMonths: { month: number; year: number }[];
   highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null;
+  balance: BalanceSummary;
+  balanceGames: BalanceGame[];
+  // Null in a month with no scored game — the tile is conditional, not empty.
+  gameOfTheMonth: StandoutGame | null;
   awards: {
     playerOfTheMonth: MonthlyAward[] | null;
     topGoalContributor: MonthlyAward[] | null;
@@ -164,6 +196,100 @@ export async function fetchMonthlyStats(month: number, year: number): Promise<Mo
   return response.json();
 }
 
+
+// ── Match analytics (MATCH_ANALYTICS_PRD.md) ──
+// Every field here describes a GAME. Nothing is attributed to a player: the app
+// does not record who picked the teams, so a per-player balance stat would blame
+// someone who may not have caused the result.
+export type MatchQuality = 'classic' | 'close' | 'competitive' | 'oneSided';
+
+export interface MatchBalance {
+  colorScore: number;
+  whiteScore: number;
+  margin: number;
+  totalGoals: number;
+  leadChanges: number;
+  comeback: boolean | null;
+  tie: boolean;
+  quality: MatchQuality;
+  qualityLabel: string;
+}
+
+export interface BalanceSummary {
+  games: number;
+  medianMargin: number;
+  meanMargin: number;
+  ties: number;
+  oneGoalGames: number;
+  blowouts: number;
+  comebacks: number;
+  gamesWithLeadChange: number;
+  byQuality: Record<MatchQuality, number>;
+}
+
+// One game's competitiveness. Shown per-game in the monthly view, where the
+// aggregate is too coarse to say anything.
+export interface BalanceGame {
+  gameNumber: number | null;
+  date: string;
+  colorScore: number;
+  whiteScore: number;
+  margin: number;
+  leadChanges: number;
+  comeback: boolean | null;
+  quality: MatchQuality;
+  qualityLabel: string;
+}
+
+export interface TempoSummary {
+  games: number;
+  excluded: { noHalfTime: number; noGoals: number; shortSecondHalf: number };
+  firstHalfGoals: number;
+  secondHalfGoals: number;
+  lateGoals: number;
+  firstHalfShare: number;
+  lateShare: number;
+  ceilingApplied: number;
+}
+
+// One standout fixture — Game of the Season over a year, Game of the Month over
+// a month. Names a GAME, never a player.
+export interface StandoutGame {
+  gameNumber: number | null;
+  date: string;
+  colorScore: number;
+  whiteScore: number;
+  leadChanges: number;
+  totalGoals: number;
+  quality: MatchQuality;
+  qualityLabel: string;
+}
+
+// Admin-only. Never render this anywhere a non-admin can reach — a public list
+// of who has stopped showing up is a callout board.
+export interface ChurnRow {
+  playerId: string;
+  name: string;
+  games: number;
+  firstSeen: string;
+  lastSeen: string;
+  daysSinceLastSeen: number;
+  onRoster: boolean;
+  quiet: boolean;
+}
+
+export interface ChurnResponse {
+  asOf: string;
+  quiet: ChurnRow[];
+  rows: ChurnRow[];
+}
+
+export async function fetchChurn(): Promise<ChurnResponse> {
+  const response = await fetch(`${API_BASE_URL}/stats/churn`, { credentials: 'include' });
+  if (!response.ok) throw new Error('Failed to fetch churn');
+  return response.json();
+}
+
 export interface YearlyLeaderEntry {
   player: PlayerStatsPlayer;
   value: number;
@@ -178,9 +304,14 @@ export interface YearlyStatsResponse {
   totalGoals: number;
   availableYears: number[];
   highestScoringGame: { gameNumber: number | null; date: string; colorScore: number; whiteScore: number; totalGoals: number } | null;
+  balance: BalanceSummary;
+  tempo: TempoSummary;
+  gameOfTheSeason: StandoutGame | null;
   awards: {
     playerOfTheYear: MonthlyAward[] | null;
     goldenBoot: MonthlyAward[] | null;
+    // Most golden goals in the season. Separate from goldenBoot (most goals).
+    theDecider: MonthlyAward[] | null;
     playmaker: MonthlyAward[] | null;
     ironMan: MonthlyAward[] | null;
     topDefender: MonthlyAward[] | null;

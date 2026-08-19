@@ -3,6 +3,7 @@ import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward, LeaderboardEntry
 import { useAuth } from '../contexts/AuthContext';
 import { renderMonthlyReportImage, MonthlyReportData, MonthlyAwardItem } from '../utils/renderMonthlyReportImage';
 import ImageLightbox from './ImageLightbox';
+import BalanceSummaryCard from './BalanceSummaryCard';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -255,6 +256,18 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
         awards.push({ label: 'HIGHEST-SCORING GAME', names: [d], value: `${hsg.colorScore}–${hsg.whiteScore} · ${hsg.totalGoals} goals` });
       }
 
+      // Game of the Month sits beside Highest-Scoring Game: both name a fixture,
+      // not a person. Conditional — a month with no scored game gets no tile.
+      const gotm = data.gameOfTheMonth;
+      if (gotm) {
+        const d = new Date(gotm.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        awards.push({
+          label: 'GAME OF THE MONTH',
+          names: [d],
+          value: `${gotm.colorScore}\u2013${gotm.whiteScore}${gotm.leadChanges ? ` \u00b7 ${gotm.leadChanges} lead change${gotm.leadChanges === 1 ? '' : 's'}` : ''}`,
+        });
+      }
+
       // Top Trio is deferred to the yearly report.
       const banners: MonthlyAwardItem[] = [];
       const duo = data.awards.topDuo?.[0];
@@ -370,6 +383,24 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
             )}
             <p className="text-xs text-text-tertiary font-medium mb-4">{data.gamesPlayed} game{data.gamesPlayed !== 1 ? 's' : ''} played this month</p>
 
+
+            {/* Collapsed by default: it is context for the month, not its headline. */}
+            {data.balance && data.balance.games > 0 && (
+              <div className="mb-4">
+                <BalanceSummaryCard
+                  balance={data.balance}
+                  games={data.balanceGames}
+                  pick={data.gameOfTheMonth}
+                  pickLabel="Game of the Month"
+                  title="How the games went"
+                />
+              </div>
+            )}
+
+            {/* How competitive the month's games were. Safe to show publicly
+                because it describes games, never players. */}
+
+
             <AwardSection
               title="Player of the Month"
               titlePlural="Players of the Month"
@@ -406,7 +437,10 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
                 onShowLeaderboard={() => setLeaderboardModal({ title: 'Sportsmanship', emoji: '🤙', unit: 'SP', entries: data.leaderboards.sportsmanship })}
               />
             )}
-            {(data.year > 2026 || (data.year === 2026 && data.month >= 7)) && (
+            {/* Like Own Goal of the Month, this disappears in a clean month rather
+                than announcing that nobody fouled — an award for the worst
+                behaviour has no business taking up space when there was none. */}
+            {(data.year > 2026 || (data.year === 2026 && data.month >= 7)) && data.awards.dirtiestPlayerOfTheMonth && (
               <AwardSection
                 title="Dirtiest Player of the Month"
                 titlePlural="Dirtiest Players of the Month"

@@ -1,9 +1,19 @@
+import { ReactNode } from 'react';
+
 interface BottomNavProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  isAdmin?: boolean;
 }
 
-const tabs = [
+interface NavTab {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  adminOnly?: boolean;
+}
+
+const tabs: NavTab[] = [
   {
     id: 'home',
     label: 'HOME',
@@ -43,6 +53,21 @@ const tabs = [
     ),
   },
   {
+    id: 'dues',
+    label: 'DUES',
+    adminOnly: true,
+    // A banknote with a ball on it — the money side of the club, kept out of
+    // the Stats hub so that stays performance data.
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <rect x="2" y="6" width="20" height="12" rx="2" strokeWidth={1.5} />
+        <circle cx="12" cy="12" r="3" strokeWidth={1.5} />
+        <path strokeLinecap="round" strokeWidth={1.5} d="M12 9v1.6M9.5 12.9l1.3-1M14.5 12.9l-1.3-1" />
+        <path strokeLinecap="round" strokeWidth={1.5} d="M5 9.8v4.4M19 9.8v4.4" />
+      </svg>
+    ),
+  },
+  {
     id: 'profile',
     label: 'PROFILE',
     icon: (
@@ -53,11 +78,12 @@ const tabs = [
   },
 ];
 
-export default function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+export default function BottomNav({ activeTab, onTabChange, isAdmin = false }: BottomNavProps) {
+  const visible = tabs.filter((tab) => !tab.adminOnly || isAdmin);
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface/80 backdrop-blur-xl border-t border-border" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
-        {tabs.map((tab) => {
+        {visible.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button

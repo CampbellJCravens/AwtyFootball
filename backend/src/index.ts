@@ -37,6 +37,8 @@ import { env } from './env';
 import './config/passport'; // Initialize passport strategies
 import playersRouter from './routes/players';
 import gamesRouter from './routes/games';
+import guestsRouter from './routes/guests';
+import duesRouter from './routes/dues';
 import rsvpsRouter from './routes/rsvps';
 import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
@@ -100,6 +102,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/players', playersRouter);
 app.use('/api/games/:gameId/rsvps', rsvpsRouter);
 app.use('/api/games', gamesRouter);
+app.use('/api/guests', guestsRouter);
+app.use('/api/dues', duesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/stats', statsRouter);
 // Public health check for the WhatsApp listener, for an external uptime monitor.

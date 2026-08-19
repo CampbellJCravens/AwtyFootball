@@ -10,6 +10,10 @@ export interface Goal {
   // The team CREDITED with the goal — for an own goal, the scorer's opponent.
   team: 'color' | 'white' | null;
   ownGoal?: boolean;
+  // Ended the game under sudden death. Categorisation only.
+  goldenGoal?: boolean;
+  // Scoreline weight; absent or 1 = normal. Player credit is ALWAYS 1.
+  value?: number;
 }
 
 // Own goals credit the opposition, so `team` handles the scoreline. Never
@@ -27,11 +31,32 @@ export interface TeamChange {
 }
 
 export interface GameEvent {
-  type: 'halfTime' | 'gameOver';
+  type: 'halfTime' | 'gameOver' | 'goldenGoalArmed';
+  n?: number; // goal difference frozen at arming; only on goldenGoalArmed
+  trailing?: 'color' | 'white' | null; // team behind at arming; null = level
   timestamp: string; // ISO date string
 }
 
 export type GameField = 'stadium' | 'grass' | 'cancelled';
+
+// One guest appearance. `slotPlayerId` is the GuestN pool Player that carries
+// the guest through teamAssignments/goals — `guestName` is a display label
+// only and is NEVER written to Player.name (guest exclusion across the app
+// string-matches that name).
+export interface GuestVisit {
+  slotPlayerId: string;
+  guestId: string | null;
+  guestName: string | null;
+  hostPlayerId: string | null;
+}
+
+// What the client sends: the name is unresolved text, the server maps it to a
+// durable Guest identity.
+export interface GuestVisitInput {
+  slotPlayerId: string;
+  guestName: string | null;
+  hostPlayerId: string | null;
+}
 
 export interface Game {
   id: string;
@@ -45,9 +70,24 @@ export interface Game {
   sportsmanship?: Record<string, number>;
   fouls?: Record<string, number>;
   field?: GameField | null;
+  // Kick-off, set by the start button. null/absent = not started. Never use this
+  // as the game date — createdAt is the date everywhere.
+  startedAt?: string | null;
+  guestVisits?: GuestVisit[]; // only returned by fetchGame/updateGame, not the list
+  // How competitive the game was, computed server-side. Describes the GAME —
+  // it is never attributed to a player. See MATCH_ANALYTICS_PRD.md.
+  balance?: {
+    margin: number;
+    leadChanges: number;
+    comeback: boolean | null;
+    tie: boolean;
+    quality: 'classic' | 'close' | 'competitive' | 'oneSided';
+    qualityLabel: string;
+  };
 }
 
 export interface UpdateGameData {
+  guestVisits?: GuestVisitInput[];
   teamAssignments?: Record<string, 'color' | 'white'>;
   goals?: Goal[];
   teamChanges?: TeamChange[];
@@ -57,6 +97,7 @@ export interface UpdateGameData {
   createdAt?: string; // ISO date string
   gameNumber?: number; // Add game number
   field?: GameField | null;
+  startedAt?: string | null; // ISO date string; null clears a mis-tapped start
 }
 
 // Fetch all games

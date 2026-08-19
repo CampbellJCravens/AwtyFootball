@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { scoreFor } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
 import ActivePlayersSection from './ActivePlayersSection';
 import GoalAssistModal from './GoalAssistModal';
+import GuestDetailsModal from './GuestDetailsModal';
 import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TimePickerModal from './TimePickerModal';
@@ -31,6 +33,8 @@ type LocalGoal = {
   timestamp: Date;
   team: 'color' | 'white' | null;
   ownGoal?: boolean;
+  goldenGoal?: boolean;
+  value?: number;
 };
 
 interface GameModuleExpandedProps {
@@ -42,6 +46,21 @@ interface GameModuleExpandedProps {
   isAdmin?: boolean; // Whether user is admin (can modify games)
   initialTab?: GameViewTab;
 }
+
+
+// One legible phrase for how competitive a game was. Never names a player: the
+// app does not record who picked the teams, so attributing a result to someone
+// would be blaming a person who may not have caused it.
+const balanceNote = (b: Game['balance']): string | undefined => {
+  if (!b || (b.margin === 0 && b.leadChanges === 0 && b.tie && b.quality === 'close')) return undefined;
+  const detail =
+    b.quality === 'classic' ? 'tight, and the lead changed'
+      : b.quality === 'close' ? (b.tie ? 'all square' : 'a one-goal game')
+        : b.quality === 'competitive' ? `${b.margin} goals in it`
+          : `${b.margin} goals in it`;
+  const comeback = b.comeback ? ' · came from behind' : '';
+  return `${b.qualityLabel} · ${detail}${comeback}`;
+};
 
 export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClose, onPlayerAdded, isAdmin = false, initialTab = 'game' }: GameModuleExpandedProps) {
   const formatDate = (dateString: string) => {
@@ -67,7 +86,17 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
-  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver'; timestamp: Date }>>([]);
+  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
+  // The 80-minute offer, dismissed for this sitting only. Arming stays available
+  // from the button afterwards.
+  const [goldenPromptDismissed, setGoldenPromptDismissed] = useState(false);
+  // Elapsed minutes at the last 'Still playing'. A boolean would be wrong here:
+  // dismissing once would silence the nudge for good, which is precisely the
+  // forgotten-tap case it exists to catch.
+  const [fullTimeSnoozedAt, setFullTimeSnoozedAt] = useState<number | null>(null);
+  // Kick-off. Distinct from the game date (gameDate/createdAt), which is unchanged.
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
+  const [clockNow, setClockNow] = useState<Date>(() => new Date());
   const [sportsmanship, setSportsmanship] = useState<Record<string, number>>({});
   const [fouls, setFouls] = useState<Record<string, number>>({});
   const [gameEventToDelete, setGameEventToDelete] = useState<number | null>(null);
@@ -93,8 +122,35 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [activeTab, setActiveTab] = useState<GameViewTab>(initialTab);
   const [pollVersion, setPollVersion] = useState(0); // bump to refresh the RSVP poll view
   const [currentField, setCurrentField] = useState<GameField | null>(null);
+  const [balance, setBalance] = useState<Game['balance']>(undefined);
   const [currentDate, setCurrentDate] = useState<string>(gameDate);
+  // Guest name + host, keyed by the GuestN pool player holding the slot.
+  const [guestVisits, setGuestVisits] = useState<Record<string, { guestName: string | null; hostPlayerId: string | null }>>({});
+  // Slot awaiting details: `team` is set when the guest is being added (assign
+  // on confirm), null when an existing guest is being edited.
+  const [guestSlotPending, setGuestSlotPending] = useState<{ slotPlayerId: string; team: 'color' | 'white' | null } | null>(null);
   const gameTitle = `${formatDate(currentDate)} - ${formatTime(currentDate)} - ${fieldLabel(currentField)}`;
+
+  // Display label for a guest with a name on them. Falls back to the canonical
+  // Player.name — which is what every guest-exclusion check in the app matches
+  // on, and which this NEVER overwrites.
+  const displayName = useCallback(
+    (player: Player) => guestVisits[player.id]?.guestName?.trim() || player.name,
+    [guestVisits]
+  );
+
+  const isGuestPlayer = useCallback((player: Player) => /^Guest\d+$/.test(player.name.trim()), []);
+
+  // "guest of Sam" subtext, resolved from host id to host name.
+  const guestHostNames = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [slotPlayerId, details] of Object.entries(guestVisits)) {
+      if (!details.hostPlayerId) continue;
+      const host = players.find(p => p.id === details.hostPlayerId);
+      if (host) out[slotPlayerId] = host.name;
+    }
+    return out;
+  }, [guestVisits, players]);
 
   // Load game data and players
   const loadGameData = useCallback(async () => {
@@ -114,12 +170,24 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       // reflects whatever was last saved (rather than the stale prop).
       setCurrentField(gameData.field ?? null);
       setCurrentDate(gameData.createdAt);
+      setBalance(gameData.balance);
 
       // Restore game state
       if (gameData.teamAssignments) {
         setPlayerTeams(gameData.teamAssignments);
       }
-      
+
+      setGuestVisits(
+        Object.fromEntries(
+          (gameData.guestVisits ?? []).map(v => [
+            v.slotPlayerId,
+            { guestName: v.guestName, hostPlayerId: v.hostPlayerId },
+          ])
+        )
+      );
+
+      setStartedAt(gameData.startedAt ? new Date(gameData.startedAt) : null);
+
       // Restore goals - guests are now regular players, so just use playersData
       if (gameData.goals && gameData.goals.length > 0) {
         const allPlayersWithGuests = [...playersData];
@@ -139,6 +207,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             timestamp: new Date(goal.timestamp),
             team: goal.team,
             ownGoal: goal.ownGoal,
+            goldenGoal: goal.goldenGoal,
+            value: goal.value,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -151,6 +221,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           gameData.gameEvents.map(event => ({
             type: event.type,
             timestamp: new Date(event.timestamp),
+            n: event.n,
+            trailing: event.trailing,
           }))
         );
       }
@@ -195,6 +267,91 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     loadGameData();
   }, [gameId, loadGameData]);
 
+  // The clock freezes at full time rather than running forever on a finished game.
+  const gameOverAt = gameEvents.find(e => e.type === 'gameOver')?.timestamp ?? null;
+
+  useEffect(() => {
+    if (!startedAt || gameOverAt) return;
+    const id = setInterval(() => setClockNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt, gameOverAt]);
+
+  // Football convention: minutes keep counting past 60 rather than rolling into
+  // an hours field, so a game in its 87th minute reads "87:04".
+  const elapsedLabel = (() => {
+    if (!startedAt) return null;
+    const ms = (gameOverAt ?? clockNow).getTime() - startedAt.getTime();
+    const total = Math.max(0, Math.floor(ms / 1000));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  })();
+
+  const armedEvent = gameEvents.find(e => e.type === 'goldenGoalArmed') ?? null;
+  const armedN = armedEvent?.n ?? null;
+
+  // 80 minutes is only when the app OFFERS golden goal. Arming itself is not
+  // gated on it (owner 2026-08-15) — the group often doesn't play a full 90.
+  const GOLDEN_GOAL_PROMPT_MINUTES = 80;
+  const elapsedMinutes = startedAt ? ((gameOverAt ?? clockNow).getTime() - startedAt.getTime()) / 60000 : 0;
+  const canArmGolden = isAdmin && !!startedAt && !gameOverAt && !armedEvent;
+  const showGoldenPrompt = canArmGolden && !goldenPromptDismissed && elapsedMinutes >= GOLDEN_GOAL_PROMPT_MINUTES;
+
+  // Nudge to record full time, because nobody is reminded otherwise and the
+  // button stamps whenever it is pressed — that is how a game ends up recorded
+  // as 482 minutes long (tapped hours later, from the car). The nudge only
+  // helps while someone still has the game open; a missed one still needs the
+  // 150-minute read-side ceiling behind it. Deliberately does NOT auto-stamp:
+  // writing a full time nobody observed is worse than not having one.
+  const FULL_TIME_PROMPT_MINUTES = 90;
+  const FULL_TIME_SNOOZE_MINUTES = 20;
+  const showFullTimePrompt =
+    isAdmin && !!startedAt && !gameOverAt && !showGoldenPrompt
+    && elapsedMinutes >= FULL_TIME_PROMPT_MINUTES
+    && (fullTimeSnoozedAt === null || elapsedMinutes >= fullTimeSnoozedAt + FULL_TIME_SNOOZE_MINUTES);
+
+  // Frozen at arming: the deciding goal is worth n+1, and n must not move
+  // afterwards. A level game gives n = 0, so the next goal wins by exactly 1.
+  const handleArmGoldenGoal = () => {
+    const colorScore = scoreFor(goals, 'color');
+    const whiteScore = scoreFor(goals, 'white');
+    setGameEvents(prev => [
+      ...prev,
+      {
+        type: 'goldenGoalArmed',
+        timestamp: new Date(),
+        n: Math.abs(colorScore - whiteScore),
+        trailing: colorScore === whiteScore ? null : colorScore < whiteScore ? 'color' : 'white',
+      },
+    ]);
+    setGoldenPromptDismissed(true);
+  };
+
+  /**
+   * The weight this goal carries on the scoreline. Only the first goal after
+   * arming is the decider: worth n+1 to the team that was behind (putting them
+   * exactly one ahead) and 1 to the team that was in front. An own goal can
+   * decide it too — `team` is already the credited side, so the same rule
+   * applies without special-casing.
+   */
+  const deciderValueFor = (creditedTeam: 'color' | 'white' | null): number => {
+    if (!armedEvent || gameOverAt || creditedTeam === null) return 1;
+    const trailing = armedEvent.trailing ?? null;
+    return creditedTeam === trailing ? (armedEvent.n ?? 0) + 1 : 1;
+  };
+
+  const isDecider = () => !!armedEvent && !gameOverAt;
+
+  const handleStartGame = async () => {
+    const when = new Date();
+    setStartedAt(when);
+    setClockNow(when);
+    try {
+      await updateGame(gameId, { startedAt: when.toISOString() });
+    } catch (err) {
+      setStartedAt(null); // never leave a kick-off showing that wasn't saved
+      setError(err instanceof Error ? err.message : 'Failed to start the game');
+    }
+  };
+
   // Save game data to backend
   const saveGameData = useCallback(async () => {
     try {
@@ -207,6 +364,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         timestamp: goal.timestamp.toISOString(),
         team: goal.team,
         ...(goal.ownGoal ? { ownGoal: true } : {}),
+        ...(goal.goldenGoal ? { goldenGoal: true } : {}),
+        ...(goal.value !== undefined ? { value: goal.value } : {}),
       }));
       
       // Convert team changes to API format
@@ -223,7 +382,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const gameEventsData: GameEvent[] = gameEvents.map(event => ({
         type: event.type,
         timestamp: event.timestamp.toISOString(),
+        ...(event.n !== undefined ? { n: event.n } : {}),
+        ...(event.trailing !== undefined ? { trailing: event.trailing } : {}),
       }));
+
+      // Only slots still on a team have a visit — dropping a guest from the
+      // roster drops their attribution with them.
+      const guestVisitsData = Object.entries(guestVisits)
+        .filter(([slotPlayerId]) => playerTeams[slotPlayerId])
+        .map(([slotPlayerId, details]) => ({
+          slotPlayerId,
+          guestName: details.guestName,
+          hostPlayerId: details.hostPlayerId,
+        }));
 
       await updateGame(gameId, {
         teamAssignments: playerTeams,
@@ -232,6 +403,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         gameEvents: gameEventsData,
         sportsmanship,
         fouls,
+        guestVisits: guestVisitsData,
       });
     } catch (err) {
       console.error('Error saving game data:', err);
@@ -239,7 +411,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSaving(false);
     }
-  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls]);
+  }, [gameId, playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits]);
 
   // Export game data to Google Sheets
   const handleExportToSheets = useCallback(async () => {
@@ -275,8 +447,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     try {
       setSharing(true);
 
-      const colorScore = goals.filter(g => g.team === 'color').length;
-      const whiteScore = goals.filter(g => g.team === 'white').length;
+      const colorScore = scoreFor(goals, 'color');
+      const whiteScore = scoreFor(goals, 'white');
 
       // Man of the Match = most goal involvements (goals + assists), guests
       // excluded. Ties surface all winners. Omitted when nobody was involved.
@@ -305,12 +477,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         colorScore,
         whiteScore,
         goals: goals.map(g => ({
-          scorer: g.scorer.name,
-          assister: g.assister?.name ?? null,
+          scorer: displayName(g.scorer),
+          assister: g.assister ? displayName(g.assister) : null,
           team: g.team,
           ownGoal: g.ownGoal,
         })),
         manOfTheMatch,
+        balanceNote: balanceNote(balance),
       };
 
       const blob = await renderMatchReportImage(data);
@@ -332,7 +505,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSharing(false);
     }
-  }, [goals, gameNumber, gameTitle]);
+  }, [goals, gameNumber, gameTitle, displayName]);
 
   // Handle CSV file selection for import
   const handleFileInputChange = useCallback(async () => {
@@ -416,6 +589,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             timestamp: new Date(goal.timestamp),
             team: goal.team,
             ownGoal: goal.ownGoal,
+            goldenGoal: goal.goldenGoal,
+            value: goal.value,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -518,7 +693,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, loading, isAdmin, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits, loading, isAdmin, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -633,12 +808,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // the lowest-numbered guest not already in this game's roster. If all
   // existing guests are already on a team in this game, a new GuestN+1 is
   // created and added to the pool.
+  //
+  // The slot is reserved but NOT assigned to a team until the details modal
+  // resolves — Skip assigns it bare, exactly as this used to behave.
   const handleAddGuest = async (team: 'color' | 'white') => {
     try {
       const inThisGame = new Set(Object.keys(playerTeams));
-      const guestRegex = /^Guest(\d+)$/;
       const allGuests = players
-        .map(p => ({ p, match: p.name.match(guestRegex) }))
+        .map(p => ({ p, match: p.name.match(/^Guest(\d+)$/) }))
         .filter((x): x is { p: Player; match: RegExpMatchArray } => !!x.match)
         .map(({ p, match }) => ({ p, n: parseInt(match[1], 10) }))
         .sort((a, b) => a.n - b.n);
@@ -646,22 +823,41 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const available = allGuests.find(g => !inThisGame.has(g.p.id));
 
       if (available) {
-        setPlayerTeams(prev => ({ ...prev, [available.p.id]: team }));
+        setGuestSlotPending({ slotPlayerId: available.p.id, team });
         return;
       }
 
       // All existing pooled guests are taken in this game — extend the pool.
       const nextNumber = (allGuests[allGuests.length - 1]?.n ?? 0) + 1;
       const newGuest = await createPlayer({ name: `Guest${nextNumber}` });
-      setPlayerTeams(prev => ({ ...prev, [newGuest.id]: team }));
 
       const updatedPlayers = await fetchPlayers();
       setPlayers(updatedPlayers);
       onPlayerAdded?.();
+
+      setGuestSlotPending({ slotPlayerId: newGuest.id, team });
     } catch (err) {
       console.error('Error adding guest:', err);
     }
   };
+
+  // Assigns the pending slot to its team (no-op when editing an existing
+  // guest, whose team is already set) and closes the modal.
+  const commitGuestSlot = (details: { guestName: string | null; hostPlayerId: string | null } | null) => {
+    if (!guestSlotPending) return;
+    const { slotPlayerId, team } = guestSlotPending;
+
+    if (team) {
+      setPlayerTeams(prev => ({ ...prev, [slotPlayerId]: team }));
+    }
+
+    if (details) {
+      setGuestVisits(prev => ({ ...prev, [slotPlayerId]: details }));
+    }
+
+    setGuestSlotPending(null);
+  };
+
 
   // All players (guests are now regular players in the database)
   const allPlayers = players;
@@ -681,7 +877,21 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     const gameDateObj = new Date(gameDate);
     const now = new Date(gameDateObj);
     now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
-    setGoals(prev => [...prev, { scorer: player, assister: null, timestamp: now, team: creditedTeam, ownGoal: true }]);
+    recordGoal({ scorer: player, assister: null, timestamp: now, team: creditedTeam, ownGoal: true });
+  };
+
+  /**
+   * Append a goal, applying the golden-goal weighting and closing the game out
+   * if this was the decider. Every goal-scoring path goes through here so the
+   * decider cannot be missed by whichever button happened to be tapped.
+   */
+  const recordGoal = (goal: LocalGoal) => {
+    const decider = isDecider();
+    const value = decider ? deciderValueFor(goal.team) : 1;
+    setGoals(prev => [...prev, decider ? { ...goal, goldenGoal: true, value } : goal]);
+    if (decider) {
+      setGameEvents(prev => [...prev, { type: 'gameOver', timestamp: new Date() }]);
+    }
   };
 
   const handleAssisterSelected = (assister: Player | null) => {
@@ -691,7 +901,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const gameDateObj = new Date(gameDate);
       const now = new Date(gameDateObj);
       now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
-      setGoals(prev => [...prev, { scorer: goalScorer, assister, timestamp: now, team: scorerTeam }]);
+      recordGoal({ scorer: goalScorer, assister, timestamp: now, team: scorerTeam });
       setGoalScorer(null);
     }
   };
@@ -991,7 +1201,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 onResolved={() => setPollVersion((v) => v + 1)}
               />
             )}
-            <GameRsvpSection gameId={gameId} refreshSignal={pollVersion} isAdmin={isAdmin} />
+            <GameRsvpSection gameId={gameId} gameNumber={gameNumber} refreshSignal={pollVersion} isAdmin={isAdmin} />
           </>
         )}
 
@@ -1014,10 +1224,72 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             {/* Score Box (centered, overlapping) */}
             <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gold rounded-xl px-4 py-2 border-2 border-gold shadow-glow-gold z-10">
               <span className="text-text-on-accent font-bold text-xl">
-                {goals.filter(g => g.team === 'color').length} - {goals.filter(g => g.team === 'white').length}
+                {scoreFor(goals, 'color')} - {scoreFor(goals, 'white')}
               </span>
             </div>
           </div>
+
+          {/* Kick-off clock. The Start Game button lives with the other game
+              event controls below, beside Half Time. */}
+          <div className="mt-2 flex items-center justify-center">
+            {elapsedLabel !== null ? (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-mono font-semibold text-text-primary tabular-nums">{elapsedLabel}</span>
+                <span className="text-text-tertiary">
+                  {gameOverAt ? 'full time' : `since ${formatTime(startedAt!.toISOString())}`}
+                </span>
+                {armedEvent && (
+                  <span className="flex items-center gap-1 text-gold font-semibold">
+                    <span aria-hidden>⚽</span>
+                    Golden goal{armedN !== null && armedN > 0 ? ` · decider worth ${armedN + 1}` : ' · next goal wins'}
+                  </span>
+                )}
+                {canArmGolden && (
+                  <button onClick={handleArmGoldenGoal} className="text-gold underline underline-offset-2">
+                    Golden goal
+                  </button>
+                )}
+              </div>
+            ) : (
+              <span className="text-sm text-text-tertiary">Not started</span>
+            )}
+          </div>
+
+          {showGoldenPrompt && (
+            <div className="mt-2 flex items-center justify-center gap-3 rounded-lg border border-gold bg-surface px-3 py-2">
+              <span className="text-sm font-semibold text-text-primary">Golden goal?</span>
+              <button
+                onClick={handleArmGoldenGoal}
+                className="px-3 py-1 rounded-lg bg-gold text-text-on-accent text-sm font-semibold"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setGoldenPromptDismissed(true)}
+                className="px-3 py-1 rounded-lg border border-border text-text-secondary text-sm"
+              >
+                Not yet
+              </button>
+            </div>
+          )}
+
+          {showFullTimePrompt && (
+            <div className="mt-2 flex items-center justify-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+              <span className="text-sm font-semibold text-text-primary">Clock still running. Full time?</span>
+              <button
+                onClick={() => handleRecordGameEvent('gameOver')}
+                className="px-3 py-1 rounded-lg bg-gold text-text-on-accent text-sm font-semibold"
+              >
+                End game
+              </button>
+              <button
+                onClick={() => setFullTimeSnoozedAt(elapsedMinutes)}
+                className="px-3 py-1 rounded-lg border border-border text-text-secondary text-sm"
+              >
+                Still playing
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Choose Teams Accordion (admins only) */}
@@ -1079,6 +1351,15 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         {/* Game Event Controls (admin only) */}
         {!loading && !error && isAdmin && (
           <div className="mb-4 flex gap-2 flex-shrink-0">
+            {!startedAt && (
+              <button
+                onClick={handleStartGame}
+                className="flex-1 px-4 py-2 bg-success text-text-on-accent text-sm font-medium rounded-xl transition-colors"
+                data-tooltip="Record kick-off and start the clock"
+              >
+                Start Game
+              </button>
+            )}
             <button
               onClick={() => handleRecordGameEvent('halfTime')}
               className="flex-1 px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover active:bg-accent-active transition-colors"
@@ -1151,10 +1432,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                                 const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
                                 // goal.team is the team CREDITED, so an own goal
                                 // already reads under the benefiting team.
-                                if (goal.ownGoal) return `(${teamLabel}) ${goal.scorer.name} — own goal`;
+                                if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} — own goal`;
                                 return goal.assister
-                                  ? `(${teamLabel}) ${goal.scorer.name} scored! Assisted by ${goal.assister.name}`
-                                  : `(${teamLabel}) ${goal.scorer.name} scored!`;
+                                  ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}`
+                                  : `(${teamLabel}) ${displayName(goal.scorer)} scored!`;
                               })()}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1284,8 +1565,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                           >
                             <span className="pr-3 flex-1 pl-3">
                               {change.type === 'leave'
-                                ? `${change.player.name} left the game (${change.team === 'color' ? 'Color' : 'White'})`
-                                : `${change.player.name} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
+                                ? `${displayName(change.player)} left the game (${change.team === 'color' ? 'Color' : 'White'})`
+                                : `${displayName(change.player)} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
                             </span>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-text-muted whitespace-nowrap">
@@ -1389,6 +1670,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 });
               }}
               isAdmin={isAdmin}
+              displayName={displayName}
+              guestHosts={guestHostNames}
+              onEditGuest={(slotPlayerId) => setGuestSlotPending({ slotPlayerId, team: null })}
             />
           </div>
         )}
@@ -1433,6 +1717,19 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             )}
           </button>
         </div>
+      )}
+
+      {/* Guest Details Modal — name + host, both skippable */}
+      {guestSlotPending && (
+        <GuestDetailsModal
+          players={allPlayers}
+          isGuestPlayer={isGuestPlayer}
+          initialName={guestVisits[guestSlotPending.slotPlayerId]?.guestName ?? null}
+          initialHostId={guestVisits[guestSlotPending.slotPlayerId]?.hostPlayerId ?? null}
+          onSave={(details) => commitGuestSlot(details)}
+          onSkip={() => commitGuestSlot(null)}
+          onClose={() => commitGuestSlot(null)}
+        />
       )}
 
       {/* Goal Assist Modal */}

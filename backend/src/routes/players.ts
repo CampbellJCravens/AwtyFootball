@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { isStorableImage } from '../services/avatar';
 import prisma from '../prisma';
 import { createPlayerSchema, updatePlayerSchema } from '../schemas/entry';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
@@ -20,13 +21,34 @@ const normalizePhone = (raw: string | null | undefined): string | null | undefin
 
 // Player is public, but phone numbers are not: everyone gets `hasPhone`, only
 // admins get the actual `phone` string.
-const serializePlayer = (p: any, isAdmin: boolean) => ({
+
+/*
+ * Avatars are served as their own cacheable URL rather than inlined as base64.
+ *
+ * They used to ride inside every payload that mentioned a player, which made
+ * GET /api/stats/monthly 22.7 MB of photographs wrapped around 10 KB of stats,
+ * with the same twelve images repeated fifty-one times. As a URL the browser
+ * fetches each one once and caches it, and no JSON ever carries an image again.
+ *
+ * The origin comes from the request rather than an env var: this is the host the
+ * client just successfully called, so it cannot drift out of sync with wherever
+ * the API is actually deployed. (`trust proxy` is set, so req.protocol is the
+ * external scheme, not Render's internal http.)
+ *
+ * `?v=updatedAt` is what makes a long cache safe — change the photo and the URL
+ * changes with it. Without it a new photo would not appear for a year.
+ */
+const avatarUrl = (req: AuthenticatedRequest, p: { id: string; pictureUrl: string | null; updatedAt: Date }) =>
+  p.pictureUrl ? `${req.protocol}://${req.get('host')}/api/players/${p.id}/avatar?v=${p.updatedAt.getTime()}` : null;
+
+const serializePlayer = (p: any, isAdmin: boolean, req?: AuthenticatedRequest) => ({
   id: p.id,
   name: p.name,
-  pictureUrl: p.pictureUrl,
+  pictureUrl: req ? avatarUrl(req, p) : p.pictureUrl,
   team: p.team,
   onRoster: p.onRoster,
   isAlumni: p.isAlumni,
+  memberSince: p.memberSince,
   createdAt: p.createdAt,
   updatedAt: p.updatedAt,
   hasPhone: !!p.phone,
@@ -34,6 +56,16 @@ const serializePlayer = (p: any, isAdmin: boolean) => ({
 });
 
 const isReqAdmin = (req: AuthenticatedRequest) => req.user?.role === 'admin';
+
+/*
+ * A photo is only ever stored as base64. Since serialisation now hands clients a
+ * URL, any caller that echoes a whole player object back would otherwise write
+ * that URL into the column and destroy the image. The edit form sends this field
+ * only when a new file is chosen, so this should never fire — it exists so that
+ * a future caller which is less careful cannot silently wipe everyone's photos.
+ */
+const storablePicture = (value: string | null | undefined) =>
+  value && isStorableImage(value) ? value : null;
 
 // POST /api/players - Create a new player (public; new RSVPers can self-register)
 router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -44,14 +76,15 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
     const player = await prisma.player.create({
       data: {
         name: validatedData.name,
-        pictureUrl: validatedData.pictureUrl && validatedData.pictureUrl !== '' ? validatedData.pictureUrl : null,
+        pictureUrl: storablePicture(validatedData.pictureUrl),
         team: validatedData.team || null,
         phone: normalizePhone(validatedData.phone) ?? null,
         ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
         ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
+        ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
       },
     });
-    res.status(201).json(serializePlayer(player, isReqAdmin(req)));
+    res.status(201).json(serializePlayer(player, isReqAdmin(req), req));
   } catch (error: any) {
     if (error.code === 'P2002') {
       return res.status(409).json({ error: 'That phone number is already linked to another player' });
@@ -71,9 +104,40 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
       },
     });
     const admin = isReqAdmin(req);
-    res.json(players.map((p) => serializePlayer(p, admin)));
+    res.json(players.map((p) => serializePlayer(p, admin, req)));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch players' });
+  }
+});
+
+// GET /api/players/:id/avatar - the player's photo as an image (public)
+//
+// Long-cached and immutable: the URL carries ?v=updatedAt, so a changed photo is
+// a different URL and the stale one is never consulted. Anything without the
+// version parameter still revalidates via ETag.
+router.get('/:id/avatar', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const player = await prisma.player.findUnique({
+      where: { id: req.params.id },
+      select: { pictureUrl: true, updatedAt: true },
+    });
+    if (!player?.pictureUrl) return res.status(404).end();
+
+    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(player.pictureUrl);
+    if (!match) return res.status(404).end();
+
+    const body = Buffer.from(match[2], 'base64');
+    const etag = `W/"${player.updatedAt.getTime()}-${body.length}"`;
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+
+    res.setHeader('Content-Type', match[1]);
+    res.setHeader('Content-Length', body.length);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=300, must-revalidate');
+    return res.end(body);
+  } catch (error) {
+    console.error('Error serving avatar:', error);
+    return res.status(500).end();
   }
 });
 
@@ -89,7 +153,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'Player not found' });
     }
 
-    res.json(serializePlayer(player, isReqAdmin(req)));
+    res.json(serializePlayer(player, isReqAdmin(req), req));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch player' });
   }
@@ -107,11 +171,12 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
       where: { id },
       data: {
         ...(validatedData.name && { name: validatedData.name }),
-        ...(validatedData.pictureUrl !== undefined && { pictureUrl: validatedData.pictureUrl || null }),
+        ...(validatedData.pictureUrl !== undefined && { pictureUrl: storablePicture(validatedData.pictureUrl) }),
         ...(validatedData.team !== undefined && { team: validatedData.team || null }),
         ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
         ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
         ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
+        ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
       },
     });
 
@@ -125,7 +190,7 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
       }
     }
 
-    res.json(serializePlayer(player, isReqAdmin(req)));
+    res.json(serializePlayer(player, isReqAdmin(req), req));
   } catch (error: any) {
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Player not found' });

@@ -1,5 +1,5 @@
 import { useState, useMemo, ComponentType } from 'react';
-import { SoccerBall, Handshake, Star, DoorOpen, Warning, ArrowUUpLeft, IconProps } from '@phosphor-icons/react';
+import { SoccerBall, Handshake, Star, DoorOpen, Warning, ArrowUUpLeft, PencilSimple, IconProps } from '@phosphor-icons/react';
 import { Player } from '../api/players';
 
 // Goals are tracked in the parent as Player objects (after restoring from API).
@@ -23,6 +23,11 @@ interface ActivePlayersSectionProps {
   onSportsmanshipChange?: (playerId: string, delta: number) => void;
   onFoulsChange?: (playerId: string, delta: number) => void;
   isAdmin?: boolean; // Whether user is admin (can modify games)
+  // Resolves a guest's per-game label. Falls back to Player.name, which is what
+  // guest exclusion elsewhere matches on and is never overwritten.
+  displayName?: (player: Player) => string;
+  guestHosts?: Record<string, string>; // slotPlayerId -> host's name
+  onEditGuest?: (slotPlayerId: string) => void;
 }
 
 // Stat badge: stacks a Phosphor icon `count` times with a slight overlap so
@@ -74,18 +79,18 @@ function Stepper({
   activeClass: string;
 }) {
   return (
-    <div className="flex items-center gap-0.5 flex-shrink-0 mr-1" data-tooltip={tooltip}>
+    <div className="flex items-center gap-0.5 flex-shrink-0" data-tooltip={tooltip}>
       <button
         onClick={() => onChange(-1)}
-        className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
+        className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
         aria-label={`Decrease ${label}`}
       >-</button>
-      <span className={`text-xs font-semibold min-w-[1.25rem] text-center ${value > 0 ? activeClass : 'text-text-tertiary'}`}>
+      <span className={`text-sm font-semibold min-w-[1rem] text-center tabular-nums ${value > 0 ? activeClass : 'text-text-tertiary'}`}>
         {value}
       </span>
       <button
         onClick={() => onChange(1)}
-        className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
+        className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${activeClass} hover:bg-surface-hover active:bg-surface-active transition-colors`}
         aria-label={`Increase ${label}`}
       >+</button>
     </div>
@@ -110,7 +115,13 @@ export default function ActivePlayersSection({
   onSportsmanshipChange,
   onFoulsChange,
   isAdmin = true,
+  displayName,
+  guestHosts = {},
+  onEditGuest,
 }: ActivePlayersSectionProps) {
+  const label = (player: Player) => displayName?.(player) ?? player.name;
+  const isGuestSlot = (player: Player) => /^Guest\d+$/.test(player.name.trim());
+
   // Pre-aggregate goals/assists per playerId so each row doesn't re-scan.
   const statsByPlayer = useMemo(() => {
     const m = new Map<string, { goals: number; ownGoals: number; assists: number }>();
@@ -256,11 +267,31 @@ export default function ActivePlayersSection({
                         />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                          {player.name.charAt(0).toUpperCase()}
+                          {label(player).charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                       {!isAdmin && renderStatBadges(player.id)}
+                    </div>
+                    {isAdmin && (
+                    <div className="flex flex-wrap items-center justify-end gap-1 mt-1.5 pt-1.5 border-t border-border">
                       {isAdmin && onSportsmanshipChange && (
                         <Stepper
                           value={sportsmanship[player.id] || 0}
@@ -283,7 +314,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Goal"
                             data-tooltip="Goal"
                           >
@@ -305,22 +336,22 @@ export default function ActivePlayersSection({
                         {isAdmin && onOwnGoalClick && (
                           <button
                             onClick={() => onOwnGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Own goal"
                             data-tooltip="Own Goal"
                           >
-                            <ArrowUUpLeft size={18} weight="bold" className="text-red-400" />
+                            <ArrowUUpLeft size={20} weight="bold" className="text-red-400" />
                           </button>
                         )}
                         {isAdmin && (
                           <button
                             onClick={() => onSwapTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Swap"
                             data-tooltip="Swap Team"
                           >
                             <svg
-                              className="w-4 h-4 text-text-primary"
+                              className="w-5 h-5 text-text-primary"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -338,7 +369,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onLeaveTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
                             aria-label="Mark player as left"
                             data-tooltip="Player left"
                           >
@@ -360,6 +391,7 @@ export default function ActivePlayersSection({
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
                 ))
               )}
@@ -383,10 +415,27 @@ export default function ActivePlayersSection({
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                            {player.name.charAt(0).toUpperCase()}
+                            {label(player).charAt(0).toUpperCase()}
                           </div>
                         )}
-                        <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                        <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                         {!isAdmin && renderStatBadges(player.id, { showLeft: true })}
                         {isAdmin && (
                           <button
@@ -451,11 +500,31 @@ export default function ActivePlayersSection({
                         />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                          {player.name.charAt(0).toUpperCase()}
+                          {label(player).charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                      <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                       {!isAdmin && renderStatBadges(player.id)}
+                    </div>
+                    {isAdmin && (
+                    <div className="flex flex-wrap items-center justify-end gap-1 mt-1.5 pt-1.5 border-t border-border">
                       {isAdmin && onSportsmanshipChange && (
                         <Stepper
                           value={sportsmanship[player.id] || 0}
@@ -478,7 +547,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Goal"
                             data-tooltip="Goal"
                           >
@@ -500,22 +569,22 @@ export default function ActivePlayersSection({
                         {isAdmin && onOwnGoalClick && (
                           <button
                             onClick={() => onOwnGoalClick(player)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Own goal"
                             data-tooltip="Own Goal"
                           >
-                            <ArrowUUpLeft size={18} weight="bold" className="text-red-400" />
+                            <ArrowUUpLeft size={20} weight="bold" className="text-red-400" />
                           </button>
                         )}
                         {isAdmin && (
                           <button
                             onClick={() => onSwapTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-hover active:bg-surface-active transition-colors"
                             aria-label="Swap"
                             data-tooltip="Swap Team"
                           >
                             <svg
-                              className="w-4 h-4 text-text-primary"
+                              className="w-5 h-5 text-text-primary"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -533,7 +602,7 @@ export default function ActivePlayersSection({
                         {isAdmin && (
                           <button
                             onClick={() => onLeaveTeam(player.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-warning-bg active:bg-warning-bg transition-colors"
                             aria-label="Mark player as left"
                             data-tooltip="Player left"
                           >
@@ -555,6 +624,7 @@ export default function ActivePlayersSection({
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
                 ))
               )}
@@ -578,10 +648,27 @@ export default function ActivePlayersSection({
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-xs font-semibold flex-shrink-0">
-                            {player.name.charAt(0).toUpperCase()}
+                            {label(player).charAt(0).toUpperCase()}
                           </div>
                         )}
-                        <span className="text-text-primary text-sm truncate flex-1 min-w-0 mr-2">{player.name}</span>
+                        <div className="flex-1 min-w-0 mr-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-text-primary text-sm truncate">{label(player)}</span>
+                          {isAdmin && onEditGuest && isGuestSlot(player) && (
+                            <button
+                              onClick={() => onEditGuest(player.id)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+                              aria-label="Edit guest details"
+                              data-tooltip="Guest details"
+                            >
+                              <PencilSimple size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {guestHosts[player.id] && (
+                          <span className="block text-[10px] text-text-tertiary truncate">guest of {guestHosts[player.id]}</span>
+                        )}
+                      </div>
                         {!isAdmin && renderStatBadges(player.id, { showLeft: true })}
                         {isAdmin && (
                           <button

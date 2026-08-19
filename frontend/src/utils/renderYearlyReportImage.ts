@@ -24,6 +24,8 @@ export interface YearlyReportData {
   year: number;
   gamesPlayed: number;
   totalGoals: number;
+  // One line on how competitive the season was. Describes games, not players.
+  balanceLine?: string;
   playerOfTheYear: YearlyAwardItem | null;
   awardTiles: YearlyAwardItem[];       // Golden Boot, Playmaker, Iron Man, …
   leaderboards: YearlyLeaderboard[];   // full-width sections, two internal columns
@@ -116,7 +118,10 @@ export async function renderYearlyReportImage(data: YearlyReportData): Promise<B
 
   ctx.fillStyle = COLORS.textTertiary;
   ctx.font = `14px ${FONT_STACK}`;
-  ctx.fillText(`${data.gamesPlayed} game${data.gamesPlayed === 1 ? '' : 's'} · ${data.totalGoals} goals`, cx, y);
+  ctx.fillText(
+    `${data.gamesPlayed} game${data.gamesPlayed === 1 ? '' : 's'} · ${data.totalGoals} goals` +
+      (data.balanceLine ? ` · ${data.balanceLine}` : ''),
+    cx, y);
   y += subH + gapAfterHeader;
 
   // Player of the Year hero

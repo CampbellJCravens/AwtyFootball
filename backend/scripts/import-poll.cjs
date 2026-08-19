@@ -15,33 +15,34 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll "Soccer Saturday - 1Aug", posted Wed 2026-07-29, read from screenshots
-// on 2026-07-31. The listener never captured it (pollCreationMessageV4/V5 fix
-// still undeployed, and Neon was suspended from 07-29), so this is a manual
-// reconstruction of 11 In / 4 Maybe / 4 Out / one +2.
+// Poll for 15Aug, read from screenshots on 2026-08-15 06:23 CDT. The listener
+// socket is alive (WhatsappContact rows bump at each vote time) but no
+// WhatsappPoll row was ever created for this game, so every vote died at
+// polls.ts:289 "vote for uncaptured poll". Newest captured poll is 1Aug.
+// Manual reconstruction: 11 In / 3 Maybe / 4 Out / two +1.
 const CONFIG = {
-  gameId: '23b36af8-0b75-4b48-8ab0-def7ec14f603', // game #31, 2026-08-01
-  // Roster names, already reconciled against the poll's display names.
-  // Poll label -> roster name, where they differ:
-  //   "You" -> Campbell Cravens          "~Jason.A" -> Jason Arizpe
-  //   "~Joshua" (303 895-7146) -> Josh Jackson   NOT Joshua Tapia
-  //   "~J" (832 659-3930) -> Joseph Garcia
-  //   "~Milad" -> Milad Moradi           "Morgan McCright" -> Morgan-Sean McCright
-  //   "Franco" -> Franco Silva           "~Handsome Corey" -> Corey Rasch
-  //   "~Robert" -> Robert Peresich       "~Nelson junior" -> Junior
+  gameId: 'bd8f503c-d9da-4272-99ed-a9f073148625', // game #33, 2026-08-15
+  // Roster names, already reconciled against the poll's display names. Each
+  // ambiguous one was confirmed by matching the screenshot's vote time (CDT)
+  // to the WhatsappContact.updatedAt bump (UTC+5):
+  //   "You" -> Morgan-Sean McCright (08:33 = contact 13:33:54Z)
+  //   "Adam Lammers" -> Lammy Lammers ("Lammy", 19:25 = 00:25:07Z on 08-15)
+  //   "Campbell Saito" -> Campbell Cravens ("Campbell", 08:37 = 13:37:44Z;
+  //      the separate "Eric Saito" contact did not vote)
+  //   "Robert-san" -> Robert Peresich    "Marcos" -> Marcos Conner
+  //   "Franco" -> Franco Silva           "Nicholas Mbaezue-Daniel" -> Nick M-D
   yes: [
-    'Campbell Cravens', 'Jason Arizpe', 'Josh Jackson', 'Rolando Abreu',
-    'Brian Buhr', 'Joseph Garcia', 'Manny Suarez', 'Tommy El-Gawly',
-    'Franco Silva', 'Milad Moradi', 'Morgan-Sean McCright',
-    'Lammy Lammers', // voted In at 9:11 PM on 07-31, after the first screenshot
+    'Morgan-Sean McCright', 'Nick Mbaezue-Daniel', 'Franco Silva',
+    'Marcos Conner', 'Manny Suarez', 'Brian Buhr', 'David Ramos',
+    'Josh Jackson', 'Corey Rasch', 'Joseph Garcia', 'Milad Moradi',
+    // Connor picked ONLY "+1" (no In), same as the 18Jul poll. combineSelections()
+    // in options.ts: a bare "+N" counts as yes with that guest count.
+    'Connor Shannon',
   ],
-  // Rolando Abreu picked BOTH In and Maybe (multi-select poll, same timestamp).
-  // Counted as In, matching combineSelections() in options.ts: any In wins.
-  maybe: ['Marcos Conner', 'Corey Rasch', 'Robert Peresich'],
-  // "~Jon" +1 (872) 222-9972 = Jon Schwarz, matched on Player.phone.
-  no: ['Siegfried Casar', 'Connor Shannon', 'Junior', 'Jon Schwarz'],
+  maybe: ['Lammy Lammers', 'Siegfried Casar', 'Robert Peresich'],
+  no: ['Brian Karrs', 'Rolando Abreu', 'Tommy El-Gawly', 'Campbell Cravens'],
   // Guests brought, by roster name. Only counted on a 'yes' row.
-  guests: { 'Josh Jackson': 2 },
+  guests: { 'Manny Suarez': 1, 'Connor Shannon': 1 },
 };
 
 const WHATSAPP_SOURCE = 'whatsapp';

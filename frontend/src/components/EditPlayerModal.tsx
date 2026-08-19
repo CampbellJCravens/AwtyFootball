@@ -19,6 +19,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
   const [error, setError] = useState<string | null>(null);
   const [onRoster, setOnRoster] = useState(true);
   const [isAlumni, setIsAlumni] = useState(false);
+  const [memberSince, setMemberSince] = useState('');
 
   useEffect(() => {
     if (player) {
@@ -26,6 +27,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
       setPhone(player.phone ?? '');
       setOnRoster(player.onRoster);
       setIsAlumni(player.isAlumni);
+      setMemberSince(player.memberSince ? String(player.memberSince) : '');
       setPicturePreview(player.pictureUrl);
       setPictureFile(null);
       setImagePosition({ x: 50, y: 50 }); // Reset position
@@ -116,6 +118,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
         name: name.trim(),
         onRoster,
         isAlumni,
+        memberSince: memberSince.trim() === '' ? null : Number(memberSince),
       };
 
       // Phone is an admin-only field (WhatsApp RSVP mapping).
@@ -214,7 +217,31 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
               </button>
             </div>
             <p className="mt-1 text-xs text-text-tertiary">
-              Feeds the alumni % on the players list and the per-game alumni share.
+              Feeds the alumni % on the players list and the per-game alumni share —
+              and alumni are not billed for dues.
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <label htmlFor="edit-member-since" className="block text-sm font-medium text-text-secondary mb-2">
+              Member since <span className="text-text-tertiary font-normal">(year)</span>
+            </label>
+            <input
+              id="edit-member-since"
+              type="number"
+              inputMode="numeric"
+              min={1900}
+              max={2100}
+              value={memberSince}
+              onChange={(e) => setMemberSince(e.target.value)}
+              disabled={isSubmitting}
+              placeholder="Unknown"
+              className="w-full px-4 py-2 bg-surface-raised border border-border-emphasis rounded-xl text-text-primary tabular-nums outline-none focus:border-accent placeholder:text-text-tertiary"
+            />
+            <p className="mt-1 text-xs text-text-tertiary">
+              Their first year with the group. Can't be worked out from the app — per-player
+              records only go back to 2025. Leave blank if you're not sure; a guess would make
+              the tenure stat wrong.
             </p>
           </div>
 

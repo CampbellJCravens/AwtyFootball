@@ -15,6 +15,10 @@ model Player {
   phone      String?  @unique // E.164, used to attribute WhatsApp poll votes
   onRoster   Boolean  @default(true) // false = prior member (no longer on the current roster)
   isAlumni   Boolean  @default(false) // true = alumnus of the school; drives the alumni % figures
+  // First dues year, hand-seeded: per-player rosters only exist from 2025 but
+  // the club goes back to 2018, so tenure cannot be derived. Null = unknown,
+  // which reads as "not yet entered" rather than "rookie".
+  memberSince Int?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -39,8 +43,123 @@ model Game {
   // "cancelled" | null. null = "N/A FIELD" in the UI.
   field           String?
 
+  // Kick-off, set by the start button. null = not started. This is NOT the game
+  // date: createdAt remains the date everywhere in the app, and reading
+  // startedAt in date logic would silently break every schedule and stat.
+  startedAt       DateTime?
+
   rsvps           GameRsvp[]
   whatsappPolls   WhatsappPoll[]
+  guestVisits     GuestVisit[]
+}
+
+// A guest who has actually turned up, tracked across games so recurring
+// visitors resolve to one identity (and one dues count). Distinct from the
+// GuestN pool Players, which are per-game slots reused by different humans.
+model Guest {
+  id             String   @id @default(uuid())
+  name           String   // as typed, e.g. "Ricky B"
+  // lower+trimmed. Unique on purpose: a split identity is a silently wrong
+  // dues count, whereas two real Rickys just means typing a surname.
+  normalizedName String   @unique
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  visits         GuestVisit[]
+  duesPayments   DuesPayment[]
+}
+
+// What a dues year costs. One row per year. Exists because installments make
+// "have they paid?" a comparison rather than a lookup — without an owed figure
+// there is nothing to compare the sum of payments against.
+//
+// memberAmount is ENTERED, never computed from targetAmount ÷ roster: the owner
+// sets the rate at season open and it is frozen for the year, so balances are
+// knowable on day one. targetAmount only drives a progress bar.
+model DuesYearConfig {
+  duesYear      Int      @id // the calendar year covered, e.g. 2027
+  targetAmount  Decimal  @db.Decimal(10, 2) // what the club needs, e.g. 6000.00
+  memberAmount  Decimal  @db.Decimal(10, 2) // per billed member, e.g. 150.00
+  guestGameRate Decimal  @db.Decimal(10, 2) // per billable guest game, e.g. 30.00
+  openedAt      DateTime? // when collection opened and memberAmount was fixed
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Who was on the hook in a given dues year, and for how much. Written when
+// collection opens so the year's bill list stops moving — deriving it live from
+// Player.onRoster would silently rewrite financial history every time someone
+// is marked Former.
+//
+// amountOwed is CAPTURED per person, not derived: alumni are 0.00, mid-year
+// joiners inside the last three months are the owner's discretion, and the 2028
+// top-scorer / sportsmanship discounts land in this same field with no schema
+// change.
+model DuesRosterEntry {
+  id         String    @id @default(uuid())
+  duesYear   Int
+  playerId   String
+  amountOwed Decimal   @db.Decimal(10, 2) // 0.00 = exempt
+  exemption  String?   // "alumni" | "discount:top_scorer" | … ; null = pays full
+  note       String?   // per person per year, independent of any payment
+  joinedAt   DateTime? // null = present when the year opened
+  // Left the group during this dues year. Separate from `exemption` on purpose:
+  // exemption is a pricing reason (alumni, and later the top-scorer discount),
+  // leaving is a lifecycle event, and one must never overwrite the other.
+  // Person-level fact is Player.onRoster = false; this is the per-year fact.
+  leftAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([duesYear, playerId])
+  @@index([duesYear])
+  @@index([playerId])
+}
+
+// One payment event, against EITHER a Player or a Guest, never both. Several
+// rows per person per dues year is the NORMAL case: installments are recorded
+// as they arrive, not planned in advance.
+model DuesPayment {
+  id         String   @id @default(uuid())
+  duesYear   Int
+  playerId   String?
+  guestId    String?
+  amount     Decimal  @db.Decimal(10, 2)
+  method     String   // "venmo" | "cash" | "paypal" | "zelle" | "other"
+  paidAt     DateTime
+  note       String?
+  recordedBy String?  // admin userId
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  guest Guest? @relation(fields: [guestId], references: [id], onDelete: SetNull)
+
+  @@index([duesYear])
+  @@index([playerId])
+  @@index([guestId])
+}
+
+// One guest appearance in one game. slotPlayerId is the GuestN pool Player
+// that carries the guest through teamAssignments/goals/sportsmanship — it
+// stays the in-game token, this row just says who was behind it and who
+// brought them. Both player ids are plain strings, matching how the game JSON
+// fields already store player references.
+model GuestVisit {
+  id           String   @id @default(uuid())
+  gameId       String
+  slotPlayerId String
+  guestId      String?  // null = name skipped
+  hostPlayerId String?  // null = host skipped / unknown
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  game  Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  guest Guest? @relation(fields: [guestId], references: [id], onDelete: SetNull)
+
+  @@unique([gameId, slotPlayerId])
+  @@index([gameId])
+  @@index([guestId])
 }
 
 // Per-game RSVP from a player. Identity is the playerId (claimed via

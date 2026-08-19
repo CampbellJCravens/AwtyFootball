@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { fetchPlayerStats, PlayerStatsResponse, fetchPlayerAwards, PlayerAward, fetchPlayerAchievements, Achievement } from '../api/stats';
+import PercentileBars from './PercentileBars';
 import { updatePlayer, fetchPlayer } from '../api/players';
 import GroupDetailModal from './GroupDetailModal';
 import ImageLightbox from './ImageLightbox';
@@ -103,7 +104,7 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
     );
   }
 
-  const { player, aggregate, ranks, matchHistory, bestPartnersByPPG, bestGroups, myAssistsTo, assistsToMe, form } = stats;
+  const { player, aggregate, ranks, percentiles, matchHistory, bestPartnersByPPG, bestGroups, myAssistsTo, assistsToMe, form } = stats;
 
   const rankDisplay = (n: number) => {
     if (n === 1) return '🥇';
@@ -273,6 +274,14 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
           </div>
         ))}
       </div>
+
+      {/* How you compare. The server sends this ONLY for your own profile (or to
+          an admin) — its absence here is the gate working, not a missing field. */}
+      {percentiles && (
+        <div className="mb-6">
+          <PercentileBars data={percentiles} />
+        </div>
+      )}
 
       {/* Achievements */}
       {achievements.length > 0 && (() => {

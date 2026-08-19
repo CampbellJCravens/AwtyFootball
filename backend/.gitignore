@@ -8,8 +8,13 @@ dist/
 *.db-journal
 *.db-wal
 
-# Script backups (one per --apply run)
+# Script backups (one per --apply run). These hold live roster and money data
+# and must never be committed.
 import-poll-backup-*.json
 mark-former-backup-*.json
+dues-*-backup.json
+guest-*-backup.json
+# Player photos, full-resolution originals — never belongs in the repo.
+avatar-backup-*.json
 
 .wa-auth/

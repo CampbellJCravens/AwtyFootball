@@ -1,6 +1,14 @@
 # PRD — RSVP Reliability, Guest Tracking & Poll Reset
 
-Status: DRAFT — awaiting sign-off
+Status: **All three phases BUILT.** Verified against code 2026-08-15 — the
+previous "DRAFT — awaiting sign-off" line had been wrong since July.
+
+| Phase | State |
+|---|---|
+| 0 — Reset poll | **Completed 2026-08-15** (`e4a6dc0`). The endpoint (`rsvps.ts:143`) and client (`api/rsvps.ts:106`) had shipped in July with nothing calling them; the button and confirm now exist in `GameRsvpSection.tsx`. The confirm counts real `GameRsvp` rows rather than the poll view's totals — the poll view also counts unlinked WhatsApp voters, who have no row to delete. Not browser-smoked. |
+| 1 — Reliability | **Built.** `services/reliability.ts` computes response rate, show-when-committed, no-show, ghost and attendance with N; served admin-only at `GET /api/stats/reliability` (`stats.ts:1234`), rendered by `ReliabilityTab.tsx`. Ghost was later split into silent vs ghost, going beyond this spec. |
+| 2 — Guest frequency | **Built.** `guestsBrought`, `gamesWithGuests` and `guestAttachRate` in the same service and view. |
+
 Owner: Morgan-Sean (product) / Campbell (repo review)
 Date: 2026-07-14
 
