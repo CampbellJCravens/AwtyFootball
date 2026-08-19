@@ -1,0 +1,74 @@
+# Render Blueprint.
+#
+# ⚠️ THIS FILE IS INERT UNTIL YOU SYNC IT AS A BLUEPRINT IN RENDER.
+# Both services were created by hand in the dashboard, so this is documentation
+# until you choose otherwise. Syncing a Blueprint against hand-made services can
+# create DUPLICATES rather than adopting them if a `name` doesn't match exactly.
+# Verify every name and build field below against the dashboard before syncing.
+#
+# The header rules are the point of this file. You can apply them today with no
+# risk at all via Static Site → Settings → Headers, which is the safer route.
+#
+# WHY: on 2026-08-19 Render warned we'd used 70% of the 5 GB bandwidth allowance.
+# The dominant cause was base64 player photos inlined in API responses (fixed
+# separately in 9855e00). The remaining cause is this: every static asset is
+# served with `max-age=0, s-maxage=300`, so browsers never cache and Cloudflare
+# re-fetches from origin every 5 minutes. Measured per cold load:
+#   index-*.js  151 KB (gzipped) · index-*.css 7 KB · afc-intro.mp4 453 KB
+# ~611 KB pulled from origin every 5 minutes that anyone is using the app.
+
+services:
+  # ── Frontend (static) ────────────────────────────────────────────────────
+  - type: web
+    runtime: static
+    # TODO verify: the dashboard name must match EXACTLY or a sync creates a new service.
+    name: awty-football-frontend
+    # TODO verify against the dashboard's Root Directory / Build Command.
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+
+    headers:
+      # Vite writes content-hashed filenames here (index-BH5LDs_S.js). The hash
+      # changes whenever the content does, so these are immutable by
+      # construction and can be cached forever. This is the big win.
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+
+      # NOT content-hashed, so it cannot be cached forever: replacing the file
+      # reuses the URL. A day in the browser and a month at the edge cuts origin
+      # pulls by ~99% versus the current 5 minutes, and a change still
+      # propagates within a month.
+      # IF YOU REPLACE THE VIDEO, rename it (afc-intro-v2.mp4) or purge
+      # Cloudflare, or viewers keep the old one.
+      - path: /afc-intro.mp4
+        name: Cache-Control
+        value: public, max-age=86400, s-maxage=2592000
+
+      # Icons, logo, manifest. Same reasoning, shorter edge life since they're
+      # small and changed slightly more often.
+      - path: /*.png
+        name: Cache-Control
+        value: public, max-age=86400, s-maxage=604800
+
+      # DELIBERATELY NOT CACHED: index.html is how a browser discovers the new
+      # asset hashes after a deploy. Caching it would pin users to an old build.
+      # Render's default (max-age=0, s-maxage=300) is correct here, and this
+      # states it so nobody "optimises" it later.
+      - path: /index.html
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+
+  # ── Backend (Node web service) ───────────────────────────────────────────
+  # Listed for completeness. Env vars are NOT declared here on purpose: they
+  # hold secrets (DATABASE_URL, REDIS_URL, SESSION_SECRET, Google credentials)
+  # and belong in the dashboard, not the repo.
+  - type: web
+    runtime: node
+    name: awty-football-backend
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
