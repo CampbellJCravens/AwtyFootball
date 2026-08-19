@@ -105,9 +105,11 @@ RSVPs are written with a sentinel so WhatsApp-sourced votes are distinguishable 
 - **Device cap:** uses one of the account's 4 companion-device slots.
 - **Ban posture:** read-only, never sends. If WhatsApp ever unlinks the device, votes stop syncing until a re-scan; no data loss (app RSVP still works directly).
 
-## Amendment — Neon cold start loses polls (root cause found + fixed 2026-08-19)
+## Amendment — Neon cold start is a *second* way to lose a poll (fixed 2026-08-19)
 
-**A suspended Neon compute makes the first database call fail, and `capturePoll` turns that failure into permanent data loss.** Reproduced on demand, not inferred.
+**Not the cause of the Jul-Aug misses.** That was diagnosed from Render logs by Campbell in `656faa3`: a Signal session rotation makes a message arrive as a CIPHERTEXT stub with no content, the handler concluded it was neither poll nor vote, and `logUnhandledMessage`'s opening `if (!inner) return` meant the one failure mode actually occurring produced no log line at all. That fix — loud logging, `requestPlaceholderResend`, and Redis-buffered votes replayed on capture — is the answer to the observed outage.
+
+What follows is a **separate, independently reproducible defect** found while investigating the compute question. It is latent rather than historical: it can lose a poll, it was not shown to have lost these ones.
 
 ### Measured
 
@@ -140,9 +142,9 @@ All **145** `prisma.*` call sites are equally unprotected; there is no retry hel
 
 ### Still open (not in this change)
 
-- **`capturePoll` should not lose data on any throw.** Even with a longer timeout, a transient failure still discards an unrecoverable message. It wants a retry, or a dead-letter row so a miss is visible rather than a log line on Render.
-- The catch at `listener.ts:242` swallows every error identically. Capture failures deserve louder handling than parse noise.
-- This does **not** explain the 25 Jul miss, which `listener.ts:38-41` attributes to an unrecognised message shape. Assume two distinct causes historically; the unhandled-shape check stays worth grepping for.
+- **`capturePoll` should not lose data on any throw.** `656faa3` now buffers *votes* for an uncaptured poll, which is the bigger half. But the poll **creation** is still discarded on any throw, and the creation is the irreplaceable part — the `messageSecret` rides on it, so buffered votes have nothing to decrypt against if it never lands. A retry or a dead-letter row would close this.
+- The catch at `listener.ts` swallows every error identically. Capture failures deserve louder handling than parse noise.
+- **At least three distinct failure modes are now on record**: undecryptable CIPHERTEXT stubs (`656faa3`, the historical cause), an unrecognised message shape (25 Jul, `listener.ts:38-41`), and cold-start connect failure (this change). Treat "the poll didn't capture" as a symptom with several causes, not one bug.
 
 ## Amendment — windowed listener (proposed 2026-08-19, Morgan-Sean)
 
