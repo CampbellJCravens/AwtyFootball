@@ -15,34 +15,30 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 15Aug, read from screenshots on 2026-08-15 06:23 CDT. The listener
-// socket is alive (WhatsappContact rows bump at each vote time) but no
-// WhatsappPoll row was ever created for this game, so every vote died at
-// polls.ts:289 "vote for uncaptured poll". Newest captured poll is 1Aug.
-// Manual reconstruction: 11 In / 3 Maybe / 4 Out / two +1.
+// Poll for 22Aug, read from screenshots on 2026-08-19 09:40 CDT (poll posted
+// 06:15). The creation message was dropped before the 08-19 fixes deployed
+// (Campbell's 656faa3 landed 08:26, ~2h after the poll), so no WhatsappPoll row
+// exists and the votes have nowhere to land.
+// Manual reconstruction as of 09:40: 7 In / 2 Maybe / 4 Out.
 const CONFIG = {
-  gameId: 'bd8f503c-d9da-4272-99ed-a9f073148625', // game #33, 2026-08-15
-  // Roster names, already reconciled against the poll's display names. Each
-  // ambiguous one was confirmed by matching the screenshot's vote time (CDT)
-  // to the WhatsappContact.updatedAt bump (UTC+5):
-  //   "You" -> Morgan-Sean McCright (08:33 = contact 13:33:54Z)
-  //   "Adam Lammers" -> Lammy Lammers ("Lammy", 19:25 = 00:25:07Z on 08-15)
-  //   "Campbell Saito" -> Campbell Cravens ("Campbell", 08:37 = 13:37:44Z;
-  //      the separate "Eric Saito" contact did not vote)
-  //   "Robert-san" -> Robert Peresich    "Marcos" -> Marcos Conner
-  //   "Franco" -> Franco Silva           "Nicholas Mbaezue-Daniel" -> Nick M-D
+  gameId: 'a86657df-e3ae-48aa-9069-cce374052ec7', // game #34, 2026-08-22
+  // Roster names, reconciled against the poll's display names. All 13 matched
+  // the Player table exactly or via a known alias — none ambiguous this week:
+  //   "You" -> Morgan-Sean McCright     "Marcos" -> Marcos Conner
+  //   "Franco" -> Franco Silva          "Robert-san" -> Robert Peresich
+  //   "Campbell Saito" -> Campbell Cravens (Eric Saito is a separate player)
+  //   "~ Bayo Tojuola" showed a raw number (954 292-2401) because he isn't in
+  //      the linked account's contacts; he IS on the roster as Bayo Tojuola.
   yes: [
-    'Morgan-Sean McCright', 'Nick Mbaezue-Daniel', 'Franco Silva',
-    'Marcos Conner', 'Manny Suarez', 'Brian Buhr', 'David Ramos',
-    'Josh Jackson', 'Corey Rasch', 'Joseph Garcia', 'Milad Moradi',
-    // Connor picked ONLY "+1" (no In), same as the 18Jul poll. combineSelections()
-    // in options.ts: a bare "+N" counts as yes with that guest count.
-    'Connor Shannon',
+    'Morgan-Sean McCright', 'Marcos Conner', 'Josh Jackson', 'Bayo Tojuola',
+    'Franco Silva', 'Connor Shannon', 'Rolando Abreu',
   ],
-  maybe: ['Lammy Lammers', 'Siegfried Casar', 'Robert Peresich'],
-  no: ['Brian Karrs', 'Rolando Abreu', 'Tommy El-Gawly', 'Campbell Cravens'],
+  maybe: ['Robert Peresich', 'Campbell Cravens'],
+  no: ['Tommy El-Gawly', 'Adam Zebdawi', 'Corey Rasch', 'Siegfried Casar'],
   // Guests brought, by roster name. Only counted on a 'yes' row.
-  guests: { 'Manny Suarez': 1, 'Connor Shannon': 1 },
+  // NOTE: the two screenshots cover In / Out / Maybe only — no +1 or +2 section
+  // was captured, so guests are unconfirmed rather than known-zero.
+  guests: {},
 };
 
 const WHATSAPP_SOURCE = 'whatsapp';
