@@ -12,6 +12,8 @@ import {
   getWhatsappSettings,
   setWhatsappSettings,
   resetWhatsapp,
+  pauseWhatsapp,
+  resumeWhatsapp,
   getWhatsappPairingCode,
   type WhatsappStatus,
   type WhatsappPoll,
@@ -110,6 +112,25 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
     }
   };
 
+  const handlePauseToggle = async () => {
+    const resuming = status?.paused === true;
+    setBusy('pause');
+    setError(null);
+    try {
+      if (resuming) {
+        await resumeWhatsapp();
+        setTimeout(refresh, 3500); // reconnecting takes a moment
+      } else {
+        await pauseWhatsapp();
+        await refresh();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to change listener state');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const handleTitleFilterSave = async () => {
     setBusy('title');
     try {
@@ -195,6 +216,10 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
                     <code className="text-xs bg-surface-raised px-1 py-0.5 rounded">WHATSAPP_LISTENER_ENABLED=true</code>{' '}
                     on the backend and redeploy to enable it.
                   </p>
+                ) : status.paused ? (
+                  <p className="text-sm text-text-secondary font-medium flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-text-tertiary inline-block" /> Paused — session kept, not receiving
+                  </p>
                 ) : status.linked ? (
                   <p className="text-sm text-success font-medium flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-success inline-block" /> Linked and listening
@@ -211,8 +236,27 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
                   <p className="text-sm text-text-secondary">Waiting for a QR code from the backend…</p>
                 )}
 
+                {/* Stop/start without destroying the session. Re-link below
+                    clears auth and needs the account's phone; this does not. */}
+                {status?.enabled && (status.linked || status.paused) && (
+                  <button
+                    onClick={handlePauseToggle}
+                    disabled={busy === 'pause'}
+                    className="mt-3 w-full px-3 py-2 rounded-xl bg-surface-raised border border-border-emphasis text-sm font-semibold text-text-primary hover:bg-surface-active transition-colors disabled:opacity-60"
+                  >
+                    {busy === 'pause'
+                      ? status.paused ? 'Resuming…' : 'Pausing…'
+                      : status.paused ? 'Resume listener' : 'Pause listener'}
+                  </button>
+                )}
+                {status?.paused && (
+                  <p className="mt-2 text-xs text-text-tertiary">
+                    Messages sent while paused are queued by WhatsApp and delivered on resume.
+                  </p>
+                )}
+
                 {/* Recovery: when not linked, force a fresh session + QR. */}
-                {status?.enabled && !status.linked && (
+                {status?.enabled && !status.linked && !status.paused && (
                   <>
                     <button
                       onClick={handleRelink}

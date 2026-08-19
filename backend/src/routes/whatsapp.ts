@@ -9,7 +9,16 @@ import { Router, Response, NextFunction } from 'express';
 import QRCode from 'qrcode';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { env } from '../env';
-import { getLatestWhatsappQr, isWhatsappLinked, listWhatsappGroups, relinkWhatsapp, requestWhatsappPairingCode } from '../services/whatsapp/listener';
+import {
+  getLatestWhatsappQr,
+  isWhatsappLinked,
+  isWhatsappPaused,
+  listWhatsappGroups,
+  pauseWhatsappListener,
+  relinkWhatsapp,
+  requestWhatsappPairingCode,
+  resumeWhatsappListener,
+} from '../services/whatsapp/listener';
 import {
   listPolls,
   linkPollToGame,
@@ -28,6 +37,7 @@ router.get('/status', (_req: AuthenticatedRequest, res: Response) => {
   res.json({
     enabled: env.WHATSAPP_LISTENER_ENABLED,
     linked: isWhatsappLinked(),
+    paused: isWhatsappPaused(),
     hasQr: getLatestWhatsappQr() !== null,
   });
 });
@@ -127,6 +137,22 @@ router.post('/unmatched/resolve', async (req: AuthenticatedRequest, res: Respons
 
 // Force a fresh link now: clear the (dead) session and restart the listener so
 // a new QR is generated to scan — no redeploy needed.
+// Stop the socket but KEEP the session. Unlike /reset (which clears auth and
+// needs a fresh pairing from the account's phone), this is safely reversible.
+router.post('/pause', (_req: AuthenticatedRequest, res: Response) => {
+  pauseWhatsappListener();
+  res.json({ ok: true, paused: true, note: 'Listener stopped. Session kept — resume to reconnect.' });
+});
+
+router.post('/resume', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    await resumeWhatsappListener();
+    res.json({ ok: true, paused: false, note: 'Reconnecting with the existing session.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/reset', async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     await relinkWhatsapp();

@@ -182,16 +182,22 @@ So the saving is real but narrower than "every wake burns compute" implies: **wa
 3. **Vote coverage.** Votes trickle in all week, not only inside the windows. Entirely dependent on risk 1 holding.
 4. **Votes still need their poll.** A vote whose creation was never captured dies at `polls.ts:289` regardless of uptime.
 
-### Verification gate — do this before building anything
+### Verification gate — do this before building the schedule
 
-One manual test decides whether the schedule is safe, and it needs no code:
+**Pause/resume is built** (admin Sync modal → "Pause listener"; `POST /api/whatsapp/{pause,resume}`). It tears the socket down without touching stored credentials, so the session survives and resume reconnects into the same device slot. **Do NOT use "Re-link" / `POST /reset` to stop the listener** — that clears auth and needs a fresh pairing from the account's physical phone. `scheduleReconnect` and `startWhatsappListener` both no-op while paused, so nothing silently heals it, and `/api/whatsapp/health` reports `paused` with a 200 rather than a 503 so a deliberate stop doesn't page whoever watches it.
 
-1. With the listener running, stop it.
-2. Have a group member post a message and a poll titled to match the filter.
-3. Restart after 30+ minutes. Confirm a `WhatsappPoll` row appears.
-4. Repeat with a ~48-hour gap.
+**Test A — the 20-minute window (gates the game-creation trigger):**
+1. Pause the listener.
+2. Have someone post a poll titled `Soccer Saturday TEST` — **no date in the title**. It passes `titleInScope` but matches no game within ±4 days, so it captures with `gameId = null` and writes no RSVPs.
+3. Resume after 30+ minutes. Confirm a `WhatsappPoll` row appears, then delete it.
 
-Step 3 validates the game-creation window. Step 4 validates the Friday/Saturday collection windows — and if it fails, the design collapses to "the listener must be up before the poll is posted and stay up," which is the current architecture.
+**Test B — the 48-hour gap (gates the Fri/Sat collection windows):** same, over ~48 hours.
+
+**Scheduling:** never run either across a Wednesday morning — that's when the real poll lands. Test B belongs Saturday afternoon → Monday afternoon.
+
+**To avoid bothering the group:** make a two-person test group, point `groupJid` at it in admin Settings for the duration, then point it back. Zero noise, zero risk to real data. Restore it before Wednesday.
+
+**The gate is not pass/fail as a whole.** Test A alone unlocks the valuable half — wake on game creation, capture the poll, sleep after. Test B only gates the scheduled windows; if it fails, fall back to "wake at game creation, stay up until the poll is captured," which still sheds most of the week's uptime and carries none of the retention risk.
 
 ### Proposed design (only if the gate passes)
 

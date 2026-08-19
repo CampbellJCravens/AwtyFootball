@@ -5,6 +5,8 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
 export interface WhatsappStatus {
   enabled: boolean;
   linked: boolean;
+  /** Stopped on purpose by an admin — session kept, not an outage. */
+  paused: boolean;
   hasQr: boolean;
 }
 
@@ -52,6 +54,17 @@ export async function getWhatsappQr(): Promise<string | null> {
 export async function resetWhatsapp(): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/whatsapp/reset`, opts({ method: 'POST' }));
   if (!res.ok) throw new Error('Failed to re-link');
+}
+
+/** Stop the listener but keep the session — safely reversible, unlike re-link. */
+export async function pauseWhatsapp(): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/pause`, opts({ method: 'POST' }));
+  if (!res.ok) throw new Error('Failed to pause');
+}
+
+export async function resumeWhatsapp(): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/resume`, opts({ method: 'POST' }));
+  if (!res.ok) throw new Error('Failed to resume');
 }
 
 /** Get a pairing code to link by typing it into WhatsApp (phone-only, no scan). */

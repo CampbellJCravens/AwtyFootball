@@ -44,7 +44,7 @@ import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
 import whatsappRouter from './routes/whatsapp';
-import { startWhatsappListener, isWhatsappLinked } from './services/whatsapp/listener';
+import { startWhatsappListener, isWhatsappLinked, isWhatsappPaused } from './services/whatsapp/listener';
 
 const PgSession = pgSession(session);
 
@@ -113,6 +113,11 @@ app.use('/api/stats', statsRouter);
 app.get('/api/whatsapp/health', (req: Request, res: Response) => {
   if (!env.WHATSAPP_LISTENER_ENABLED) {
     return res.json({ status: 'disabled', linked: false });
+  }
+  // A deliberate admin pause is not an outage — 503 here would page whoever
+  // watches this endpoint every time someone stops the listener on purpose.
+  if (isWhatsappPaused()) {
+    return res.json({ status: 'paused', linked: false, paused: true });
   }
   const linked = isWhatsappLinked();
   res.status(linked ? 200 : 503).json({ status: linked ? 'ok' : 'down', linked });

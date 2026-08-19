@@ -128,6 +128,9 @@ let starting = false;
 let generation = 0;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectAttempts = 0;
+// Deliberately stopped by an admin. Distinct from "disconnected": nothing here
+// should try to heal it, and monitoring must not read it as an outage.
+let paused = false;
 
 /**
  * Stop the current socket emitting and close it. The old code dropped the
@@ -157,6 +160,7 @@ function teardownSocket(): void {
  * scheduled an independent reconnect for each.
  */
 function scheduleReconnect(reason: string): void {
+  if (paused) return; // an admin stopped it on purpose; don't heal it
   if (reconnectTimer) return;
   const delay = Math.min(5000 * 2 ** reconnectAttempts, 5 * 60_000);
   reconnectAttempts++;
@@ -183,6 +187,42 @@ export function isWhatsappLinked(): boolean {
   return sock !== null && latestQr === null;
 }
 
+export function isWhatsappPaused(): boolean {
+  return paused;
+}
+
+/**
+ * Stop the socket WITHOUT touching stored credentials, and stay stopped.
+ *
+ * Deliberately not `relinkWhatsapp()`, which clears auth state and needs a fresh
+ * pairing from the account's physical phone — the wrong tool for a temporary
+ * stop, and an easy mistake to make since /reset looks like a stop button.
+ *
+ * The session survives in Redis, so resume reconnects with the same device slot
+ * and WhatsApp delivers whatever queued up while we were away.
+ */
+export function pauseWhatsappListener(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  paused = true;
+  generation++; // orphan any in-flight socket's handlers
+  teardownSocket();
+  latestQr = null;
+  starting = false;
+  reconnectAttempts = 0;
+  console.log('[whatsapp] Listener PAUSED by admin — session kept, no reconnect until resumed.');
+}
+
+/** Undo pauseWhatsappListener and reconnect with the existing session. */
+export async function resumeWhatsappListener(): Promise<void> {
+  if (!paused) return;
+  paused = false;
+  console.log('[whatsapp] Listener RESUMED by admin — reconnecting.');
+  await startWhatsappListener();
+}
+
 /**
  * Force a fresh link: drop the current (likely dead) session, clear stored auth,
  * and restart so a new QR is generated for the admin to scan. Lets an admin
@@ -198,6 +238,7 @@ export async function relinkWhatsapp(): Promise<void> {
   latestQr = null;
   starting = false;
   reconnectAttempts = 0;
+  paused = false; // an explicit re-link is an intent to be running
   await clearWhatsappAuthState();
   await startWhatsappListener();
 }
@@ -243,6 +284,7 @@ export async function listWhatsappGroups(): Promise<Array<{ jid: string; subject
 }
 
 export async function startWhatsappListener(): Promise<void> {
+  if (paused) return; // resumeWhatsappListener clears the flag before calling in
   if (starting) return;
   starting = true;
 
