@@ -15,29 +15,34 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 22Aug, read from screenshots on 2026-08-19 09:40 CDT (poll posted
-// 06:15). The creation message was dropped before the 08-19 fixes deployed
-// (Campbell's 656faa3 landed 08:26, ~2h after the poll), so no WhatsappPoll row
-// exists and the votes have nowhere to land.
-// Manual reconstruction as of 09:40: 7 In / 2 Maybe / 4 Out.
+// Poll for 22Aug, refreshed from screenshots on 2026-08-21 09:08 CDT. The poll
+// creation message was dropped before the 08-19 fixes deployed (Campbell's
+// 656faa3 landed 08:26, ~2h after the poll went up), so no WhatsappPoll row
+// exists and the votes still have nowhere to land — hence the manual refresh.
+// Now: 10 In / 2 Maybe / 4 Out, guests confirmed zero (+1 and +2 both empty).
+// Deltas vs the 08-19 09:40 snapshot: Campbell Cravens maybe -> in,
+// Milad Moradi + Manny Suarez new in, Jason Arizpe new maybe.
 const CONFIG = {
   gameId: 'a86657df-e3ae-48aa-9069-cce374052ec7', // game #34, 2026-08-22
-  // Roster names, reconciled against the poll's display names. All 13 matched
-  // the Player table exactly or via a known alias — none ambiguous this week:
+  // Roster names, reconciled against the poll's display names. All matched the
+  // Player table exactly or via a known alias — none ambiguous this week:
   //   "You" -> Morgan-Sean McCright     "Marcos" -> Marcos Conner
   //   "Franco" -> Franco Silva          "Robert-san" -> Robert Peresich
-  //   "Campbell Saito" -> Campbell Cravens (Eric Saito is a separate player)
-  //   "~ Bayo Tojuola" showed a raw number (954 292-2401) because he isn't in
-  //      the linked account's contacts; he IS on the roster as Bayo Tojuola.
+  //   "Campbell" -> Campbell Cravens (Eric Saito is a separate player)
+  //   "Jason Azirpe" -> Jason Arizpe
+  //   "+1 (954) 292-2401" shows a raw number because he isn't in the linked
+  //      account's contacts; he IS on the roster as Bayo Tojuola.
   yes: [
-    'Morgan-Sean McCright', 'Marcos Conner', 'Josh Jackson', 'Bayo Tojuola',
-    'Franco Silva', 'Connor Shannon', 'Rolando Abreu',
+    'Morgan-Sean McCright', 'Campbell Cravens', 'Milad Moradi', 'Manny Suarez',
+    'Marcos Conner', 'Josh Jackson', 'Bayo Tojuola', 'Franco Silva',
+    'Connor Shannon', 'Rolando Abreu',
   ],
-  maybe: ['Robert Peresich', 'Campbell Cravens'],
+  maybe: ['Jason Arizpe', 'Robert Peresich'],
+  // The Out section wasn't in this week's screenshots; none of these four
+  // appear under In or Maybe, so the 08-19 reading is carried forward.
   no: ['Tommy El-Gawly', 'Adam Zebdawi', 'Corey Rasch', 'Siegfried Casar'],
   // Guests brought, by roster name. Only counted on a 'yes' row.
-  // NOTE: the two screenshots cover In / Out / Maybe only — no +1 or +2 section
-  // was captured, so guests are unconfirmed rather than known-zero.
+  // +1 and +2 both read 0 votes this time, so zero is confirmed, not assumed.
   guests: {},
 };
 
