@@ -13,7 +13,7 @@ interface GoalData {
 }
 
 interface GameEventData {
-  type: 'halfTime' | 'gameOver' | 'goldenGoalArmed';
+  type: 'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed';
   timestamp: string;
 }
 
