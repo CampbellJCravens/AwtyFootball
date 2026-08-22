@@ -15,7 +15,7 @@ import GameRsvpSection from './GameRsvpSection';
 import WhatsappUnmatchedFlag from './WhatsappUnmatchedFlag';
 import WhatsappLinkBanner from './WhatsappLinkBanner';
 import { renderMatchReportImage, MatchReportData } from '../utils/renderMatchReportImage';
-import { playedMs, isOnBreak, formatElapsed } from '../utils/matchClock';
+import { playedMs, isOnBreak, isEstimated, formatElapsed } from '../utils/matchClock';
 import Papa, { ParseResult } from 'papaparse';
 
 type GameViewTab = 'game' | 'rsvp';
@@ -297,6 +297,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   const elapsedMs = playedMs({ startedAt, halfTimeAt, secondHalfAt, gameOverAt, now: clockNow });
   const elapsedLabel = startedAt ? formatElapsed(elapsedMs) : null;
+  // Marked with a tilde: the break length was assumed, not recorded.
+  const estimatedClock = isEstimated({ halfTimeAt, secondHalfAt, gameOverAt });
 
   const armedEvent = gameEvents.find(e => e.type === 'goldenGoalArmed') ?? null;
   const armedN = armedEvent?.n ?? null;
@@ -1252,7 +1254,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           <div className="mt-2 flex items-center justify-center">
             {elapsedLabel !== null ? (
               <div className="flex items-center gap-2 text-sm">
-                <span className="font-mono font-semibold text-text-primary tabular-nums">{elapsedLabel}</span>
+                <span
+                  className="font-mono font-semibold text-text-primary tabular-nums"
+                  title={estimatedClock ? 'Approximate: this game recorded a half time but no restart, so a 5 minute break is assumed' : undefined}
+                >
+                  {estimatedClock ? '~' : ''}{elapsedLabel}
+                </span>
                 <span className="text-text-tertiary">
                   {gameOverAt ? 'full time' : `since ${formatTime(startedAt!.toISOString())}`}
                 </span>

@@ -76,7 +76,8 @@ These are settled. Recorded so the build doesn't re-litigate them.
 - Deleting a `halfTime` event in Game Summary restores the Half Time button with
   no separate undo path.
 - Every one of the ~30 existing games with a `halfTime` event and no restart
-  renders an unchanged clock.
+  renders 5 minutes shorter than before, marked `~`, and never shorter than its
+  own first half.
 
 ## The clock, precisely
 
@@ -104,13 +105,23 @@ decision 4 honoured at its full cost, roughly ten lines, and no more.
 | --- | --- | --- |
 | `halfTime` + `secondHalfStart` | any | `(halfTime − start) + (end − restart)` |
 | `halfTime`, no restart | live | frozen at `halfTime − start` — a real break |
-| `halfTime`, no restart | `gameOver` present | `end − start`, unchanged — **legacy** |
+| `halfTime`, no restart | `gameOver` present | `(end − start) − 5 min`, floored at the first half — **legacy** |
 
 The third row is the one that matters. Every game played before this ships has a
-`halfTime` and no restart, and the naive rule would either freeze those clocks
-forever or silently subtract a break that was never measured. Legacy games must
-render exactly as they do today; the new arithmetic applies only to games that
-have a restart event, or that are live right now.
+`halfTime` and no restart, and the naive rule would freeze those clocks forever
+at their half-time whistle.
+
+**Owner 2026-08-22: assume a 5-minute break on those games** rather than leaving
+them measured door-to-door. Their real break length is unknowable, so this
+trades an exact wrong number for an approximate right one, and old games become
+roughly comparable to new ones instead of reading ~5 minutes long forever. Two
+guards: it never subtracts below the first half — time the players are known to
+have been on the pitch — and it applies **only where a `halfTime` event exists**,
+so a game that never recorded a break isn't assumed to have taken one.
+
+Because the figure is now an estimate rather than a record, the clock renders it
+as `~101:26` with a tooltip saying why. `isEstimated()` exposes that state for
+any other display that wants it.
 
 Where duplicate `halfTime` events already exist, the **first** one wins,
 matching `tempo.ts:74` and `achievements.ts:122`, which both use `.find`.
