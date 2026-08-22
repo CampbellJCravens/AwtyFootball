@@ -15,6 +15,7 @@ import GameRsvpSection from './GameRsvpSection';
 import WhatsappUnmatchedFlag from './WhatsappUnmatchedFlag';
 import WhatsappLinkBanner from './WhatsappLinkBanner';
 import { renderMatchReportImage, MatchReportData } from '../utils/renderMatchReportImage';
+import { playedMs, isOnBreak, formatElapsed } from '../utils/matchClock';
 import Papa, { ParseResult } from 'papaparse';
 
 type GameViewTab = 'game' | 'rsvp';
@@ -23,6 +24,16 @@ const startOfToday = () => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d;
+};
+
+// One label per event type, exhaustively. This used to be a two-way ternary at
+// each display site, so anything that wasn't halfTime rendered as "Game Over" —
+// which armed golden goals have been doing in Game Summary since they shipped.
+const GAME_EVENT_LABELS: Record<'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed', string> = {
+  halfTime: 'Half Time',
+  secondHalfStart: '2nd Half',
+  gameOver: 'Game Over',
+  goldenGoalArmed: 'Golden Goal Armed',
 };
 
 // `team` is the team CREDITED with the goal. For an own goal that's the
@@ -86,10 +97,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
-  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
+  const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
   // The 80-minute offer, dismissed for this sitting only. Arming stays available
   // from the button afterwards.
-  const [goldenPromptDismissed, setGoldenPromptDismissed] = useState(false);
+  // Confirming the arm, not dismissing the offer: "Not yet" closes this and
+  // leaves the button on the row, where the old prompt card dismissed itself
+  // for the rest of the match and took the only way to arm with it.
+  const [confirmArmGolden, setConfirmArmGolden] = useState(false);
   // Elapsed minutes at the last 'Still playing'. A boolean would be wrong here:
   // dismissing once would silence the nudge for good, which is precisely the
   // forgotten-tap case it exists to catch.
@@ -269,31 +283,33 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   // The clock freezes at full time rather than running forever on a finished game.
   const gameOverAt = gameEvents.find(e => e.type === 'gameOver')?.timestamp ?? null;
+  // First of each wins, matching tempo.ts and achievements.ts, which both use
+  // .find. Games from before the restart button existed can hold duplicates.
+  const halfTimeAt = gameEvents.find(e => e.type === 'halfTime')?.timestamp ?? null;
+  const secondHalfAt = gameEvents.find(e => e.type === 'secondHalfStart')?.timestamp ?? null;
+  const onBreak = isOnBreak({ halfTimeAt, secondHalfAt, gameOverAt });
 
   useEffect(() => {
-    if (!startedAt || gameOverAt) return;
+    if (!startedAt || gameOverAt || onBreak) return;
     const id = setInterval(() => setClockNow(new Date()), 1000);
     return () => clearInterval(id);
-  }, [startedAt, gameOverAt]);
+  }, [startedAt, gameOverAt, onBreak]);
 
-  // Football convention: minutes keep counting past 60 rather than rolling into
-  // an hours field, so a game in its 87th minute reads "87:04".
-  const elapsedLabel = (() => {
-    if (!startedAt) return null;
-    const ms = (gameOverAt ?? clockNow).getTime() - startedAt.getTime();
-    const total = Math.max(0, Math.floor(ms / 1000));
-    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-  })();
+  const elapsedMs = playedMs({ startedAt, halfTimeAt, secondHalfAt, gameOverAt, now: clockNow });
+  const elapsedLabel = startedAt ? formatElapsed(elapsedMs) : null;
 
   const armedEvent = gameEvents.find(e => e.type === 'goldenGoalArmed') ?? null;
   const armedN = armedEvent?.n ?? null;
 
-  // 80 minutes is only when the app OFFERS golden goal. Arming itself is not
-  // gated on it (owner 2026-08-15) — the group often doesn't play a full 90.
-  const GOLDEN_GOAL_PROMPT_MINUTES = 80;
-  const elapsedMinutes = startedAt ? ((gameOverAt ?? clockNow).getTime() - startedAt.getTime()) / 60000 : 0;
+  // 80 minutes of PLAY, not of morning — the break no longer counts toward it.
+  // Owner 2026-08-22 made this a gate rather than a prompt threshold: the bar
+  // is now the only way to arm, so before 80 there is no way to. That reverses
+  // the 2026-08-15 call deliberately; if short games start losing their
+  // decider, lower this number rather than adding a second control.
+  const GOLDEN_GOAL_MINUTES = 80;
+  const elapsedMinutes = elapsedMs / 60000;
   const canArmGolden = isAdmin && !!startedAt && !gameOverAt && !armedEvent;
-  const showGoldenPrompt = canArmGolden && !goldenPromptDismissed && elapsedMinutes >= GOLDEN_GOAL_PROMPT_MINUTES;
+  const showGoldenGoal = canArmGolden && elapsedMinutes >= GOLDEN_GOAL_MINUTES;
 
   // Nudge to record full time, because nobody is reminded otherwise and the
   // button stamps whenever it is pressed — that is how a game ends up recorded
@@ -303,8 +319,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // writing a full time nobody observed is worse than not having one.
   const FULL_TIME_PROMPT_MINUTES = 90;
   const FULL_TIME_SNOOZE_MINUTES = 20;
+  // Suppressed while golden goal is still on offer, as before — the anchor is
+  // now the bar button rather than the prompt card that used to sit here.
   const showFullTimePrompt =
-    isAdmin && !!startedAt && !gameOverAt && !showGoldenPrompt
+    isAdmin && !!startedAt && !gameOverAt && !showGoldenGoal
     && elapsedMinutes >= FULL_TIME_PROMPT_MINUTES
     && (fullTimeSnoozedAt === null || elapsedMinutes >= fullTimeSnoozedAt + FULL_TIME_SNOOZE_MINUTES);
 
@@ -322,7 +340,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         trailing: colorScore === whiteScore ? null : colorScore < whiteScore ? 'color' : 'white',
       },
     ]);
-    setGoldenPromptDismissed(true);
+    setConfirmArmGolden(false);
   };
 
   /**
@@ -1052,8 +1070,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setTeamChangeToDelete(null);
   };
 
-  // Game event handlers (Half Time / Game Over)
-  const handleRecordGameEvent = (type: 'halfTime' | 'gameOver') => {
+  // Game event handlers (Half Time / 2nd half restart / Game Over)
+  const handleRecordGameEvent = (type: 'halfTime' | 'secondHalfStart' | 'gameOver') => {
     if (!isAdmin) return;
     const gameDateObj = new Date(gameDate);
     const now = new Date(gameDateObj);
@@ -1244,34 +1262,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                     Golden goal{armedN !== null && armedN > 0 ? ` · decider worth ${armedN + 1}` : ' · next goal wins'}
                   </span>
                 )}
-                {canArmGolden && (
-                  <button onClick={handleArmGoldenGoal} className="text-gold underline underline-offset-2">
-                    Golden goal
-                  </button>
+                {onBreak && (
+                  <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs font-semibold text-text-secondary">
+                    HALF TIME
+                  </span>
                 )}
               </div>
             ) : (
               <span className="text-sm text-text-tertiary">Not started</span>
             )}
           </div>
-
-          {showGoldenPrompt && (
-            <div className="mt-2 flex items-center justify-center gap-3 rounded-lg border border-gold bg-surface px-3 py-2">
-              <span className="text-sm font-semibold text-text-primary">Golden goal?</span>
-              <button
-                onClick={handleArmGoldenGoal}
-                className="px-3 py-1 rounded-lg bg-gold text-text-on-accent text-sm font-semibold"
-              >
-                Yes
-              </button>
-              <button
-                onClick={() => setGoldenPromptDismissed(true)}
-                className="px-3 py-1 rounded-lg border border-border text-text-secondary text-sm"
-              >
-                Not yet
-              </button>
-            </div>
-          )}
 
           {showFullTimePrompt && (
             <div className="mt-2 flex items-center justify-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
@@ -1348,8 +1348,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           </div>
         )}
 
-        {/* Game Event Controls (admin only) */}
-        {!loading && !error && isAdmin && (
+        {/* Game Event Controls (admin only).
+            Every button here is derived from the recorded events, never from a
+            separate flag — which is what makes deleting an event in Game
+            Summary put its button back with no undo path of its own. The row is
+            hidden once full time is recorded; deleting that event reopens it. */}
+        {!loading && !error && isAdmin && !gameOverAt && (
           <div className="mb-4 flex gap-2 flex-shrink-0">
             {!startedAt && (
               <button
@@ -1360,13 +1364,33 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                 Start Game
               </button>
             )}
-            <button
-              onClick={() => handleRecordGameEvent('halfTime')}
-              className="flex-1 px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover active:bg-accent-active transition-colors"
-              data-tooltip="Record Half Time"
-            >
-              Half Time
-            </button>
+            {!halfTimeAt && (
+              <button
+                onClick={() => handleRecordGameEvent('halfTime')}
+                className="flex-1 px-4 py-2 bg-accent text-text-on-accent text-sm font-medium rounded-xl hover:bg-accent-hover active:bg-accent-active transition-colors"
+                data-tooltip="Record Half Time and stop the clock"
+              >
+                Half Time
+              </button>
+            )}
+            {onBreak && (
+              <button
+                onClick={() => handleRecordGameEvent('secondHalfStart')}
+                className="flex-1 px-4 py-2 bg-success text-text-on-accent text-sm font-medium rounded-xl transition-colors"
+                data-tooltip="Restart the clock for the second half"
+              >
+                Start 2nd Half
+              </button>
+            )}
+            {showGoldenGoal && (
+              <button
+                onClick={() => setConfirmArmGolden(true)}
+                className="flex-1 px-4 py-2 border-2 border-gold text-gold text-sm font-semibold rounded-xl hover:bg-gold-subtle transition-colors"
+                data-tooltip="Arm golden goal — the next goal decides the match"
+              >
+                Golden Goal
+              </button>
+            )}
             <button
               onClick={() => handleRecordGameEvent('gameOver')}
               className="flex-1 px-4 py-2 bg-gold text-text-on-accent text-sm font-medium rounded-xl hover:bg-gold-hover active:bg-gold-active transition-colors"
@@ -1493,8 +1517,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                         );
                       } else if (item.type === 'gameEvent') {
                         const { event, eventIndex } = item;
-                        const label = event.type === 'halfTime' ? 'Half Time' : 'Game Over';
-                        const accent = event.type === 'halfTime' ? 'text-accent' : 'text-gold';
+                        const label = GAME_EVENT_LABELS[event.type];
+                        const accent = event.type === 'halfTime' || event.type === 'secondHalfStart'
+                          ? 'text-accent'
+                          : 'text-gold';
                         return (
                           <div
                             key={`event-${eventIndex}-${event.timestamp.getTime()}-${idx}`}
@@ -1798,12 +1824,48 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         />
       )}
 
+      {/* Arm Golden Goal Confirmation. The margin freezes on confirm, so the
+          numbers it will freeze are spelled out before it happens. */}
+      {confirmArmGolden && (() => {
+        const colorScore = scoreFor(goals, 'color');
+        const whiteScore = scoreFor(goals, 'white');
+        const n = Math.abs(colorScore - whiteScore);
+        const behind = colorScore < whiteScore ? 'Color' : 'White';
+        const ahead = behind === 'Color' ? 'White' : 'Color';
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+            <div className="bg-surface rounded-xl shadow-modal max-w-sm w-full p-6 border border-gold">
+              <h3 className="text-lg font-semibold text-text-primary mb-2">Arm golden goal?</h3>
+              <p className="text-sm text-text-secondary mb-4">
+                {n === 0
+                  ? 'Scores are level. The next goal wins the match, worth 1 on the scoreline. This is fixed now and won’t move.'
+                  : `${behind} are ${n} behind. The next goal they score wins the match — worth ${n + 1} on the scoreline. Any ${ahead} goal is worth 1. This margin is fixed now and won’t move.`}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmArmGolden(false)}
+                  className="flex-1 px-4 py-2 border border-border-emphasis text-text-secondary rounded-xl font-medium hover:bg-surface-hover transition-colors"
+                >
+                  Not yet
+                </button>
+                <button
+                  onClick={handleArmGoldenGoal}
+                  className="flex-1 bg-gold text-text-on-accent px-4 py-2 rounded-xl font-semibold hover:bg-gold-hover active:bg-gold-active transition-colors"
+                >
+                  Arm it
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Delete Game Event Confirmation Modal */}
       {gameEventToDelete !== null && (
         <DeleteConfirmationModal
           onConfirm={handleConfirmDeleteGameEvent}
           onCancel={handleCancelDeleteGameEvent}
-          message={`Are you sure you want to delete this ${gameEvents[gameEventToDelete]?.type === 'halfTime' ? 'Half Time' : 'Game Over'} event?`}
+          message={`Are you sure you want to delete this ${GAME_EVENT_LABELS[gameEvents[gameEventToDelete]?.type] ?? 'game'} event?`}
         />
       )}
 
