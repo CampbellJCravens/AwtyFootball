@@ -435,6 +435,10 @@ function App() {
           onBack={() => { setSelectedPlayerId(null); setActiveTab(playerProfileReturnTab); }}
           onPlayerClick={(pid) => { setSelectedPlayerId(pid); setPlayerProfileReturnTab('players'); }}
           onNavigateToMonth={handleNavigateToMonth}
+          onEdit={isAdmin ? () => {
+            const p = players.find(x => x.id === selectedPlayerId);
+            if (p) handleEditPlayer(p);
+          } : undefined}
         />
       );
     }
