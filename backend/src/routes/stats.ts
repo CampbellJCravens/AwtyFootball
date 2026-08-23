@@ -294,7 +294,11 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
       : null;
 
     res.json({
-      player: { id: player.id, name: player.name, pictureUrl: avatarUrl(req, player) },
+      player: {
+        id: player.id, name: player.name, pictureUrl: avatarUrl(req, player),
+        // Public by owner decision 2026-08-23: a class year, not contact details.
+        isAlumni: player.isAlumni, graduationYear: player.graduationYear,
+      },
       aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, ownGoals: totalOwnGoals, assists: totalAssists },
       percentiles,
       percentileMinGames: DEFAULT_MIN_GAMES,

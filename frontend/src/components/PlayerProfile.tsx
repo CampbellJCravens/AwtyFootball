@@ -244,6 +244,12 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
               <span title="The Highlander — reigning attendance-streak champion" className="text-xl" aria-label="The Highlander">🗡️</span>
             )}
           </h2>
+          {/* Only when a year is actually set. Plenty of alumni will never have
+              one — school dads whose children are the alumni — and a blank must
+              never read as missing data. */}
+          {player.isAlumni && player.graduationYear && (
+            <p className="text-sm text-gold font-medium">Class of {player.graduationYear}</p>
+          )}
           {/* Form dots */}
           <div className="flex gap-1 mt-2">
             {form.map((result, i) => (

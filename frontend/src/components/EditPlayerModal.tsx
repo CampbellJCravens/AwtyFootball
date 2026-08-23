@@ -20,6 +20,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
   const [onRoster, setOnRoster] = useState(true);
   const [isAlumni, setIsAlumni] = useState(false);
   const [memberSince, setMemberSince] = useState('');
+  const [graduationYear, setGraduationYear] = useState('');
 
   useEffect(() => {
     if (player) {
@@ -28,6 +29,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
       setOnRoster(player.onRoster);
       setIsAlumni(player.isAlumni);
       setMemberSince(player.memberSince ? String(player.memberSince) : '');
+      setGraduationYear(player.graduationYear ? String(player.graduationYear) : '');
       setPicturePreview(player.pictureUrl);
       setPictureFile(null);
       setImagePosition({ x: 50, y: 50 }); // Reset position
@@ -119,6 +121,9 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
         onRoster,
         isAlumni,
         memberSince: memberSince.trim() === '' ? null : Number(memberSince),
+        // Cleared when the player is not alumni, so a year can never linger on
+        // someone the field no longer applies to.
+        graduationYear: !isAlumni || graduationYear.trim() === '' ? null : Number(graduationYear),
       };
 
       // Phone is an admin-only field (WhatsApp RSVP mapping).
@@ -226,6 +231,33 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
               and alumni are not billed for dues.
             </p>
           </div>
+
+          {/* Only for alumni, and only ever optional. Some alumni are school dads
+              whose children are the alumni, so a blank here is a normal and
+              permanent state, not missing data. */}
+          {isAlumni && (
+            <div className="mb-4">
+              <label htmlFor="edit-graduation-year" className="block text-sm font-medium text-text-secondary mb-2">
+                Class year <span className="text-text-tertiary font-normal">(optional)</span>
+              </label>
+              <input
+                id="edit-graduation-year"
+                type="number"
+                inputMode="numeric"
+                min={1950}
+                max={new Date().getFullYear() + 10}
+                value={graduationYear}
+                onChange={(e) => setGraduationYear(e.target.value)}
+                disabled={isSubmitting}
+                placeholder="Not set"
+                className="w-full px-4 py-2 bg-surface-raised border border-border-emphasis rounded-xl text-text-primary tabular-nums outline-none focus:border-accent placeholder:text-text-tertiary"
+              />
+              <p className="mt-1 text-xs text-text-tertiary">
+                The year they graduated, shown on their profile as "Class of 2019".
+                Leave blank for alumni who didn't graduate from the school themselves.
+              </p>
+            </div>
+          )}
 
           <div className="mb-4">
             <label htmlFor="edit-member-since" className="block text-sm font-medium text-text-secondary mb-2">

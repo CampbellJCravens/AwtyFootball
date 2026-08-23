@@ -4,6 +4,8 @@ export interface PlayerStatsPlayer {
   id: string;
   name: string;
   pictureUrl: string | null;
+  isAlumni?: boolean;
+  graduationYear?: number | null;
 }
 
 export interface MatchHistoryEntry {

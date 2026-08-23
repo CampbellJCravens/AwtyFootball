@@ -48,6 +48,7 @@ const serializePlayer = (p: any, isAdmin: boolean, req?: AuthenticatedRequest) =
   team: p.team,
   onRoster: p.onRoster,
   isAlumni: p.isAlumni,
+  graduationYear: p.graduationYear,
   memberSince: p.memberSince,
   createdAt: p.createdAt,
   updatedAt: p.updatedAt,
@@ -81,6 +82,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
         phone: normalizePhone(validatedData.phone) ?? null,
         ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
         ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
+        ...(validatedData.graduationYear !== undefined && { graduationYear: validatedData.graduationYear }),
         ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
       },
     });
@@ -176,6 +178,7 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
         ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
         ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
         ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
+        ...(validatedData.graduationYear !== undefined && { graduationYear: validatedData.graduationYear }),
         ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
       },
     });
