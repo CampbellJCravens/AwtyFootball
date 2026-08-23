@@ -146,7 +146,12 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-xl shadow-modal max-w-md w-full p-6 border border-border">
+      {/* Capped and scrollable, matching GuestDetailsModal and PlayerPickerModal.
+          This is the longest form in the app, and without the cap the panel
+          simply overflowed the viewport in both directions with nothing
+          scrollable — the roster and alumni toggles and the Save button were
+          off-screen and unreachable on a phone. */}
+      <div className="bg-surface rounded-xl shadow-modal max-w-md w-full p-6 border border-border max-h-[85vh] overflow-y-auto">
         <h2 className="text-2xl font-semibold text-text-primary mb-4">Edit Player</h2>
 
         {error && (
