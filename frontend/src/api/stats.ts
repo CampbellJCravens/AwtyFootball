@@ -1013,6 +1013,38 @@ export interface TurnoutResponse {
   players: TurnoutPlayer[];
 }
 
+export interface PairRow {
+  aId: string;
+  bId: string;
+  aName: string;
+  bName: string;
+  sharedGames: number;
+  coAttended: number;
+  lastTogether: string | null; // ISO date, null = never on the same side
+}
+
+export interface PairingVarietyResponse {
+  gameId: string;
+  minCoAttended: number;
+  variety: PairRow[];
+  stuck: PairRow[];
+  candidates: number;
+  qualifyingPairs: number;
+  possiblePairs: number;
+}
+
+// Admin-only, like the projection it sits under. Never rates a player — this is
+// who has and hasn't shared a shirt, nothing more.
+export async function fetchPairingVariety(gameId: string): Promise<PairingVarietyResponse> {
+  const response = await fetch(`${API_BASE_URL}/stats/pairing-variety/${gameId}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch pairing variety');
+  }
+  return response.json();
+}
+
 // Admin-only by design — there is no public turnout payload. A projection shown
 // to the group is self-fulfilling, and per-player show rates would be corrosive.
 export async function fetchTurnout(gameId: string): Promise<TurnoutResponse> {

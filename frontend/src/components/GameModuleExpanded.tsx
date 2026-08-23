@@ -98,8 +98,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
   const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
-  // The 80-minute offer, dismissed for this sitting only. Arming stays available
-  // from the button afterwards.
+  // The side gap at the last "Not now". Re-offers only if the gap widens.
+  const [rebalanceDismissedAt, setRebalanceDismissedAt] = useState<number | null>(null);
   // Confirming the arm, not dismissing the offer: "Not yet" closes this and
   // leaves the button on the row, where the old prompt card dismissed itself
   // for the rest of the match and took the only way to arm with it.
@@ -299,6 +299,48 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const elapsedLabel = startedAt ? formatElapsed(elapsedMs) : null;
   // Marked with a tilde: the break length was assumed, not recorded.
   const estimatedClock = isEstimated({ halfTimeAt, secondHalfAt, gameOverAt });
+
+  /**
+   * Sides go lopsided DURING the game, not at kick-off, and until now nothing
+   * noticed: across 30 tracked 2026 games, 9 were uneven as assigned but 14
+   * ended uneven, 9 of those having started level. #15 went 10v10 -> 9v6.
+   *
+   * Players who have left still hold their team assignment (handleLeave records
+   * a leave without clearing it), so the live count has to subtract them.
+   */
+  const REBALANCE_GAP = 2;
+  const sideMembers = (team: 'color' | 'white') =>
+    Object.keys(playerTeams).filter(id => playerTeams[id] === team && !leftPlayers[id]);
+  const colorSide = sideMembers('color');
+  const whiteSide = sideMembers('white');
+  const sideGap = colorSide.length - whiteSide.length;
+  const largerSide: 'color' | 'white' = sideGap > 0 ? 'color' : 'white';
+
+  // Re-offers when the gap WIDENS after a dismissal, the same reasoning as the
+  // full-time snooze: a plain boolean would silence it for exactly the game
+  // that then falls apart.
+  const showRebalance =
+    isAdmin && !!startedAt && !gameOverAt
+    && Math.abs(sideGap) >= REBALANCE_GAP
+    && (rebalanceDismissedAt === null || Math.abs(sideGap) > rebalanceDismissedAt);
+
+  /**
+   * Who to offer. Anyone already on the scoresheet is excluded first: a swapped
+   * player's whole game is attributed to the side they finish on, so moving
+   * someone who has scored or assisted is what turns a nudge into a wrong
+   * clean sheet. Never ranked by ability — that was rejected outright, and
+   * moving the best player is the most arguable act on a pitch.
+   */
+  const scoresheetIds = new Set(
+    goals.flatMap(g => [g.scorer?.id, g.assister?.id]).filter((id): id is string => !!id),
+  );
+  const rebalanceCandidates = (() => {
+    const pool = largerSide === 'color' ? colorSide : whiteSide;
+    const clean = pool.filter(id => !scoresheetIds.has(id));
+    // Falling back to the full side beats offering nothing when everyone has
+    // touched the scoresheet.
+    return (clean.length > 0 ? clean : pool).slice(0, 3);
+  })();
 
   const armedEvent = gameEvents.find(e => e.type === 'goldenGoalArmed') ?? null;
   const armedN = armedEvent?.n ?? null;
@@ -718,7 +760,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
     if (!isAdmin) return;
-    
+
+    // Once the game has kicked off, changing a side is a SWAP and gets recorded
+    // as one. Before kick-off it is just picking teams and records nothing.
+    // Without this the move left no trace at all: teamAssignments was silently
+    // rewritten, so nothing downstream could tell a player had switched.
+    const previousTeam = playerTeams[playerId];
+    if (startedAt && previousTeam && previousTeam !== team) {
+      recordSwap(playerId, previousTeam, team);
+    }
+
     setPlayerTeams(prev => {
       // If clicking the same team, deselect it
       if (prev[playerId] === team) {
@@ -810,6 +861,18 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         { player, timestamp: now, team, type: 'leave' },
       ]);
     }
+  };
+
+  const recordSwap = (playerId: string, previousTeam: 'color' | 'white', newTeam: 'color' | 'white') => {
+    const player = allPlayers.find(p => p.id === playerId);
+    if (!player) return;
+    // Stamp on the game's date, matching every other event in this component.
+    const stamped = new Date(gameDate);
+    stamped.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
+    setTeamChanges(prev => [
+      ...prev,
+      { player, timestamp: stamped, team: newTeam, type: 'swap', previousTeam, newTeam },
+    ]);
   };
 
   const handleReturnToTeam = (playerId: string) => {
@@ -1405,6 +1468,45 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             >
               Game Over
             </button>
+          </div>
+        )}
+
+        {/* Even the sides. Fires on the gap, not on a timer — the count changes
+            when someone leaves or swaps, and that is when this re-evaluates. */}
+        {!loading && !error && showRebalance && (
+          <div className="mb-4 flex-shrink-0 rounded-xl border border-gold bg-gold-subtle px-3 py-2.5">
+            <p className="text-sm font-semibold text-text-primary">
+              Sides are {colorSide.length} v {whiteSide.length}
+            </p>
+            <p className="mt-0.5 text-xs text-text-secondary">
+              {onBreak
+                ? 'Best moment to even it up — a swap at the break counts as one half each.'
+                : `Move someone from ${largerSide === 'color' ? 'Colour' : 'White'} to ${largerSide === 'color' ? 'White' : 'Colour'}?`}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {rebalanceCandidates.map(id => {
+                const player = allPlayers.find(p => p.id === id);
+                if (!player) return null;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      handleTeamSelect(id, largerSide === 'color' ? 'white' : 'color');
+                      setRebalanceDismissedAt(null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-gold text-text-on-accent text-xs font-semibold"
+                  >
+                    Move {player.name.split(' ')[0]}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setRebalanceDismissedAt(Math.abs(sideGap))}
+                className="px-3 py-1.5 rounded-lg border border-border text-text-secondary text-xs"
+              >
+                Not now
+              </button>
+            </div>
           </div>
         )}
 

@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/a
 import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
 import { isScoringGoal, isOwnGoal, scoreFor } from '../services/goals';
 import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
+import { computePairing, MIN_CO_ATTENDED } from '../services/pairing';
 import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
 import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL } from '../services/matchQuality';
 import { summariseTempo } from '../services/tempo';
@@ -1480,6 +1481,48 @@ router.get('/turnout/:gameId', requireAdmin, async (req: AuthenticatedRequest, r
   } catch (error) {
     console.error('Error computing turnout projection:', error);
     res.status(500).json({ error: 'Failed to compute turnout projection' });
+  }
+});
+
+// ── GET /api/stats/pairing-variety/:gameId ──
+// Who among this week's respondents has gone longest without sharing a side.
+// Admin-only for the same reason as the turnout projection above: this is
+// pre-match prep, and "who never plays with whom" read out to the group is a
+// conversation nobody asked for. Never rates a player — see services/pairing.ts.
+router.get('/pairing-variety/:gameId', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { gameId } = req.params;
+
+    const [game, rsvps, allPlayers, allGames] = await Promise.all([
+      prisma.game.findUnique({ where: { id: gameId }, select: { id: true } }),
+      prisma.gameRsvp.findMany({
+        where: { gameId, status: { in: ['yes', 'maybe'] } },
+        select: { playerId: true },
+      }),
+      prisma.player.findMany({ select: { id: true, name: true, onRoster: true } }),
+      prisma.game.findMany({ select: { createdAt: true, teamAssignments: true } }),
+    ]);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+
+    // Guests carry no durable identity across games, and ids with no Player row
+    // are deleted accounts still sitting in teamAssignments.
+    const nameById = new Map(
+      allPlayers.filter(p => !isGuestPool(p.name)).map(p => [p.id, p.name] as const),
+    );
+
+    const result = computePairing({
+      games: allGames.map(g => ({
+        createdAt: g.createdAt,
+        teamAssignments: safeParseJSON<Record<string, string>>(g.teamAssignments, {}),
+      })),
+      candidateIds: rsvps.map(r => r.playerId),
+      nameById,
+    });
+
+    res.json({ gameId, minCoAttended: MIN_CO_ATTENDED, ...result });
+  } catch (error) {
+    console.error('Error computing pairing variety:', error);
+    res.status(500).json({ error: 'Failed to compute pairing variety' });
   }
 });
 

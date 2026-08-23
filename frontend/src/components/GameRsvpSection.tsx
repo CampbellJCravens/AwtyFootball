@@ -2,6 +2,7 @@ import { CSSProperties, useCallback, useEffect, useState } from 'react';
 import { RsvpStatus, GamePoll, GamePollEntry, fetchGamePoll, fetchRsvps, resetRsvps } from '../api/rsvps';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import TurnoutProjection from './TurnoutProjection';
+import PairingVariety from './PairingVariety';
 
 interface GameRsvpSectionProps {
   gameId: string;
@@ -221,6 +222,7 @@ export default function GameRsvpSection({ gameId, gameNumber, refreshSignal, isA
   return (
     <div className="space-y-4">
       {isAdmin && <TurnoutProjection gameId={gameId} />}
+      {isAdmin && <PairingVariety gameId={gameId} />}
 
       <TotalComingHero inCount={poll.counts.in} guestCount={poll.guestTotal} />
 
