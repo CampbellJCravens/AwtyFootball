@@ -19,6 +19,7 @@
  *    are merely un-scored.
  */
 import { isScoringGoal, scoreFor } from './goals';
+import { concededWeighted, hasSwap, type SwapLike } from './attribution';
 
 /** Prior strength for empirical-Bayes shrinkage, matching services/turnout.ts. */
 export const PRIOR_M = 5;
@@ -30,7 +31,10 @@ export interface PercentileGame {
   createdAt: Date;
   field: string | null;
   teamAssignments: Record<string, 'color' | 'white'>;
-  goals: { scorerId: string; assisterId: string | null; team: 'color' | 'white' | null; ownGoal?: boolean; value?: number }[];
+  // Optional so existing callers keep compiling; absent means "no swaps", which
+  // is the correct reading for every game recorded before swaps were captured.
+  teamChanges?: SwapLike[];
+  goals: { scorerId: string; assisterId: string | null; team: 'color' | 'white' | null; timestamp?: string; ownGoal?: boolean; value?: number }[];
   sportsmanship: Record<string, number>;
   fouls: Record<string, number>;
 }
@@ -90,8 +94,12 @@ export const DEFAULT_METRICS: MetricDef[] = [
   },
   {
     id: 'defence', label: 'Defence', higherIsBetter: false, validFrom: null, unit: 'goals allowed per game', shrink: true,
-    contribution: ({ game, team }) =>
-      team === 'color' ? scoreFor(game.goals, 'white') : scoreFor(game.goals, 'color'),
+    // Time-aware for a swapped player; the whole-game total otherwise. "Winning"
+    // above deliberately stays on the final team — it is categorical.
+    contribution: ({ game, playerId, team }) =>
+      hasSwap(game.teamChanges, playerId)
+        ? concededWeighted(game.goals, team, game.teamChanges, playerId)
+        : (team === 'color' ? scoreFor(game.goals, 'white') : scoreFor(game.goals, 'color')),
   },
   {
     id: 'sportsmanship', label: 'Sportsmanship', higherIsBetter: true, validFrom: SPORTSMANSHIP_FROM,

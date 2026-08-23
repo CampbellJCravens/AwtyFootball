@@ -1,5 +1,6 @@
 import prisma from '../prisma';
-import { isScoringGoal, isOwnGoal, scoreFor } from './goals';
+import { isScoringGoal, isOwnGoal, scoreFor, goalValue } from './goals';
+import { concededBy, hasSwap, type SwapLike } from './attribution';
 
 // Types mirrored from stats.ts — kept local so this module is self-contained.
 interface GoalData {
@@ -22,6 +23,8 @@ interface ParsedGame {
   gameNumber: number | null;
   createdAt: Date;
   teamAssignments: Record<string, 'color' | 'white'>;
+  // Needed to tell which side a swapped player was on when a goal went in.
+  teamChanges: SwapLike[];
   goals: GoalData[];
   gameEvents: GameEventData[];
   sportsmanship: Record<string, number>;
@@ -54,6 +57,7 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     gameNumber: g.gameNumber,
     createdAt: g.createdAt,
     teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
+    teamChanges: safeParseJSON<SwapLike[]>(g.teamChanges, []),
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     gameEvents: safeParseJSON<GameEventData[]>(g.gameEvents, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
@@ -109,7 +113,9 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     assists += game.goals.filter(g => g.assisterId === playerId).length;
 
     const opponentTeam = playerTeam === 'color' ? 'white' : 'color';
-    const opponentGoals = game.goals.filter(g => g.team === opponentTeam).length;
+    // Time-aware: a player who swapped keeps only the goals conceded while they
+    // were actually on that side. Identical to the old count when nobody swapped.
+    const opponentGoals = concededBy(game.goals, playerTeam, game.teamChanges, playerId);
     if (opponentGoals === 0) cleanSheets++;
 
     totalSportsmanship += (game.sportsmanship[playerId] || 0) - (game.fouls[playerId] || 0);
@@ -224,8 +230,11 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
         if (isWin) s.points += 3;
         else if (isTie) s.points += 1;
-        const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
-        s.goalsAllowed += opponentGoals;
+        // Whole-game totals stay the fast path; only a swapped player needs the
+        // per-goal walk. Weighted, matching the scoreFor totals beside it.
+        s.goalsAllowed += hasSwap(game.teamChanges, pid)
+          ? concededBy(game.goals, team, game.teamChanges, pid, goalValue)
+          : (team === 'color' ? whiteGoals : colorGoals);
       }
       for (const goal of game.goals) {
         if (stats.has(goal.scorerId)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }

@@ -5,6 +5,7 @@ import { computePlayerAchievements, earnedAchievementIds } from '../services/ach
 import { isScoringGoal, isOwnGoal, scoreFor } from '../services/goals';
 import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
 import { computePairing, MIN_CO_ATTENDED } from '../services/pairing';
+import { concededWeighted, hasSwap, type SwapLike } from '../services/attribution';
 import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
 import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL } from '../services/matchQuality';
 import { summariseTempo } from '../services/tempo';
@@ -40,6 +41,8 @@ interface ParsedGame {
   createdAt: Date;
   field: string | null;
   teamAssignments: Record<string, 'color' | 'white'>;
+  // Needed to tell which side a swapped player was on when a goal went in.
+  teamChanges: SwapLike[];
   goals: GoalData[];
   sportsmanship: Record<string, number>;
   fouls: Record<string, number>;
@@ -55,6 +58,7 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     createdAt: g.createdAt,
     field: g.field,
     teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
+    teamChanges: safeParseJSON<SwapLike[]>(g.teamChanges, []),
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
     fouls: safeParseJSON<Record<string, number>>(g.fouls, {}),
@@ -279,6 +283,10 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
       ? computePercentiles(
           allGames.map(g => ({
             createdAt: g.createdAt, field: g.field, teamAssignments: g.teamAssignments,
+            // Without this the Defence bar silently keeps the naive whole-game
+            // total: teamChanges is optional on PercentileGame and this call
+            // site maps fields explicitly, so omitting it fails silently.
+            teamChanges: g.teamChanges,
             goals: g.goals, sportsmanship: g.sportsmanship, fouls: g.fouls,
           })),
           allPlayers.map(p => ({ id: p.id, name: p.name })),
@@ -464,8 +472,11 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         if (isWin) { s.points += 3; s.wins++; }
         else if (isTie) { s.points += 1; s.ties++; }
 
-        const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
-        s.goalsAllowed += opponentGoals;
+        // Only a swapped player needs the per-goal walk; everyone else keeps
+        // the whole-game total, so untouched games produce identical numbers.
+        s.goalsAllowed += hasSwap(game.teamChanges, pid)
+          ? concededWeighted(game.goals, team, game.teamChanges, pid)
+          : (team === 'color' ? whiteGoals : colorGoals);
       }
 
       for (const goal of game.goals) {
@@ -760,7 +771,9 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
         if (isWin) { s.points += 3; s.wins++; }
         else if (isTie) { s.points += 1; s.ties++; }
-        s.goalsAllowed += team === 'color' ? whiteGoals : colorGoals;
+        s.goalsAllowed += hasSwap(game.teamChanges, pid)
+          ? concededWeighted(game.goals, team, game.teamChanges, pid)
+          : (team === 'color' ? whiteGoals : colorGoals);
       }
       for (const goal of game.goals) {
         if (stats.has(goal.scorerId) && isScoringGoal(goal)) {
@@ -986,8 +999,9 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
           const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
           if (isWin) s.points += 3;
           else if (isTie) s.points += 1;
-          const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
-          s.goalsAllowed += opponentGoals;
+          s.goalsAllowed += hasSwap(game.teamChanges, pid)
+            ? concededWeighted(game.goals, team, game.teamChanges, pid)
+            : (team === 'color' ? whiteGoals : colorGoals);
         }
         for (const goal of game.goals) {
           if (stats.has(goal.scorerId) && isScoringGoal(goal)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
