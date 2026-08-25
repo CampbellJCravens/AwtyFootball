@@ -9,7 +9,7 @@ import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL
 import { summariseTempo } from '../services/tempo';
 import { computeChurn } from '../services/churn';
 import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
-import { publicPlayer, avatarUrl } from '../services/avatar';
+import { publicPlayer, avatarUrl, loadPlayersForDisplay } from '../services/avatar';
 
 const router = Router();
 
@@ -82,7 +82,7 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
     if (!player) return res.status(404).json({ error: 'Player not found' });
 
     const allGames = await loadAllGames();
-    const allPlayers = await prisma.player.findMany();
+    const allPlayers = await loadPlayersForDisplay(prisma);
     // Photos as URLs, not base64 — see services/avatar.ts.
     const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
@@ -313,7 +313,7 @@ router.get('/chemistry', async (req: AuthenticatedRequest, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
 
     const allGames = await loadAllGames();
-    const allPlayers = await prisma.player.findMany();
+    const allPlayers = await loadPlayersForDisplay(prisma);
     // Photos as URLs, not base64 — see services/avatar.ts.
     const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
@@ -433,7 +433,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
       g.createdAt >= startDate && g.createdAt < endDate && g.field !== 'cancelled'
     );
 
-    const allPlayers = await prisma.player.findMany();
+    const allPlayers = await loadPlayersForDisplay(prisma);
     // Photos as URLs, not base64 — see services/avatar.ts.
     const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
@@ -737,7 +737,7 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
       g.createdAt >= startDate && g.createdAt < endDate && g.field !== 'cancelled'
     );
 
-    const allPlayers = await prisma.player.findMany();
+    const allPlayers = await loadPlayersForDisplay(prisma);
     // Photos as URLs, not base64 — see services/avatar.ts.
     const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 
@@ -915,7 +915,7 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
   try {
     const playerId = req.params.id;
     const allGames = await loadAllGames();
-    const allPlayers = await prisma.player.findMany();
+    const allPlayers = await loadPlayersForDisplay(prisma);
     // Photos as URLs, not base64 — see services/avatar.ts.
     const playerMap = new Map(allPlayers.map(p => [p.id, publicPlayer(req, p)]));
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { isStorableImage } from '../services/avatar';
+import { isStorableImage, loadPlayersForDisplay } from '../services/avatar';
 import prisma from '../prisma';
 import { createPlayerSchema, updatePlayerSchema } from '../schemas/entry';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
@@ -98,10 +98,10 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
 // GET /api/players - Get all players (public)
 router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const players = await prisma.player.findMany({
-      orderBy: {
-        createdAt: 'desc',
-      },
+    // No `select` here used to pull every base64 photo out of Neon (1.22 MB)
+    // only for serializePlayer to discard it. See services/avatar.ts.
+    const players = await loadPlayersForDisplay(prisma, {
+      orderBy: { createdAt: 'desc' },
     });
     const admin = isReqAdmin(req);
     res.json(players.map((p) => serializePlayer(p, admin, req)));
