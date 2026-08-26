@@ -131,6 +131,32 @@ let reconnectAttempts = 0;
 // Deliberately stopped by an admin. Distinct from "disconnected": nothing here
 // should try to heal it, and monitoring must not read it as an outage.
 let paused = false;
+// Set once SIGTERM arrives. Render keeps the OLD instance alive while the new
+// one boots, and both run this listener with the SAME WhatsApp credentials.
+// WhatsApp permits one, so each connection replaces the other, and reconnecting
+// on that is how two instances end up fighting for six minutes straight.
+let shuttingDown = false;
+// Only reset the backoff once a connection has PROVED itself. Resetting on
+// 'open' meant a connect/replace/reconnect flap sat at "attempt 1" forever and
+// the delay never grew — every loop re-reading the whole auth state from Redis.
+let stableTimer: NodeJS.Timeout | null = null;
+const STABLE_AFTER_MS = 60_000;
+
+/** Stop the current socket, release the WhatsApp session, and stay down. */
+export function shutdownWhatsappListener(): void {
+  shuttingDown = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (stableTimer) {
+    clearTimeout(stableTimer);
+    stableTimer = null;
+  }
+  generation++; // orphan any in-flight handlers
+  teardownSocket();
+  console.log('[whatsapp] Listener shut down; WhatsApp session released.');
+}
 
 /**
  * Stop the current socket emitting and close it. The old code dropped the
@@ -159,10 +185,11 @@ function teardownSocket(): void {
  * WhatsApp can emit several close events for one drop, and the old code
  * scheduled an independent reconnect for each.
  */
-function scheduleReconnect(reason: string): void {
+function scheduleReconnect(reason: string, minDelayMs = 0): void {
   if (paused) return; // an admin stopped it on purpose; don't heal it
+  if (shuttingDown) return; // process is going away; releasing the session
   if (reconnectTimer) return;
-  const delay = Math.min(5000 * 2 ** reconnectAttempts, 5 * 60_000);
+  const delay = Math.max(Math.min(5000 * 2 ** reconnectAttempts, 5 * 60_000), minDelayMs);
   reconnectAttempts++;
   console.log(
     `[whatsapp] ${reason}; reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts}).`
@@ -359,7 +386,14 @@ export async function startWhatsappListener(): Promise<void> {
 
       if (connection === 'open') {
         latestQr = null;
-        reconnectAttempts = 0; // healthy again, reset the backoff
+        // Don't declare victory yet. A connection that opens and is immediately
+        // replaced by another instance is not healthy, and resetting here is
+        // what pinned the flap at "attempt 1" with a permanent 5s retry.
+        if (stableTimer) clearTimeout(stableTimer);
+        stableTimer = setTimeout(() => {
+          reconnectAttempts = 0;
+          stableTimer = null;
+        }, STABLE_AFTER_MS);
         console.log('[whatsapp] Linked and listening (read-only).');
         // A poll we couldn't persist is parked in Redis. Reconnect is the
         // natural moment to try again: whatever broke the write — a suspended
@@ -372,8 +406,28 @@ export async function startWhatsappListener(): Promise<void> {
       if (connection === 'close') {
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason.loggedOut;
+        const replaced = statusCode === DisconnectReason.connectionReplaced;
         teardownSocket();
         starting = false;
+        if (stableTimer) {
+          clearTimeout(stableTimer);
+          stableTimer = null;
+        }
+
+        if (replaced) {
+          // Another connection took the session — during a deploy that is the
+          // other instance, and racing it back is exactly how the two of them
+          // spent six minutes kicking each other off, losing every message that
+          // landed in between. Yield: a long, escalating wait. If we're the
+          // instance being retired, SIGTERM arrives first and we never retry.
+          console.warn(
+            '[whatsapp] Session taken over by another connection (code 440). ' +
+              'Standing down rather than fighting for it — likely the other instance during a deploy.'
+          );
+          scheduleReconnect('Session replaced', 2 * 60_000);
+          return;
+        }
+
         if (loggedOut) {
           // The session is dead. Clear it and restart so a FRESH QR is
           // generated automatically — otherwise the listener sits idle forever

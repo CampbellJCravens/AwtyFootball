@@ -26,6 +26,7 @@ import prisma from '../../prisma';
 import { combineSelections } from './options';
 import { findGameForPollTitle } from './gameMatch';
 import { bufferPendingVote, takePendingVotes } from './pendingVotes';
+import { getSharedRedis } from './redisAuthState';
 import { bufferPendingPoll, takePendingPolls } from './pendingPolls';
 
 // Sentinel written to GameRsvp.setByUserId so listener-sourced votes are
@@ -59,10 +60,68 @@ export interface WhatsappSettingsDTO {
   titleFilter: string | null;
 }
 
+const SCOPE_CACHE_KEY = 'wa:scope';
+let scopeEverLoaded = false;
+
+/**
+ * Load the capture scope, WITHOUT letting a database outage stop the listener.
+ *
+ * This used to be a bare Postgres read at the top of startWhatsappListener, so
+ * when Neon hit its data-transfer quota the listener couldn't start AT ALL —
+ * it failed 587 times over ~49 hours and never once tried to reach WhatsApp,
+ * losing a whole week's poll. A settings lookup should never be able to do that.
+ *
+ * Order: Postgres (authoritative, mirrored to Redis) → Redis (survives an
+ * outage) → whatever is already in memory → permissive defaults. Never throws.
+ *
+ * Also cheaper: the mirror means a restart costs one Redis GET instead of
+ * waking Neon for two small columns.
+ */
 export async function refreshScope(): Promise<void> {
-  const s = await prisma.whatsappSettings.findUnique({ where: { id: 'singleton' } });
-  scopeGroupJid = s?.groupJid ?? null;
-  scopeTitleFilter = s?.titleFilter ?? null;
+  try {
+    const s = await prisma.whatsappSettings.findUnique({ where: { id: 'singleton' } });
+    scopeGroupJid = s?.groupJid ?? null;
+    scopeTitleFilter = s?.titleFilter ?? null;
+    scopeEverLoaded = true;
+    // Mirror for the next outage. Best-effort; never block on it.
+    const redis = getSharedRedis();
+    if (redis) {
+      redis
+        .set(SCOPE_CACHE_KEY, JSON.stringify({ groupJid: scopeGroupJid, titleFilter: scopeTitleFilter }))
+        .catch(() => {});
+    }
+    return;
+  } catch (err) {
+    console.warn(
+      `[whatsapp] Could not read scope from the database (${(err as Error)?.message ?? err}). ` +
+        `Falling back to cache — the listener will still connect.`
+    );
+  }
+
+  try {
+    const redis = getSharedRedis();
+    const raw = redis ? await redis.get(SCOPE_CACHE_KEY) : null;
+    if (raw) {
+      const cached = JSON.parse(raw);
+      scopeGroupJid = cached.groupJid ?? null;
+      scopeTitleFilter = cached.titleFilter ?? null;
+      scopeEverLoaded = true;
+      console.log(`[whatsapp] Scope loaded from Redis cache: group=${scopeGroupJid ?? 'any'}`);
+      return;
+    }
+  } catch (err) {
+    console.warn('[whatsapp] Scope cache unavailable:', (err as Error)?.message ?? err);
+  }
+
+  if (scopeEverLoaded) {
+    console.log('[whatsapp] Keeping the scope already in memory.');
+    return;
+  }
+  // Never loaded and both stores are down. Capture broadly rather than
+  // silently ignoring the club's poll; the title filter still narrows it, and
+  // the real scope applies as soon as either store answers.
+  console.warn('[whatsapp] No scope available anywhere — capturing from any chat until one is.');
+  scopeGroupJid = null;
 }
 
 /** True if a message from this chat should be processed. Unscoped (no group set) = all. */

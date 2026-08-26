@@ -44,7 +44,7 @@ import settingsRouter from './routes/settings';
 import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
 import whatsappRouter from './routes/whatsapp';
-import { startWhatsappListener, isWhatsappLinked, isWhatsappPaused } from './services/whatsapp/listener';
+import { startWhatsappListener, isWhatsappLinked, isWhatsappPaused, shutdownWhatsappListener } from './services/whatsapp/listener';
 
 const PgSession = pgSession(session);
 
@@ -171,4 +171,22 @@ app.listen(PORT, () => {
     );
   }
 });
+
+// Render runs the OLD instance until the new one is healthy, and both hold the
+// same WhatsApp credentials. WhatsApp allows one, so without this the retiring
+// instance keeps reclaiming the session and the two flap against each other for
+// minutes, dropping every message that lands in between. Release it on the way
+// out. Cheap and synchronous — nothing here touches the database.
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => {
+    console.log(`[whatsapp] ${signal} received — releasing the WhatsApp session before exit.`);
+    try {
+      shutdownWhatsappListener();
+    } catch (err) {
+      console.error('[whatsapp] Shutdown error:', err);
+    }
+    // Give the socket a moment to close, then let the process go.
+    setTimeout(() => process.exit(0), 500).unref();
+  });
+}
 
