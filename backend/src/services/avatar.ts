@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 /**
  * Player photos travel as a URL, never as base64 inside a payload.
  *
@@ -65,28 +66,25 @@ export const isStorableImage = (value: string) => /^data:image\/[a-zA-Z0-9.+-]+;
 // tiny query so the avatar URL can still be built, since Prisma can't select a
 // computed expression.
 
-/** Every Player column except the base64 photo. */
-export const PLAYER_SELECT_NO_PHOTO = {
-  id: true,
-  name: true,
-  team: true,
-  phone: true,
-  onRoster: true,
-  isAlumni: true,
-  memberSince: true,
-  createdAt: true,
-  updatedAt: true,
-} as const;
+/**
+ * Every Player column except the base64 photo, derived from Prisma's own model
+ * metadata rather than hand-listed.
+ *
+ * A hand-written list is a trap: it was written before `graduationYear` existed,
+ * so the roster would have quietly served `undefined` for it the moment someone
+ * added the column, with nothing failing and no way to notice. Deriving it means
+ * a new field is included automatically and only `pictureUrl` is ever left out.
+ */
+export const PLAYER_SELECT_NO_PHOTO: Record<string, boolean> = Object.fromEntries(
+  (Prisma.dmmf.datamodel.models.find((m) => m.name === 'Player')?.fields ?? [])
+    .filter((f) => f.kind === 'scalar' && f.name !== 'pictureUrl')
+    .map((f) => [f.name, true]),
+);
 
-export type PlayerForDisplay = {
+/** A player row with the photo column left behind, plus whether one exists. */
+export type PlayerForDisplay = Record<string, any> & {
   id: string;
   name: string;
-  team: string | null;
-  phone: string | null;
-  onRoster: boolean;
-  isAlumni: boolean;
-  memberSince: number | null;
-  createdAt: Date;
   updatedAt: Date;
   hasPhoto: boolean;
 };

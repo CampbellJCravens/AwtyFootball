@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { isStorableImage, loadPlayersForDisplay } from '../services/avatar';
+import { isStorableImage, loadPlayersForDisplay, avatarUrl } from '../services/avatar';
 import prisma from '../prisma';
 import { createPlayerSchema, updatePlayerSchema } from '../schemas/entry';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
@@ -38,8 +38,10 @@ const normalizePhone = (raw: string | null | undefined): string | null | undefin
  * `?v=updatedAt` is what makes a long cache safe — change the photo and the URL
  * changes with it. Without it a new photo would not appear for a year.
  */
-const avatarUrl = (req: AuthenticatedRequest, p: { id: string; pictureUrl: string | null; updatedAt: Date }) =>
-  p.pictureUrl ? `${req.protocol}://${req.get('host')}/api/players/${p.id}/avatar?v=${p.updatedAt.getTime()}` : null;
+// Deliberately NOT a local copy. This file used to define its own avatarUrl
+// that tested `p.pictureUrl`, and when loadPlayersForDisplay stopped returning
+// that column every avatar on the roster silently became null. One
+// implementation, in services/avatar.ts, which understands `hasPhoto`.
 
 const serializePlayer = (p: any, isAdmin: boolean, req?: AuthenticatedRequest) => ({
   id: p.id,
