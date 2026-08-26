@@ -1,0 +1,332 @@
+[
+  {
+    "year": 2016,
+    "matched": [
+      {
+        "name": "Morgan Sean McCright",
+        "playerId": "ef5d3733-c725-4df7-a1b0-f7eb72ebac0f",
+        "amount": 85
+      },
+      {
+        "name": "Taymur Bunkheila",
+        "playerId": "5cac6c87-1a01-4d50-9317-cd41a4d6f911",
+        "amount": 50
+      },
+      {
+        "name": "Tommy El-Gawly",
+        "playerId": "eca422ea-c3ac-4352-8381-050257882112",
+        "amount": 15
+      },
+      {
+        "name": "Jon Schwarz",
+        "playerId": "3be568ae-d283-4ff1-a469-2e320e9e84b8",
+        "amount": 60
+      },
+      {
+        "name": "Tarek Hassan",
+        "playerId": "85f3e1a8-8f4f-4371-9d4a-c6ecbe286577",
+        "amount": 50
+      },
+      {
+        "name": "Rolando Abreu",
+        "playerId": "b940bac6-8269-4ddd-923e-0a9772794871",
+        "amount": 50
+      }
+    ]
+  },
+  {
+    "year": 2017,
+    "matched": [
+      {
+        "name": "Taymur Bunkheila",
+        "playerId": "5cac6c87-1a01-4d50-9317-cd41a4d6f911",
+        "amount": 75
+      },
+      {
+        "name": "Tommy El-Gawly",
+        "playerId": "eca422ea-c3ac-4352-8381-050257882112",
+        "amount": 75
+      },
+      {
+        "name": "Jon Schwarz",
+        "playerId": "3be568ae-d283-4ff1-a469-2e320e9e84b8",
+        "amount": 75
+      },
+      {
+        "name": "Tarek Hassan",
+        "playerId": "85f3e1a8-8f4f-4371-9d4a-c6ecbe286577",
+        "amount": 75
+      },
+      {
+        "name": "Rolando Abreu",
+        "playerId": "b940bac6-8269-4ddd-923e-0a9772794871",
+        "amount": 75
+      },
+      {
+        "name": "Corey Rasch",
+        "playerId": "bbe4adf5-10de-44dc-b2c4-e5cf1ac8c404",
+        "amount": 75
+      },
+      {
+        "name": "Aaron Hurd",
+        "playerId": "c737d528-66dd-46ee-b4d6-f1ea82024380",
+        "amount": 75
+      }
+    ]
+  },
+  {
+    "year": 2018,
+    "matched": [
+      {
+        "name": "Taymur Bunkheila",
+        "playerId": "5cac6c87-1a01-4d50-9317-cd41a4d6f911",
+        "amount": 75
+      },
+      {
+        "name": "Tommy El-Gawly",
+        "playerId": "eca422ea-c3ac-4352-8381-050257882112",
+        "amount": 75
+      },
+      {
+        "name": "Jon Schwarz",
+        "playerId": "3be568ae-d283-4ff1-a469-2e320e9e84b8",
+        "amount": 75
+      },
+      {
+        "name": "Tarek Hassan",
+        "playerId": "85f3e1a8-8f4f-4371-9d4a-c6ecbe286577",
+        "amount": 75
+      },
+      {
+        "name": "Rolando Abreu",
+        "playerId": "b940bac6-8269-4ddd-923e-0a9772794871",
+        "amount": 75
+      },
+      {
+        "name": "Aaron Hurd",
+        "playerId": "c737d528-66dd-46ee-b4d6-f1ea82024380",
+        "amount": 75
+      },
+      {
+        "name": "Brian J. Buhr",
+        "playerId": "9d71a8fb-17e1-4c5a-a0dc-68927f9485a6",
+        "amount": 75
+      },
+      {
+        "name": "Arceny Fahim",
+        "playerId": "263e2fe7-d93a-4290-afa6-53fbb5bd92ed",
+        "amount": 25
+      }
+    ]
+  },
+  {
+    "year": 2019,
+    "matched": [
+      {
+        "name": "Taymur Bunkheila",
+        "playerId": "5cac6c87-1a01-4d50-9317-cd41a4d6f911",
+        "amount": 75
+      },
+      {
+        "name": "Tommy El-Gawly",
+        "playerId": "eca422ea-c3ac-4352-8381-050257882112",
+        "amount": 75
+      },
+      {
+        "name": "Jon Schwarz",
+        "playerId": "3be568ae-d283-4ff1-a469-2e320e9e84b8",
+        "amount": 75
+      },
+      {
+        "name": "Tarek Hassan",
+        "playerId": "85f3e1a8-8f4f-4371-9d4a-c6ecbe286577",
+        "amount": 75
+      },
+      {
+        "name": "Rolando Abreu",
+        "playerId": "b940bac6-8269-4ddd-923e-0a9772794871",
+        "amount": 75
+      },
+      {
+        "name": "Corey Rasch",
+        "playerId": "bbe4adf5-10de-44dc-b2c4-e5cf1ac8c404",
+        "amount": 75
+      },
+      {
+        "name": "Aaron Hurd",
+        "playerId": "c737d528-66dd-46ee-b4d6-f1ea82024380",
+        "amount": 75
+      },
+      {
+        "name": "Brian J. Buhr",
+        "playerId": "9d71a8fb-17e1-4c5a-a0dc-68927f9485a6",
+        "amount": 75
+      },
+      {
+        "name": "Arceny Fahim",
+        "playerId": "263e2fe7-d93a-4290-afa6-53fbb5bd92ed",
+        "amount": 75
+      },
+      {
+        "name": "Marcos Conner",
+        "playerId": "27a2335c-a182-4c72-a2f1-e3af41a866a0",
+        "amount": 75
+      },
+      {
+        "name": "Adam Zebdawi",
+        "playerId": "e02fda7d-4102-4446-b518-e350c309b911",
+        "amount": 75
+      },
+      {
+        "name": "George Tannous",
+        "playerId": "50482be8-11a4-4a05-95e7-67c1e8b50fdf",
+        "amount": 75
+      }
+    ]
+  },
+  {
+    "year": 2020,
+    "matched": [
+      {
+        "name": "Joshua Tapia",
+        "playerId": "6284c320-2fc1-4cd8-a3c8-e4a203d8fccf",
+        "amount": 75
+      },
+      {
+        "name": "Jonathan Jaoude",
+        "playerId": "a46fd5dc-1350-4548-a9a4-d8f1c634b26b",
+        "amount": 75
+      },
+      {
+        "name": "Taymur Bunkheila",
+        "playerId": "5cac6c87-1a01-4d50-9317-cd41a4d6f911",
+        "amount": 75
+      },
+      {
+        "name": "Tommy El-Gawly",
+        "playerId": "eca422ea-c3ac-4352-8381-050257882112",
+        "amount": 75
+      },
+      {
+        "name": "Jon Schwarz",
+        "playerId": "3be568ae-d283-4ff1-a469-2e320e9e84b8",
+        "amount": 75
+      },
+      {
+        "name": "Tarek Hassan",
+        "playerId": "85f3e1a8-8f4f-4371-9d4a-c6ecbe286577",
+        "amount": 75
+      },
+      {
+        "name": "Rolando Abreu",
+        "playerId": "b940bac6-8269-4ddd-923e-0a9772794871",
+        "amount": 75
+      },
+      {
+        "name": "Corey Rasch",
+        "playerId": "bbe4adf5-10de-44dc-b2c4-e5cf1ac8c404",
+        "amount": 75
+      },
+      {
+        "name": "Aaron Hurd",
+        "playerId": "c737d528-66dd-46ee-b4d6-f1ea82024380",
+        "amount": 75
+      },
+      {
+        "name": "Brian J. Buhr",
+        "playerId": "9d71a8fb-17e1-4c5a-a0dc-68927f9485a6",
+        "amount": 75
+      },
+      {
+        "name": "Arceny Fahim",
+        "playerId": "263e2fe7-d93a-4290-afa6-53fbb5bd92ed",
+        "amount": 75
+      },
+      {
+        "name": "Marcos Conner",
+        "playerId": "27a2335c-a182-4c72-a2f1-e3af41a866a0",
+        "amount": 75
+      },
+      {
+        "name": "Adam Zebdawi",
+        "playerId": "e02fda7d-4102-4446-b518-e350c309b911",
+        "amount": 75
+      },
+      {
+        "name": "George Tannous",
+        "playerId": "50482be8-11a4-4a05-95e7-67c1e8b50fdf",
+        "amount": 75
+      },
+      {
+        "name": "Robert Peresich",
+        "playerId": "34c6730a-de22-49ee-8a26-e00d682f3f2a",
+        "amount": 75
+      }
+    ]
+  },
+  {
+    "year": 2021,
+    "matched": [
+      {
+        "name": "Joshua Tapia",
+        "playerId": "6284c320-2fc1-4cd8-a3c8-e4a203d8fccf",
+        "amount": 30
+      },
+      {
+        "name": "Jonathan Jaoude",
+        "playerId": "a46fd5dc-1350-4548-a9a4-d8f1c634b26b",
+        "amount": 30
+      },
+      {
+        "name": "Morgan Sean McCright",
+        "playerId": "ef5d3733-c725-4df7-a1b0-f7eb72ebac0f",
+        "amount": 30
+      },
+      {
+        "name": "Tommy El-Gawly",
+        "playerId": "eca422ea-c3ac-4352-8381-050257882112",
+        "amount": 30
+      },
+      {
+        "name": "Jon Schwarz",
+        "playerId": "3be568ae-d283-4ff1-a469-2e320e9e84b8",
+        "amount": 30
+      },
+      {
+        "name": "Tarek Hassan",
+        "playerId": "85f3e1a8-8f4f-4371-9d4a-c6ecbe286577",
+        "amount": 30
+      },
+      {
+        "name": "Rolando Abreu",
+        "playerId": "b940bac6-8269-4ddd-923e-0a9772794871",
+        "amount": 30
+      },
+      {
+        "name": "Corey Rasch",
+        "playerId": "bbe4adf5-10de-44dc-b2c4-e5cf1ac8c404",
+        "amount": 30
+      },
+      {
+        "name": "Brian J. Buhr",
+        "playerId": "9d71a8fb-17e1-4c5a-a0dc-68927f9485a6",
+        "amount": 30
+      },
+      {
+        "name": "Adam Zebdawi",
+        "playerId": "e02fda7d-4102-4446-b518-e350c309b911",
+        "amount": 30
+      },
+      {
+        "name": "George Tannous",
+        "playerId": "50482be8-11a4-4a05-95e7-67c1e8b50fdf",
+        "amount": 30
+      },
+      {
+        "name": "Robert Peresich",
+        "playerId": "34c6730a-de22-49ee-8a26-e00d682f3f2a",
+        "amount": 30
+      }
+    ]
+  }
+]

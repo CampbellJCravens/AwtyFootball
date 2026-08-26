@@ -15,29 +15,44 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 22Aug, read from screenshots on 2026-08-19 09:40 CDT (poll posted
-// 06:15). The creation message was dropped before the 08-19 fixes deployed
-// (Campbell's 656faa3 landed 08:26, ~2h after the poll), so no WhatsappPoll row
-// exists and the votes have nowhere to land.
-// Manual reconstruction as of 09:40: 7 In / 2 Maybe / 4 Out.
+// Poll for 22Aug, final pre-game read from screenshots on 2026-08-22 10:58 CDT.
+// The poll creation message was dropped before the 08-19 fixes deployed
+// (Campbell's 656faa3 landed 08:26, ~2h after the poll went up), so no
+// WhatsappPoll row exists and the votes never had anywhere to land — hence
+// three rounds of manual import for this one game.
+// Final: 11 In / 3 Maybe / 5 Out, guests confirmed zero (+1 and +2 both empty).
+// Deltas vs the 08-21 09:08 read: Campbell Cravens in -> maybe, Siegfried Casar
+// out -> in, Lammy Lammers + Eric Saito new in, Nick Mbaezue-Daniel + Joseph
+// Garcia new out, and Bayo Tojuola WITHDREW (see `retracted`).
 const CONFIG = {
   gameId: 'a86657df-e3ae-48aa-9069-cce374052ec7', // game #34, 2026-08-22
-  // Roster names, reconciled against the poll's display names. All 13 matched
-  // the Player table exactly or via a known alias — none ambiguous this week:
-  //   "You" -> Morgan-Sean McCright     "Marcos" -> Marcos Conner
-  //   "Franco" -> Franco Silva          "Robert-san" -> Robert Peresich
-  //   "Campbell Saito" -> Campbell Cravens (Eric Saito is a separate player)
-  //   "~ Bayo Tojuola" showed a raw number (954 292-2401) because he isn't in
-  //      the linked account's contacts; he IS on the roster as Bayo Tojuola.
+  // Roster names, reconciled against the poll's display names. All matched the
+  // Player table exactly or via a known alias — none ambiguous this week:
+  //   "You" -> Morgan-Sean McCright        "Marcos" -> Marcos Conner
+  //   "Franco" -> Franco Silva             "Robert-san" -> Robert Peresich
+  //   "Adam Lammers" -> Lammy Lammers      "Jason Azirpe" -> Jason Arizpe
+  //   "Nicholas Mbaezue-Daniel" -> Nick Mbaezue-Daniel
+  //   "Campbell" -> Campbell Cravens (Eric Saito is a separate player, and he
+  //      is In this week, so both names appear)
   yes: [
-    'Morgan-Sean McCright', 'Marcos Conner', 'Josh Jackson', 'Bayo Tojuola',
+    'Morgan-Sean McCright', 'Lammy Lammers', 'Siegfried Casar', 'Eric Saito',
+    'Milad Moradi', 'Manny Suarez', 'Marcos Conner', 'Josh Jackson',
     'Franco Silva', 'Connor Shannon', 'Rolando Abreu',
   ],
-  maybe: ['Robert Peresich', 'Campbell Cravens'],
-  no: ['Tommy El-Gawly', 'Adam Zebdawi', 'Corey Rasch', 'Siegfried Casar'],
+  maybe: ['Campbell Cravens', 'Jason Arizpe', 'Robert Peresich'],
+  no: [
+    'Nick Mbaezue-Daniel', 'Joseph Garcia', 'Tommy El-Gawly', 'Adam Zebdawi',
+    'Corey Rasch',
+  ],
+  // Votes WITHDRAWN since a previous import: the row is deleted, not set to
+  // 'no'. Bayo Tojuola (the raw 954 number, unnamed because he isn't in the
+  // linked account's contacts) was In on 08-19 and 08-21 and appears in no
+  // section at all today. Leaving the stale 'yes' row would score him as a
+  // no-show; deleting it returns him to the silent majority, which is what
+  // the poll now says.
+  retracted: ['Bayo Tojuola'],
   // Guests brought, by roster name. Only counted on a 'yes' row.
-  // NOTE: the two screenshots cover In / Out / Maybe only — no +1 or +2 section
-  // was captured, so guests are unconfirmed rather than known-zero.
+  // +1 and +2 both read 0 votes this time, so zero is confirmed, not assumed.
   guests: {},
 };
 
@@ -57,7 +72,8 @@ async function withRetry(fn, tries = 6, delayMs = 8000) {
 }
 
 (async () => {
-  const wanted = [...CONFIG.yes, ...CONFIG.maybe, ...CONFIG.no];
+  const retracted = CONFIG.retracted || [];
+  const wanted = [...CONFIG.yes, ...CONFIG.maybe, ...CONFIG.no, ...retracted];
   const dupes = wanted.filter((n, i) => wanted.indexOf(n) !== i);
   if (dupes.length) throw new Error(`same player in two buckets: ${dupes.join(', ')}`);
 
@@ -98,8 +114,16 @@ async function withRetry(fn, tries = 6, delayMs = 8000) {
     const note = prior ? `  (OVERWRITES ${prior.status}, src=${prior.setByUserId})` : '';
     console.log(`  ${r.status.padEnd(5)}  ${r.name.padEnd(24)}${g}${note}`);
   }
+  const drops = retracted
+    .map(name => ({ name, prior: existing.find(e => e.playerId === byName.get(name)) }))
+    .filter(d => d.prior);
+  for (const d of drops) console.log(`  DELETE ${d.name.padEnd(24)}  (was ${d.prior.status}, src=${d.prior.setByUserId})`);
+  for (const name of retracted) {
+    if (!drops.some(d => d.name === name)) console.log(`  (no row to delete for ${name})`);
+  }
+
   const guestTotal = rows.reduce((s, r) => s + r.guestCount, 0);
-  console.log(`\n  ${CONFIG.yes.length} yes · ${CONFIG.maybe.length} maybe · ${CONFIG.no.length} no · ${guestTotal} guest(s)`);
+  console.log(`\n  ${CONFIG.yes.length} yes · ${CONFIG.maybe.length} maybe · ${CONFIG.no.length} no · ${guestTotal} guest(s) · ${drops.length} deleted`);
   console.log(`  expected turnout: ${CONFIG.yes.length} + ${guestTotal} = ${CONFIG.yes.length + guestTotal}`);
 
   if (!APPLY) {
@@ -132,6 +156,13 @@ async function withRetry(fn, tries = 6, delayMs = 8000) {
     written++;
   }
   console.log(`Wrote ${written} RSVP row(s).`);
+
+  for (const d of drops) {
+    await withRetry(() => prisma.gameRsvp.delete({
+      where: { gameId_playerId: { gameId: CONFIG.gameId, playerId: byName.get(d.name) } },
+    }));
+  }
+  if (drops.length) console.log(`Deleted ${drops.length} withdrawn RSVP row(s).`);
 
   const after = await withRetry(() => prisma.gameRsvp.groupBy({
     by: ['status'],

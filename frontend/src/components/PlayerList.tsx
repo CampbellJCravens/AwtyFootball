@@ -14,6 +14,7 @@ interface PlayerListProps {
 
 export default function PlayerList({ players, games = [], onEdit, onDelete, onPlayerClick, showActions = true }: PlayerListProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [alumniOnly, setAlumniOnly] = useState(false);
   const [priorOpen, setPriorOpen] = useState(false);
 
   // Compute per-player stats from games
@@ -36,15 +37,22 @@ export default function PlayerList({ players, games = [], onEdit, onDelete, onPl
 
   // Search matches BOTH groups; current roster on top, prior members split out.
   const { current, prior } = useMemo(() => {
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
     const filtered = players
-      .filter(player => player.name.toLowerCase().includes(q))
+      .filter(player => !alumniOnly || player.isAlumni)
+      // Typing a year finds that class — it is what anyone would try, and a
+      // year never collides with a name.
+      .filter(player =>
+        player.name.toLowerCase().includes(q) ||
+        (q !== '' && player.graduationYear != null && String(player.graduationYear).includes(q)))
       .sort((a, b) => a.name.localeCompare(b.name));
     return {
       current: filtered.filter(p => p.onRoster),
       prior: filtered.filter(p => !p.onRoster),
     };
-  }, [players, searchQuery]);
+  }, [players, searchQuery, alumniOnly]);
+
+  const alumniCount = useMemo(() => players.filter(p => p.isAlumni).length, [players]);
 
   // Alumni share of the current roster. Unfiltered by search — this is a
   // standing figure about the club, not about what you're looking at.
@@ -103,6 +111,16 @@ export default function PlayerList({ players, games = [], onEdit, onDelete, onPl
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full px-4 py-2.5 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary placeholder-text-muted"
         />
+        {alumniCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setAlumniOnly(v => !v)}
+            aria-pressed={alumniOnly}
+            className={`mt-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${alumniOnly ? 'bg-gold text-text-on-accent border-gold' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+          >
+            Alumni ({alumniCount})
+          </button>
+        )}
       </div>
 
       {current.length === 0 && prior.length === 0 ? (

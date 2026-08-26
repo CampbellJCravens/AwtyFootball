@@ -58,6 +58,26 @@ export interface DuesGuestRow {
   shouldConvert: boolean; // balance has passed what membership costs
 }
 
+/**
+ * A payment recorded against a player who has no roster entry for that year.
+ * Before this existed such a payment was invisible: the report built its rows
+ * from DuesRosterEntry alone, so the money vanished from the page AND from the
+ * collected total. That bites live years too — record a payment for someone you
+ * have not added to the roster and it silently disappears — and it is why the
+ * imported 2016-2025 history showed nothing at all.
+ *
+ * Deliberately NOT folded into `members`: those rows carry a real `entryId`
+ * that the UI uses for edits, and a synthetic one would produce broken actions.
+ * Nothing is owed here, so these never touch billed, outstanding or overpaid —
+ * only `amountCollected`, which is the whole point.
+ */
+export interface UnrosteredPaymentRow {
+  playerId: string;
+  name: string;
+  amountPaid: string;
+  payments: DuesPaymentDto[];
+}
+
 export interface DuesYearReport {
   duesYear: number;
   targetAmount: string;
@@ -65,6 +85,8 @@ export interface DuesYearReport {
   guestGameRate: string;
   openedAt: string | null;
   members: DuesMemberRow[];
+  /** Money received from people with no roster entry for this year. */
+  unrostered: UnrosteredPaymentRow[];
   guests: DuesGuestRow[];
   totals: {
     billed: number;
@@ -77,6 +99,8 @@ export interface DuesYearReport {
     amountCollected: string;
     amountOutstanding: string; // sum of positive balances only
     amountOverpaid: string;
+    /** Included in amountCollected; excluded from every owed-side figure. */
+    amountUnrostered: string;
   };
 }
 
@@ -185,6 +209,17 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
     };
   });
 
+  const rosteredIds = new Set(entries.map(e => e.playerId));
+  const unrostered: UnrosteredPaymentRow[] = [...paidByPlayer.entries()]
+    .filter(([playerId]) => !rosteredIds.has(playerId))
+    .map(([playerId, paid]) => ({
+      playerId,
+      name: playerMap.get(playerId)?.name ?? '(deleted player)',
+      amountPaid: money(paid),
+      payments: paymentsByPlayer.get(playerId) ?? [],
+    }))
+    .sort((a, b) => D(b.amountPaid).minus(D(a.amountPaid)).toNumber() || a.name.localeCompare(b.name));
+
   members.sort((a, b) => {
     const diff = D(b.balance).minus(D(a.balance));
     if (!diff.isZero()) return diff.isPositive() ? 1 : -1;
@@ -243,6 +278,9 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
     else unpaid++;
   }
 
+  const amountUnrostered = unrostered.reduce((sum, r) => sum.plus(D(r.amountPaid)), ZERO);
+  amountCollected = amountCollected.plus(amountUnrostered);
+
   return {
     duesYear,
     targetAmount: money(D(config.targetAmount)),
@@ -250,6 +288,7 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
     guestGameRate: money(rate),
     openedAt: config.openedAt?.toISOString() ?? null,
     members,
+    unrostered,
     guests,
     totals: {
       // Leavers are settled and gone; counting them as billed would keep an
@@ -264,6 +303,7 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
       amountCollected: money(amountCollected),
       amountOutstanding: money(amountOutstanding),
       amountOverpaid: money(amountOverpaid),
+      amountUnrostered: money(amountUnrostered),
     },
   };
 };

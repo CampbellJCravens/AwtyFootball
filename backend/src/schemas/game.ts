@@ -27,7 +27,10 @@ export const teamChangeSchema = z.object({
 });
 
 export const gameEventSchema = z.object({
-  type: z.enum(['halfTime', 'gameOver', 'goldenGoalArmed']),
+  // secondHalfStart marks play resuming after the break, so the clock can stop
+  // during it. Accepted here before any client can send it: a rejected event
+  // fails the whole game save, goals and stats included.
+  type: z.enum(['halfTime', 'secondHalfStart', 'gameOver', 'goldenGoalArmed']),
   timestamp: z.string(), // ISO date string
   // Goal difference at the moment golden goal was armed, frozen there on
   // purpose: the deciding goal is worth n+1, and a value that moved silently

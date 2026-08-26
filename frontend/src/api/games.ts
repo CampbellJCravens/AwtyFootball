@@ -31,7 +31,10 @@ export interface TeamChange {
 }
 
 export interface GameEvent {
-  type: 'halfTime' | 'gameOver' | 'goldenGoalArmed';
+  // secondHalfStart marks play resuming; the clock is stopped between it and
+  // halfTime. Must stay in step with the zod enum in backend/src/schemas/game.ts
+  // — the API rejects the whole game save on an unknown type.
+  type: 'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed';
   n?: number; // goal difference frozen at arming; only on goldenGoalArmed
   trailing?: 'color' | 'white' | null; // team behind at arming; null = level
   timestamp: string; // ISO date string

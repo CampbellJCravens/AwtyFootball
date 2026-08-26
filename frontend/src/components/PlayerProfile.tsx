@@ -15,9 +15,13 @@ interface PlayerProfileProps {
   onPlayerClick?: (playerId: string) => void;
   onNavigateToMonth?: (month: number, year: number) => void;
   initialShowAchievements?: boolean;
+  /** Admin-only. Without this the profile is a dead end: the card's edit pencil
+   *  is a 24px target beside a delete button, so missing it opens this view
+   *  instead — with nothing to edit. */
+  onEdit?: () => void;
 }
 
-export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick, onNavigateToMonth, initialShowAchievements }: PlayerProfileProps) {
+export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayerClick, onNavigateToMonth, initialShowAchievements, onEdit }: PlayerProfileProps) {
   const [stats, setStats] = useState<PlayerStatsResponse | null>(null);
   const [awards, setAwards] = useState<PlayerAward[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
@@ -173,14 +177,29 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
 
   return (
     <div className="h-full overflow-y-auto max-w-lg mx-auto px-4 py-4 pb-8">
-      {/* Back button */}
-      {onBack && (
-        <button onClick={onBack} className="flex items-center gap-1 text-text-secondary hover:text-text-primary mb-4 transition-colors">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span className="text-sm font-medium">Back</span>
-        </button>
+      {/* Back, and — for admins — the way out of the dead end. */}
+      {(onBack || onEdit) && (
+        <div className="flex items-center mb-4">
+          {onBack && (
+            <button onClick={onBack} className="flex items-center gap-1 text-text-secondary hover:text-text-primary transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="text-sm font-medium">Back</span>
+            </button>
+          )}
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="ml-auto flex items-center gap-1.5 rounded-xl border border-border-emphasis px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Edit player
+            </button>
+          )}
+        </div>
       )}
 
       {/* Prompt to link your WhatsApp number (own profile, none linked yet) */}
@@ -225,6 +244,12 @@ export default function PlayerProfile({ playerId, isOwnProfile, onBack, onPlayer
               <span title="The Highlander — reigning attendance-streak champion" className="text-xl" aria-label="The Highlander">🗡️</span>
             )}
           </h2>
+          {/* Only when a year is actually set. Plenty of alumni will never have
+              one — school dads whose children are the alumni — and a blank must
+              never read as missing data. */}
+          {player.isAlumni && player.graduationYear && (
+            <p className="text-sm text-gold font-medium">Class of {player.graduationYear}</p>
+          )}
           {/* Form dots */}
           <div className="flex gap-1 mt-2">
             {form.map((result, i) => (

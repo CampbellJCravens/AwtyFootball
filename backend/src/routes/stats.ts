@@ -4,6 +4,8 @@ import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/a
 import { computePlayerAchievements, earnedAchievementIds } from '../services/achievements';
 import { isScoringGoal, isOwnGoal, scoreFor } from '../services/goals';
 import { getReliability, isGuestPool, RsvpBucket } from '../services/reliability';
+import { computePairing, MIN_CO_ATTENDED } from '../services/pairing';
+import { concededWeighted, hasSwap, type SwapLike } from '../services/attribution';
 import { shrunkProbability, poissonBinomial, probBelow, percentile } from '../services/turnout';
 import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL } from '../services/matchQuality';
 import { summariseTempo } from '../services/tempo';
@@ -39,6 +41,8 @@ interface ParsedGame {
   createdAt: Date;
   field: string | null;
   teamAssignments: Record<string, 'color' | 'white'>;
+  // Needed to tell which side a swapped player was on when a goal went in.
+  teamChanges: SwapLike[];
   goals: GoalData[];
   sportsmanship: Record<string, number>;
   fouls: Record<string, number>;
@@ -54,6 +58,7 @@ async function loadAllGames(): Promise<ParsedGame[]> {
     createdAt: g.createdAt,
     field: g.field,
     teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
+    teamChanges: safeParseJSON<SwapLike[]>(g.teamChanges, []),
     goals: safeParseJSON<GoalData[]>(g.goals, []),
     sportsmanship: safeParseJSON<Record<string, number>>(g.sportsmanship, {}),
     fouls: safeParseJSON<Record<string, number>>(g.fouls, {}),
@@ -278,6 +283,10 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
       ? computePercentiles(
           allGames.map(g => ({
             createdAt: g.createdAt, field: g.field, teamAssignments: g.teamAssignments,
+            // Without this the Defence bar silently keeps the naive whole-game
+            // total: teamChanges is optional on PercentileGame and this call
+            // site maps fields explicitly, so omitting it fails silently.
+            teamChanges: g.teamChanges,
             goals: g.goals, sportsmanship: g.sportsmanship, fouls: g.fouls,
           })),
           allPlayers.map(p => ({ id: p.id, name: p.name })),
@@ -285,7 +294,11 @@ router.get('/player/:id', async (req: AuthenticatedRequest, res: Response) => {
       : null;
 
     res.json({
-      player: { id: player.id, name: player.name, pictureUrl: avatarUrl(req, player) },
+      player: {
+        id: player.id, name: player.name, pictureUrl: avatarUrl(req, player),
+        // Public by owner decision 2026-08-23: a class year, not contact details.
+        isAlumni: player.isAlumni, graduationYear: player.graduationYear,
+      },
       aggregate: { games: gamesPlayed, wins, losses, ties, winRate, ppg, goals: totalGoals, ownGoals: totalOwnGoals, assists: totalAssists },
       percentiles,
       percentileMinGames: DEFAULT_MIN_GAMES,
@@ -463,8 +476,11 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         if (isWin) { s.points += 3; s.wins++; }
         else if (isTie) { s.points += 1; s.ties++; }
 
-        const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
-        s.goalsAllowed += opponentGoals;
+        // Only a swapped player needs the per-goal walk; everyone else keeps
+        // the whole-game total, so untouched games produce identical numbers.
+        s.goalsAllowed += hasSwap(game.teamChanges, pid)
+          ? concededWeighted(game.goals, team, game.teamChanges, pid)
+          : (team === 'color' ? whiteGoals : colorGoals);
       }
 
       for (const goal of game.goals) {
@@ -759,7 +775,9 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
         if (isWin) { s.points += 3; s.wins++; }
         else if (isTie) { s.points += 1; s.ties++; }
-        s.goalsAllowed += team === 'color' ? whiteGoals : colorGoals;
+        s.goalsAllowed += hasSwap(game.teamChanges, pid)
+          ? concededWeighted(game.goals, team, game.teamChanges, pid)
+          : (team === 'color' ? whiteGoals : colorGoals);
       }
       for (const goal of game.goals) {
         if (stats.has(goal.scorerId) && isScoringGoal(goal)) {
@@ -985,8 +1003,9 @@ router.get('/player/:id/awards', async (req: AuthenticatedRequest, res: Response
           const isWin = (team === 'color' && colorGoals > whiteGoals) || (team === 'white' && whiteGoals > colorGoals);
           if (isWin) s.points += 3;
           else if (isTie) s.points += 1;
-          const opponentGoals = team === 'color' ? whiteGoals : colorGoals;
-          s.goalsAllowed += opponentGoals;
+          s.goalsAllowed += hasSwap(game.teamChanges, pid)
+            ? concededWeighted(game.goals, team, game.teamChanges, pid)
+            : (team === 'color' ? whiteGoals : colorGoals);
         }
         for (const goal of game.goals) {
           if (stats.has(goal.scorerId) && isScoringGoal(goal)) { stats.get(goal.scorerId)!.goals++; stats.get(goal.scorerId)!.goalInvolvements++; }
@@ -1480,6 +1499,48 @@ router.get('/turnout/:gameId', requireAdmin, async (req: AuthenticatedRequest, r
   } catch (error) {
     console.error('Error computing turnout projection:', error);
     res.status(500).json({ error: 'Failed to compute turnout projection' });
+  }
+});
+
+// ── GET /api/stats/pairing-variety/:gameId ──
+// Who among this week's respondents has gone longest without sharing a side.
+// Admin-only for the same reason as the turnout projection above: this is
+// pre-match prep, and "who never plays with whom" read out to the group is a
+// conversation nobody asked for. Never rates a player — see services/pairing.ts.
+router.get('/pairing-variety/:gameId', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { gameId } = req.params;
+
+    const [game, rsvps, allPlayers, allGames] = await Promise.all([
+      prisma.game.findUnique({ where: { id: gameId }, select: { id: true } }),
+      prisma.gameRsvp.findMany({
+        where: { gameId, status: { in: ['yes', 'maybe'] } },
+        select: { playerId: true },
+      }),
+      prisma.player.findMany({ select: { id: true, name: true, onRoster: true } }),
+      prisma.game.findMany({ select: { createdAt: true, teamAssignments: true } }),
+    ]);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+
+    // Guests carry no durable identity across games, and ids with no Player row
+    // are deleted accounts still sitting in teamAssignments.
+    const nameById = new Map(
+      allPlayers.filter(p => !isGuestPool(p.name)).map(p => [p.id, p.name] as const),
+    );
+
+    const result = computePairing({
+      games: allGames.map(g => ({
+        createdAt: g.createdAt,
+        teamAssignments: safeParseJSON<Record<string, string>>(g.teamAssignments, {}),
+      })),
+      candidateIds: rsvps.map(r => r.playerId),
+      nameById,
+    });
+
+    res.json({ gameId, minCoAttended: MIN_CO_ATTENDED, ...result });
+  } catch (error) {
+    console.error('Error computing pairing variety:', error);
+    res.status(500).json({ error: 'Failed to compute pairing variety' });
   }
 });
 

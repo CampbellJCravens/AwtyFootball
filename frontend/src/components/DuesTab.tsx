@@ -307,7 +307,34 @@ export default function DuesTab({ players }: { players: Player[] }) {
         {report.totals.left > 0 && filterButton('left', 'Left', report.totals.left)}
       </div>
 
-      {members.length === 0 ? (
+      {/* Money from people with no roster entry this year: the imported
+          history, and anyone paid for before being added to the roster. These
+          used to be invisible — counted nowhere and shown nowhere. */}
+      {report.unrostered && report.unrostered.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface-raised px-3 py-2.5">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-text-tertiary">
+              Paid, not on this year's roster
+            </span>
+            <span className="ml-auto text-sm font-semibold text-text-primary tabular-nums">
+              {money(report.totals.amountUnrostered)}
+            </span>
+          </div>
+          <div className="mt-1.5 space-y-1">
+            {report.unrostered.map(u => (
+              <div key={u.playerId} className="flex items-baseline gap-2 text-[13px]">
+                <span className="flex-1 min-w-0 truncate text-text-secondary">{u.name}</span>
+                <span className="tabular-nums text-text-primary">{money(u.amountPaid)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] text-text-tertiary">
+            Counted in collected, never in billed or outstanding — nothing was owed on a roster they aren't on.
+          </p>
+        </div>
+      )}
+
+      {members.length === 0 && (!report.unrostered || report.unrostered.length === 0) ? (
         <div className="text-center py-8 text-text-tertiary text-sm">Nobody in this group.</div>
       ) : (
         <div className="space-y-1.5">

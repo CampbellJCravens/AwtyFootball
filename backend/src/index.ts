@@ -125,9 +125,12 @@ app.get('/api/whatsapp/health', (req: Request, res: Response) => {
 
 app.use('/api/whatsapp', whatsappRouter);
 
-// Health check endpoint
+// Health check endpoint. Reports the commit Render built from, so "is my push
+// live yet?" is answerable without a browser — the two services deploy
+// independently, and a frontend that ships ahead of the API it needs fails at
+// the worst moment. Null when running anywhere but Render.
 app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? null });
 });
 
 // Error handling middleware

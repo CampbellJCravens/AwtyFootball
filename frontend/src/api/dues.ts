@@ -49,6 +49,13 @@ export interface DuesGuestRow {
   shouldConvert: boolean;
 }
 
+export interface UnrosteredPaymentRow {
+  playerId: string;
+  name: string;
+  amountPaid: string;
+  payments: DuesPaymentDto[];
+}
+
 export interface DuesYearReport {
   duesYear: number;
   targetAmount: string;
@@ -56,6 +63,9 @@ export interface DuesYearReport {
   guestGameRate: string;
   openedAt: string | null;
   members: DuesMemberRow[];
+  /** Payments from people with no roster entry for the year — historical
+   *  imports, and anyone paid for before being added to the roster. */
+  unrostered: UnrosteredPaymentRow[];
   guests: DuesGuestRow[];
   totals: {
     billed: number;
@@ -68,6 +78,7 @@ export interface DuesYearReport {
     amountCollected: string;
     amountOutstanding: string;
     amountOverpaid: string;
+    amountUnrostered: string;
   };
 }
 

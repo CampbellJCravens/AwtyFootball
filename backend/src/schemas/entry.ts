@@ -24,6 +24,16 @@ const pictureUrlSchema = z
 // +, spaces, dashes); normalized to digits in the route. Empty string clears it.
 const phoneSchema = z.string().max(32, 'Phone number is too long').optional().nullable();
 
+// 1950 to a decade out: the upper bound allows someone marked alumni before
+// they have actually graduated; the lower is a sanity floor.
+const graduationYearSchema = z
+  .number()
+  .int()
+  .min(1950, 'Class year looks too early')
+  .max(new Date().getFullYear() + 10, 'Class year looks too far ahead')
+  .nullable()
+  .optional();
+
 export const createPlayerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(200, 'Name must be less than 200 characters'),
   pictureUrl: pictureUrlSchema,
@@ -32,6 +42,9 @@ export const createPlayerSchema = z.object({
   onRoster: z.boolean().optional(),
   isAlumni: z.boolean().optional(),
   memberSince: z.number().int().min(1900).max(2100).nullable().optional(),
+  // Class year for alumni who graduated. Null is normal and often permanent —
+  // some alumni are school dads whose children are the alumni.
+  graduationYear: graduationYearSchema,
 });
 
 export const updatePlayerSchema = z.object({
@@ -42,6 +55,9 @@ export const updatePlayerSchema = z.object({
   onRoster: z.boolean().optional(),
   isAlumni: z.boolean().optional(),
   memberSince: z.number().int().min(1900).max(2100).nullable().optional(),
+  // Class year for alumni who graduated. Null is normal and often permanent —
+  // some alumni are school dads whose children are the alumni.
+  graduationYear: graduationYearSchema,
 });
 
 export type CreatePlayerInput = z.infer<typeof createPlayerSchema>;

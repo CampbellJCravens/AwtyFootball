@@ -14,7 +14,14 @@ model Player {
   team       String?
   phone      String?  @unique // E.164, used to attribute WhatsApp poll votes
   onRoster   Boolean  @default(true) // false = prior member (no longer on the current roster)
-  isAlumni   Boolean  @default(false) // true = alumnus of the school; drives the alumni % figures
+  // "School-affiliated and therefore dues-exempt" — BROADER than "graduated".
+  // Some alumni are dads of the school whose children are the alumni; they are
+  // exempt either way (owner 2026-08-23). Drives the alumni % figures and the
+  // dues exemption.
+  isAlumni   Boolean  @default(false)
+  // Class year, for the alumni who actually graduated. Null is a normal and
+  // often permanent state — never treat a blank as incomplete data.
+  graduationYear Int?
   // First dues year, hand-seeded: per-player rosters only exist from 2025 but
   // the club goes back to 2018, so tenure cannot be derived. Null = unknown,
   // which reads as "not yet entered" rather than "rookie".
