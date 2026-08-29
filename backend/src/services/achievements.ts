@@ -1,6 +1,7 @@
 import prisma from '../prisma';
 import { isScoringGoal, isOwnGoal, scoreFor, goalValue } from './goals';
 import { concededBy, hasSwap, type SwapLike } from './attribution';
+import { isExcusedLeave } from './departures';
 
 // Types mirrored from stats.ts — kept local so this module is self-contained.
 interface GoalData {
@@ -11,6 +12,7 @@ interface GoalData {
   ownGoal?: boolean;
   goldenGoal?: boolean;
   value?: number; // scoreline weight; player credit is always 1
+  qualifiers?: string[]; // how it was scored; descriptive only
 }
 
 interface GameEventData {
@@ -87,10 +89,20 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
   if (!playerMap.has(playerId)) return null;
 
   const allGames = await loadAllGames();
+  // A standing exemption keeps someone out of the departure achievement the
+  // same way it keeps them out of the Lack of Stamina award.
+  const staminaExempt = allPlayers.find(p => p.id === playerId)?.staminaExempt ?? false;
 
   let wins = 0, ties = 0, goals = 0, ownGoals = 0, assists = 0, gamesPlayed = 0, cleanSheets = 0, totalSportsmanship = 0;
   let comebackWins = 0, gameWinningGoals = 0, goldenGoals = 0;
   let secondHalfGoals = 0, halfHatTricks = 0;
+  // Goal qualifiers. Every goal before 2026-08-29 is untagged, so these start
+  // near zero by design and can only ever UNDERCOUNT — nobody is handed an
+  // achievement they did not earn.
+  let headers = 0, cornerGoals = 0, deflections = 0, decidingOwnGoals = 0;
+  // Departures, from the same teamChanges rows the Lack of Stamina award reads.
+  // No match clock is involved, so these work across all history.
+  let fullGames = 0, fullGameStreak = 0, bestFullGameStreak = 0, unexcusedDepartures = 0;
   const matchResults: ('W' | 'L' | 'T')[] = [];
 
   const sortedGames = [...allGames].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -106,6 +118,29 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     else if (result === 'T') ties++;
 
     goals += game.goals.filter(g => g.scorerId === playerId && isScoringGoal(g)).length;
+    const scoredHere = game.goals.filter(g => g.scorerId === playerId && isScoringGoal(g));
+    const taggedWith = (q: string) => scoredHere.filter(g => g.qualifiers?.includes(q)).length;
+    headers += taggedWith('header');
+    cornerGoals += taggedWith('corner');
+    deflections += taggedWith('deflection');
+    // A golden goal ends the match, so an own goal carrying that flag is one
+    // that finished it for the opposition.
+    decidingOwnGoals += game.goals.filter(
+      g => g.scorerId === playerId && isOwnGoal(g) && g.goldenGoal === true).length;
+
+    // One departure per game, matching services/departures.ts: a game can hold
+    // two leave rows for the same player. An EXCUSED leave still breaks the
+    // full-game streak — the player left and the team still rebalanced — it
+    // simply is not held against them in the departure count.
+    const leavesHere = game.teamChanges.filter(c => c.type === 'leave' && c.playerId === playerId);
+    if (leavesHere.length > 0) {
+      fullGameStreak = 0;
+      if (!staminaExempt && leavesHere.some(c => !isExcusedLeave(c.reason))) unexcusedDepartures++;
+    } else {
+      fullGames++;
+      fullGameStreak++;
+      bestFullGameStreak = Math.max(bestFullGameStreak, fullGameStreak);
+    }
     // Golden goals are counted as RECORDS, never by their scoreline weight: a
     // decider worth 3 is one golden goal. Own goals never credit the scorer.
     goldenGoals += game.goals.filter(g => g.scorerId === playerId && isScoringGoal(g) && g.goldenGoal === true).length;
@@ -370,6 +405,22 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     { id: 'second_half_goals_5', name: 'The Late Show', description: 'Score 5 second-half goals', current: Math.min(secondHalfGoals, 5), target: 5 },
     { id: 'first_own_goal', name: 'Wrong Net', description: 'Score an own goal', current: Math.min(ownGoals, 1), target: 1 },
     { id: 'own_goals_3', name: 'Sponsored by the Opposition', description: 'Score 3 own goals', current: Math.min(ownGoals, 3), target: 3 },
+    // Goal qualifiers. Targets follow the 1-and-3 idiom above, which the goal
+    // volume supports: 6.5 goals a game across ~20 players makes 3 headers
+    // roughly a season for a good aerial player, where 10 would take years.
+    { id: 'first_header', name: 'Rise Above', description: 'Score a header', current: Math.min(headers, 1), target: 1 },
+    { id: 'headers_3', name: 'Air Superiority', description: 'Score 3 headers', current: Math.min(headers, 3), target: 3 },
+    { id: 'first_corner_goal', name: 'Set and Forget', description: 'Score from a corner', current: Math.min(cornerGoals, 1), target: 1 },
+    { id: 'corner_goals_3', name: 'Dead Ball Merchant', description: 'Score 3 from corners', current: Math.min(cornerGoals, 3), target: 3 },
+    { id: 'first_deflection', name: 'Off the Shin', description: 'Score off a deflection', current: Math.min(deflections, 1), target: 1 },
+    // Pairs with The Dagger, and is the rarest thing in the club: one holder.
+    { id: 'golden_own_goal', name: 'The Anti-Dagger', description: 'End a match by scoring an own goal', current: Math.min(decidingOwnGoals, 1), target: 1 },
+    // Staying on the pitch. Cannot be called Iron Man — games_50 already is.
+    { id: 'full_games_10', name: 'The Full Shift', description: 'Play 10 games without leaving early', current: Math.min(fullGames, 10), target: 10 },
+    { id: 'full_game_streak_15', name: 'Last Man Standing', description: 'Play 15 games in a row without leaving early', current: Math.min(bestFullGameStreak, 15), target: 15 },
+    // Counts only departures with no excusing reason, and never applies to a
+    // player with a standing exemption.
+    { id: 'left_early_5', name: 'Cinderella', description: 'Leave early 5 times — always gone before midnight', current: Math.min(unexcusedDepartures, 5), target: 5 },
   ];
 }
 
