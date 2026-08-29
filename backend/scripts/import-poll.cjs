@@ -15,45 +15,42 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 22Aug, final pre-game read from screenshots on 2026-08-22 10:58 CDT.
-// The poll creation message was dropped before the 08-19 fixes deployed
-// (Campbell's 656faa3 landed 08:26, ~2h after the poll went up), so no
-// WhatsappPoll row exists and the votes never had anywhere to land — hence
-// three rounds of manual import for this one game.
-// Final: 11 In / 3 Maybe / 5 Out, guests confirmed zero (+1 and +2 both empty).
-// Deltas vs the 08-21 09:08 read: Campbell Cravens in -> maybe, Siegfried Casar
-// out -> in, Lammy Lammers + Eric Saito new in, Nick Mbaezue-Daniel + Joseph
-// Garcia new out, and Bayo Tojuola WITHDREW (see `retracted`).
+// Poll for 29Aug — FINAL read from screenshots on 2026-08-28 08:07 CDT,
+// superseding the 08-27 mid-week read (9 In / 2 Maybe / 3 Out / 0 guests).
+// Capture is STILL dead despite Campbell's 2026-08-19 fix: WhatsappPoll still
+// holds exactly 2 rows ever (2026-08-07, 2026-07-15), so this week's poll was
+// never captured and the votes had nowhere to land -> manual import again.
+// This read: 12 In / 2 Maybe / 5 Out, and +1 guest (Franco Silva) — the first
+// non-zero guest count for this game. Deltas vs 08-27: +3 In (Alejandro,
+// Marcos, Joseph), +2 Out (Brian Karrs, Junior), Maybe unchanged, no retractions.
 const CONFIG = {
-  gameId: 'a86657df-e3ae-48aa-9069-cce374052ec7', // game #34, 2026-08-22
+  gameId: 'cebee9b4-8ff4-4042-8f32-044946535303', // game #35, 2026-08-29
   // Roster names, reconciled against the poll's display names. All matched the
-  // Player table exactly or via a known alias — none ambiguous this week:
-  //   "You" -> Morgan-Sean McCright        "Marcos" -> Marcos Conner
-  //   "Franco" -> Franco Silva             "Robert-san" -> Robert Peresich
-  //   "Adam Lammers" -> Lammy Lammers      "Jason Azirpe" -> Jason Arizpe
-  //   "Nicholas Mbaezue-Daniel" -> Nick Mbaezue-Daniel
-  //   "Campbell" -> Campbell Cravens (Eric Saito is a separate player, and he
-  //      is In this week, so both names appear)
+  // Player table exactly or via a known alias — verified against the roster:
+  //   "You" -> Morgan-Sean McCright        "Franco Silva" -> Franco Silva
+  //   "Campbell" -> Campbell Cravens       "Robert-san" -> Robert Peresich
+  //   "Marcos" -> Marcos Conner            "Junior" -> Junior (literal name)
+  //   "Alejandro De la Morena" -> Alejandro de la Molina
+  //     ^ NOTE: a separate player named plain "Alejandro" also exists. The
+  //       alias mapping is the owner-resolved one; do not re-guess it.
   yes: [
-    'Morgan-Sean McCright', 'Lammy Lammers', 'Siegfried Casar', 'Eric Saito',
-    'Milad Moradi', 'Manny Suarez', 'Marcos Conner', 'Josh Jackson',
-    'Franco Silva', 'Connor Shannon', 'Rolando Abreu',
-  ],
-  maybe: ['Campbell Cravens', 'Jason Arizpe', 'Robert Peresich'],
-  no: [
-    'Nick Mbaezue-Daniel', 'Joseph Garcia', 'Tommy El-Gawly', 'Adam Zebdawi',
+    'Morgan-Sean McCright', 'Alejandro de la Molina', 'Marcos Conner',
+    'Joseph Garcia', 'Franco Silva', 'Brian Buhr', 'Rolando Abreu',
+    'Tommy El-Gawly', 'Josh Jackson', 'Campbell Cravens', 'Manny Suarez',
     'Corey Rasch',
   ],
+  maybe: ['David Ramos', 'Robert Peresich'],
+  no: [
+    'Brian Karrs', 'Junior', 'Milad Moradi', 'Connor Shannon',
+    'Siegfried Casar',
+  ],
   // Votes WITHDRAWN since a previous import: the row is deleted, not set to
-  // 'no'. Bayo Tojuola (the raw 954 number, unnamed because he isn't in the
-  // linked account's contacts) was In on 08-19 and 08-21 and appears in no
-  // section at all today. Leaving the stale 'yes' row would score him as a
-  // no-show; deleting it returns him to the silent majority, which is what
-  // the poll now says.
-  retracted: ['Bayo Tojuola'],
+  // 'no'. All 14 voters from the 08-27 read still hold the same position, so
+  // nothing to retract this time.
+  retracted: [],
   // Guests brought, by roster name. Only counted on a 'yes' row.
-  // +1 and +2 both read 0 votes this time, so zero is confirmed, not assumed.
-  guests: {},
+  // Franco Silva voted both "In" and the "1 guest" option (same timestamp).
+  guests: { 'Franco Silva': 1 },
 };
 
 const WHATSAPP_SOURCE = 'whatsapp';
