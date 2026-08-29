@@ -123,18 +123,25 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     headers += taggedWith('header');
     cornerGoals += taggedWith('corner');
     deflections += taggedWith('deflection');
-    // An own goal that actually cost your team the match: take it back out and
-    // a different side wins, or nobody does. Keyed on the RESULT rather than on
-    // the golden-goal flag, because most of these owe nothing to that rule —
-    // game #34 was simply the last kick of a 3-3 — and a rout where the own
-    // goal made it 5-1 changed nothing and should not count.
+    // An own goal that WON the match for the opposition. Two things must both
+    // hold: the side it was credited to actually won, and they would not have
+    // won without it. Keyed on the result rather than on the golden-goal flag,
+    // because most of these owe nothing to that rule — game #34 was simply the
+    // last kick of a 3-3 — and the flag is allowed but never required.
+    //
+    // The second test alone is not enough: an own goal that turns your win into
+    // a DRAW also changes the result, but hands nobody a victory, so it is not
+    // this. A rout where the own goal made it 5-1 fails the second test.
     const winnerOf = (gs: GoalData[]) => {
       const c = scoreFor(gs, 'color'), w = scoreFor(gs, 'white');
       return c === w ? null : c > w ? 'color' : 'white';
     };
     decidingOwnGoals += game.goals.filter((g, i) => {
       if (g.scorerId !== playerId || !isOwnGoal(g)) return false;
-      return winnerOf(game.goals) !== winnerOf(game.goals.filter((_, j) => j !== i));
+      // On an own goal, `team` is already the side that benefited.
+      const benefiting = g.team;
+      if (!benefiting || winnerOf(game.goals) !== benefiting) return false;
+      return winnerOf(game.goals.filter((_, j) => j !== i)) !== benefiting;
     }).length;
 
     // One departure per game, matching services/departures.ts: a game can hold
