@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, LeaveReason, LEAVE_REASON_LABELS, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, LeaveReason, LEAVE_REASON_LABELS, GoalQualifier, GOAL_QUALIFIER_LABELS, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import { scoreFor } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
@@ -46,6 +46,7 @@ type LocalGoal = {
   ownGoal?: boolean;
   goldenGoal?: boolean;
   value?: number;
+  qualifiers?: GoalQualifier[];
 };
 
 interface GameModuleExpandedProps {
@@ -224,6 +225,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             ownGoal: goal.ownGoal,
             goldenGoal: goal.goldenGoal,
             value: goal.value,
+            qualifiers: goal.qualifiers,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -436,6 +438,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         ...(goal.ownGoal ? { ownGoal: true } : {}),
         ...(goal.goldenGoal ? { goldenGoal: true } : {}),
         ...(goal.value !== undefined ? { value: goal.value } : {}),
+        ...(goal.qualifiers?.length ? { qualifiers: goal.qualifiers } : {}),
       }));
       
       // Convert team changes to API format
@@ -662,6 +665,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             ownGoal: goal.ownGoal,
             goldenGoal: goal.goldenGoal,
             value: goal.value,
+            qualifiers: goal.qualifiers,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -1000,14 +1004,17 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }
   };
 
-  const handleAssisterSelected = (assister: Player | null) => {
+  const handleAssisterSelected = (assister: Player | null, qualifiers: GoalQualifier[] = []) => {
     if (goalScorer) {
       const scorerTeam = playerTeams[goalScorer.id] || null;
       // Use game date, not today's date, so timestamps are on the correct date
       const gameDateObj = new Date(gameDate);
       const now = new Date(gameDateObj);
       now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
-      recordGoal({ scorer: goalScorer, assister, timestamp: now, team: scorerTeam });
+      recordGoal({
+        scorer: goalScorer, assister, timestamp: now, team: scorerTeam,
+        ...(qualifiers.length ? { qualifiers } : {}),
+      });
       setGoalScorer(null);
     }
   };
@@ -1055,18 +1062,24 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }
   };
 
-  const handleEditAssisterSelected = (assister: Player | null) => {
+  const handleEditAssisterSelected = (assister: Player | null, qualifiers: GoalQualifier[] = []) => {
     if (editingGoalIndex !== null && editingScorer) {
       const scorerTeam = playerTeams[editingScorer.id] || null;
       setGoals(prev => {
         const newGoals = [...prev];
         newGoals[editingGoalIndex] = {
+          // Spread first: correcting WHO scored must not silently discard what
+          // the goal was worth. This used to rebuild the record from scratch,
+          // so editing the scorer of a golden goal reset its scoreline weight
+          // and turned a 4-3 back into a 3-3 with nothing on screen to say so.
+          ...prev[editingGoalIndex],
           scorer: editingScorer,
           assister,
           timestamp: prev[editingGoalIndex].timestamp, // Keep original timestamp
           team: scorerTeam,
           // Re-picking a scorer the normal way makes this an ordinary goal again.
           ownGoal: false,
+          ...(qualifiers.length ? { qualifiers } : { qualifiers: undefined }),
         };
         return newGoals;
       });
@@ -1588,10 +1601,15 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                                 const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
                                 // goal.team is the team CREDITED, so an own goal
                                 // already reads under the benefiting team.
-                                if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} — own goal`;
+                                // Qualifiers are descriptive; a goal with none
+                                // reads exactly as it always has.
+                                const tags = goal.qualifiers?.length
+                                  ? ` \u00b7 ${goal.qualifiers.map(q => GOAL_QUALIFIER_LABELS[q]).join(', ')}`
+                                  : '';
+                                if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} — own goal${tags}`;
                                 return goal.assister
-                                  ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}`
-                                  : `(${teamLabel}) ${displayName(goal.scorer)} scored!`;
+                                  ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}${tags}`
+                                  : `(${teamLabel}) ${displayName(goal.scorer)} scored!${tags}`;
                               })()}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1925,6 +1943,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         <GoalAssistModal
           scorer={goalScorer}
           teamPlayers={getTeamPlayers(goalScorer)}
+          initialQualifiers={editingGoalIndex !== null ? goals[editingGoalIndex]?.qualifiers : undefined}
           onSelectAssister={handleEditAssisterSelected}
           onClose={handleCloseEditModal}
         />

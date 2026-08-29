@@ -14,12 +14,27 @@ export interface Goal {
   goldenGoal?: boolean;
   // Scoreline weight; absent or 1 = normal. Player credit is ALWAYS 1.
   value?: number;
+  qualifiers?: GoalQualifier[];
 }
 
 // Own goals credit the opposition, so `team` handles the scoreline. Never
 // credit the scorer's own tally with one.
 export const isScoringGoal = (g: { ownGoal?: boolean }) => !g.ownGoal;
 export const isOwnGoal = (g: { ownGoal?: boolean }) => g.ownGoal === true;
+
+// How a goal was scored. Descriptive only: a qualified goal is worth exactly
+// what a plain one is, and an empty list means nobody said. Held as a SET
+// because these are independent — corner is where it came from, header is how
+// it was met, deflection is what happened on the way.
+export type GoalQualifier = 'corner' | 'header' | 'deflection';
+
+export const GOAL_QUALIFIER_LABELS: Record<GoalQualifier, string> = {
+  corner: 'Corner',
+  header: 'Header',
+  deflection: 'Deflection',
+};
+
+export const GOAL_QUALIFIERS = Object.keys(GOAL_QUALIFIER_LABELS) as GoalQualifier[];
 
 export type LeaveReason = 'injured' | 'family' | 'work' | 'quit';
 

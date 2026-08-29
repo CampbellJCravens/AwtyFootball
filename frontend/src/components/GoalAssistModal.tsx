@@ -1,27 +1,36 @@
 import { useState, useMemo } from 'react';
 import { Player } from '../api/players';
+import { GoalQualifier, GOAL_QUALIFIERS, GOAL_QUALIFIER_LABELS } from '../api/games';
 
 interface GoalAssistModalProps {
   scorer: Player;
   teamPlayers: Player[];
-  onSelectAssister: (assister: Player | null) => void;
+  initialQualifiers?: GoalQualifier[];
+  onSelectAssister: (assister: Player | null, qualifiers: GoalQualifier[]) => void;
   onClose: () => void;
 }
 
-export default function GoalAssistModal({ scorer, teamPlayers, onSelectAssister, onClose }: GoalAssistModalProps) {
+export default function GoalAssistModal({ scorer, teamPlayers, initialQualifiers, onSelectAssister, onClose }: GoalAssistModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  // Rides in the sheet that already opens for every goal, so describing one
+  // costs no extra step and skipping still leaves a plain goal. Independent
+  // toggles rather than one choice: a header from a corner is both.
+  const [qualifiers, setQualifiers] = useState<GoalQualifier[]>(initialQualifiers ?? []);
+
+  const toggleQualifier = (q: GoalQualifier) =>
+    setQualifiers(prev => (prev.includes(q) ? prev.filter(x => x !== q) : [...prev, q]));
 
   const getInitial = (name: string) => {
     return name.charAt(0).toUpperCase();
   };
 
   const handlePlayerClick = (player: Player) => {
-    onSelectAssister(player);
+    onSelectAssister(player, qualifiers);
     onClose();
   };
 
   const handleSkip = () => {
-    onSelectAssister(null);
+    onSelectAssister(null, qualifiers);
     onClose();
   };
 
@@ -75,6 +84,28 @@ export default function GoalAssistModal({ scorer, teamPlayers, onSelectAssister,
 
         {/* Scrollable Player List */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col">
+          {/* How it was scored. Optional, multi-select, and applied whether an
+              assister is chosen or the sheet is skipped. */}
+          <div className="mb-4 flex-shrink-0">
+            <p className="text-xs font-medium text-text-tertiary mb-2">How was it scored? (optional)</p>
+            <div className="flex flex-wrap gap-2">
+              {GOAL_QUALIFIERS.map(q => {
+                const on = qualifiers.includes(q);
+                return (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => toggleQualifier(q)}
+                    aria-pressed={on}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${on ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+                  >
+                    {GOAL_QUALIFIER_LABELS[q]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Search Bar */}
           <div className="mb-4 flex-shrink-0">
             <input

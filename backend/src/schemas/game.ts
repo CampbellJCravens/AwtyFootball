@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const goalQualifierSchema = z.enum(['corner', 'header', 'deflection']);
+
 export const goalSchema = z.object({
   scorerId: z.string(),
   assisterId: z.string().nullable(),
@@ -15,6 +17,12 @@ export const goalSchema = z.object({
   // ALWAYS credited 1 regardless of this, or one freak comeback distorts a
   // season's leaderboards.
   value: z.number().int().min(1).optional(),
+  // How the goal was scored. Purely descriptive — a qualified goal is worth
+  // exactly the same as a plain one, and an empty or absent list just means
+  // nobody said. A SET, not one choice: a header from a corner is the most
+  // ordinary set-piece goal there is, and forcing a pick between the two would
+  // record a falsehood either way.
+  qualifiers: z.array(goalQualifierSchema).optional(),
 });
 
 // Why a player left. ABSENT IS NOT NEUTRAL: an untagged departure counts toward
