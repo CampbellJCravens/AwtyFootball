@@ -19,6 +19,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
   const [error, setError] = useState<string | null>(null);
   const [onRoster, setOnRoster] = useState(true);
   const [isAlumni, setIsAlumni] = useState(false);
+  const [staminaExempt, setStaminaExempt] = useState(false);
   const [memberSince, setMemberSince] = useState('');
   const [graduationYear, setGraduationYear] = useState('');
 
@@ -28,6 +29,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
       setPhone(player.phone ?? '');
       setOnRoster(player.onRoster);
       setIsAlumni(player.isAlumni);
+      setStaminaExempt(player.staminaExempt);
       setMemberSince(player.memberSince ? String(player.memberSince) : '');
       setGraduationYear(player.graduationYear ? String(player.graduationYear) : '');
       setPicturePreview(player.pictureUrl);
@@ -120,6 +122,7 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
         name: name.trim(),
         onRoster,
         isAlumni,
+        staminaExempt,
         memberSince: memberSince.trim() === '' ? null : Number(memberSince),
         // Cleared when the player is not alumni, so a year can never linger on
         // someone the field no longer applies to.
@@ -229,6 +232,33 @@ export default function EditPlayerModal({ player, onClose, onSuccess, isAdmin = 
             <p className="mt-1 text-xs text-text-tertiary">
               Feeds the alumni % on the players list and the per-game alumni share —
               and alumni are not billed for dues.
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-text-secondary mb-2">Early departures</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setStaminaExempt(false)}
+                disabled={isSubmitting}
+                className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${!staminaExempt ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+              >
+                Counted
+              </button>
+              <button
+                type="button"
+                onClick={() => setStaminaExempt(true)}
+                disabled={isSubmitting}
+                className={`flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${staminaExempt ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+              >
+                Never counted
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-text-tertiary">
+              For a standing arrangement — childcare, a weekly commitment — so nobody has to
+              remember to give a reason each week. One-off departures are better handled by
+              picking a reason when they leave.
             </p>
           </div>
 

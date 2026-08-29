@@ -21,6 +21,19 @@ export interface Goal {
 export const isScoringGoal = (g: { ownGoal?: boolean }) => !g.ownGoal;
 export const isOwnGoal = (g: { ownGoal?: boolean }) => g.ownGoal === true;
 
+export type LeaveReason = 'injured' | 'family' | 'work' | 'quit';
+
+export const LEAVE_REASON_LABELS: Record<LeaveReason, string> = {
+  injured: 'Injured',
+  family: 'Family',
+  work: 'Work',
+  quit: 'Had enough',
+};
+
+// The reasons that clear a departure. Kept beside the labels so a new reason
+// cannot be added to one without a decision about the other.
+export const EXCUSED_LEAVE_REASONS: LeaveReason[] = ['injured', 'family', 'work'];
+
 export interface TeamChange {
   playerId: string;
   timestamp: string; // ISO date string
@@ -28,6 +41,10 @@ export interface TeamChange {
   type: 'leave' | 'swap';
   previousTeam?: 'color' | 'white';
   newTeam?: 'color' | 'white';
+  // Why they left. ABSENT IS NOT NEUTRAL: an untagged departure counts toward
+  // Lack of Stamina, and only injured/family/work clears it. 'quit' records
+  // that somebody actually asked and scores the same as a blank.
+  reason?: LeaveReason;
 }
 
 export interface GameEvent {

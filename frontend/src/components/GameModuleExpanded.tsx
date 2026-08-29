@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, LeaveReason, LEAVE_REASON_LABELS, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import { scoreFor } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
@@ -93,10 +93,11 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [error, setError] = useState<string | null>(null);
   const [playerTeams, setPlayerTeams] = useState<Record<string, 'color' | 'white'>>({});
   const [leftPlayers, setLeftPlayers] = useState<Record<string, boolean>>({});
+  const [reasonForPlayerId, setReasonForPlayerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
-  const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
+  const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
   // The side gap at the last "Not now". Re-offers only if the gap widens.
   const [rebalanceDismissedAt, setRebalanceDismissedAt] = useState<number | null>(null);
@@ -252,7 +253,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
       // Restore team changes from database
       if (gameData.teamChanges && gameData.teamChanges.length > 0) {
-        const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
+        const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }> = [];
         
         gameData.teamChanges.forEach(change => {
           const player = playersData.find(p => p.id === change.playerId);
@@ -264,6 +265,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               type: change.type,
               previousTeam: change.previousTeam,
               newTeam: change.newTeam,
+              reason: change.reason,
             });
           }
         });
@@ -444,6 +446,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         type: change.type,
         previousTeam: change.previousTeam,
         newTeam: change.newTeam,
+        ...(change.reason ? { reason: change.reason } : {}),
       }));
 
       // Convert game events to API format
@@ -866,7 +869,21 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         ...prev,
         { player, timestamp: now, team, type: 'leave' },
       ]);
+      // The departure is already recorded. The sheet only ever ADDS a reason to
+      // it, so dismissing it loses nothing — never put the tap behind a modal,
+      // because a missed departure is worse than an untagged one.
+      setReasonForPlayerId(playerId);
     }
+  };
+
+  /** Tag an already-recorded departure, or clear the tag when re-picking. */
+  const setLeaveReason = (playerId: string, reason: LeaveReason | null) => {
+    setTeamChanges(prev => {
+      const lastIdx = prev.map(c => c.player.id === playerId && c.type === 'leave').lastIndexOf(true);
+      if (lastIdx === -1) return prev;
+      return prev.map((c, i) => (i === lastIdx ? { ...c, reason: reason ?? undefined } : c));
+    });
+    setReasonForPlayerId(null);
   };
 
   const recordSwap = (playerId: string, previousTeam: 'color' | 'white', newTeam: 'color' | 'white') => {
@@ -1706,7 +1723,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                           >
                             <span className="pr-3 flex-1 pl-3">
                               {change.type === 'leave'
-                                ? `${displayName(change.player)} left the game (${change.team === 'color' ? 'Color' : 'White'})`
+                                ? `${displayName(change.player)} left the game (${change.team === 'color' ? 'Color' : 'White'})${change.reason ? ` \u00b7 ${LEAVE_REASON_LABELS[change.reason]}` : ''}`
                                 : `${displayName(change.player)} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1970,6 +1987,42 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                   Arm it
                 </button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Why they left. Opens AFTER the departure is already recorded, so
+          dismissing it simply leaves the reason blank — which still counts
+          toward Lack of Stamina. Only Injured/Family/Work clear it. */}
+      {reasonForPlayerId !== null && (() => {
+        const leaver = allPlayers.find(p => p.id === reasonForPlayerId);
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center z-50 p-4">
+            <div className="bg-surface rounded-xl shadow-modal max-w-sm w-full p-6 border border-border-emphasis">
+              <h3 className="text-lg font-semibold text-text-primary mb-1">
+                {leaver ? displayName(leaver) : 'Player'} left — why?
+              </h3>
+              <p className="text-sm text-text-secondary mb-4">
+                Already recorded. Injured, family or work keeps it out of Lack of Stamina.
+              </p>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {(Object.keys(LEAVE_REASON_LABELS) as LeaveReason[]).map(r => (
+                  <button
+                    key={r}
+                    onClick={() => setLeaveReason(reasonForPlayerId, r)}
+                    className="px-4 py-3 border border-border-emphasis text-text-primary rounded-xl text-sm font-medium hover:bg-surface-hover active:bg-surface-active transition-colors"
+                  >
+                    {LEAVE_REASON_LABELS[r]}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setReasonForPlayerId(null)}
+                className="w-full px-4 py-2 text-text-secondary rounded-xl text-sm font-medium hover:bg-surface-hover transition-colors"
+              >
+                Skip
+              </button>
             </div>
           </div>
         );

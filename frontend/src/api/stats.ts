@@ -163,6 +163,7 @@ export interface MonthlyStatsResponse {
     topDefender: MonthlyAward[] | null;
     sportsmanOfTheMonth: MonthlyAward[] | null;
     dirtiestPlayerOfTheMonth: MonthlyAward[] | null;
+    lackOfStamina: MonthlyAward[] | null;
     // null in any month without an own goal — the section is then not rendered.
     ownGoalOfTheMonth: MonthlyAward[] | null;
     topDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
@@ -319,6 +320,7 @@ export interface YearlyStatsResponse {
     topDefender: MonthlyAward[] | null;
     sportsman: MonthlyAward[] | null;
     dirtiestPlayer: MonthlyAward[] | null;
+    lackOfStamina: MonthlyAward[] | null;
   };
   bestDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
   bestTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;

@@ -10,6 +10,7 @@ export interface Player {
   isAlumni: boolean;         // school-affiliated and dues-exempt; broader than "graduated"
   graduationYear: number | null; // class year, null is normal for non-graduating alumni
   memberSince: number | null; // first dues year; hand-seeded, null = unknown
+  staminaExempt: boolean;    // never counted in Lack of Stamina (standing arrangement)
   hasPhone: boolean;         // whether a WhatsApp number is linked (safe to show)
   phone?: string | null;     // actual number — only returned to admins
   createdAt: string;
@@ -33,6 +34,7 @@ export interface UpdatePlayerData {
   phone?: string;
   onRoster?: boolean;
   isAlumni?: boolean;
+  staminaExempt?: boolean;
   graduationYear?: number | null;
 }
 
