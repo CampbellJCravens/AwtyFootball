@@ -9,6 +9,7 @@ import ReliabilityTab from './ReliabilityTab';
 import ChurnTab from './ChurnTab';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchYearlyStats, MonthlyAward } from '../api/stats';
+import { standoutGameLine } from '../utils/standoutGameLine';
 import { renderYearlyReportImage, YearlyReportData, YearlyAwardItem, YearlyLeaderboard } from '../utils/renderYearlyReportImage';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -102,7 +103,7 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
         banners.push({
           label: 'GAME OF THE SEASON',
           names: gots.gameNumber ? `Game ${gots.gameNumber}` : new Date(gots.date).toLocaleDateString(),
-          value: `${gots.colorScore}–${gots.whiteScore}${gots.leadChanges ? ` · ${gots.leadChanges} lead change${gots.leadChanges === 1 ? '' : 's'}` : ''}`,
+          value: standoutGameLine(gots),
         });
       }
 

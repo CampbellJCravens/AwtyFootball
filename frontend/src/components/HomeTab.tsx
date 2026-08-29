@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchMonthlyStats, MonthlyStatsResponse, MonthlyAward, LeaderboardEntry } from '../api/stats';
 import { useAuth } from '../contexts/AuthContext';
+import { standoutGameLine } from '../utils/standoutGameLine';
 import { renderMonthlyReportImage, MonthlyReportData, MonthlyAwardItem } from '../utils/renderMonthlyReportImage';
 import ImageLightbox from './ImageLightbox';
 import BalanceSummaryCard from './BalanceSummaryCard';
@@ -268,7 +269,7 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
         awards.push({
           label: 'GAME OF THE MONTH',
           names: [d],
-          value: `${gotm.colorScore}\u2013${gotm.whiteScore}${gotm.leadChanges ? ` \u00b7 ${gotm.leadChanges} lead change${gotm.leadChanges === 1 ? '' : 's'}` : ''}`,
+          value: standoutGameLine(gotm),
           // Pushed last AND flagged wide: it is a highlight of the month, and
           // it used to be a full-width slab only because it happened to be the
           // odd tile out.

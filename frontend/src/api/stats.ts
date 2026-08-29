@@ -214,6 +214,7 @@ export interface MatchBalance {
   leadChanges: number;
   comeback: boolean | null;
   tie: boolean;
+  goldenDecided: boolean;
   quality: MatchQuality;
   qualityLabel: string;
 }
@@ -266,6 +267,12 @@ export interface StandoutGame {
   totalGoals: number;
   quality: MatchQuality;
   qualityLabel: string;
+  /** Winner trailed at some point. Null on a draw. */
+  comeback?: boolean | null;
+  margin?: number;
+  tie?: boolean;
+  /** The golden goal's extra weight changed the result. Implies `comeback`. */
+  goldenDecided?: boolean;
 }
 
 // Admin-only. Never render this anywhere a non-admin can reach — a public list

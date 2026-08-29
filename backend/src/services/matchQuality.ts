@@ -20,6 +20,7 @@ export const MATCH_QUALITY_LABEL: Record<MatchQuality, string> = {
 
 export interface TimedGoal extends WeightedGoalLike {
   timestamp?: string;
+  goldenGoal?: boolean;
 }
 
 export interface MatchBalance {
@@ -31,6 +32,17 @@ export interface MatchBalance {
   /** The winner trailed at some point. Null for a draw. */
   comeback: boolean | null;
   tie: boolean;
+  /**
+   * A golden goal's extra weight CHANGED the result — strip it back to 1 and a
+   * different team wins, or nobody does. Only the trailing team's decider is
+   * worth more than 1, so this can only be true when they scored it, which
+   * means it already implies `comeback`: never print both.
+   *
+   * Deliberately false when scores were level at arming (n = 0, decider worth
+   * 1): the golden-goal rule ended the game there, but the scoreline would
+   * read the same without it, so nothing was made a difference to.
+   */
+  goldenDecided: boolean;
   quality: MatchQuality;
 }
 
@@ -76,6 +88,11 @@ export function computeBalance(goals: TimedGoal[]): MatchBalance {
         : margin <= 3 ? 'competitive'
           : 'oneSided';
 
+  const flattened = goals.map(g => (g.goldenGoal ? { ...g, value: 1 } : g));
+  const flatColor = scoreFor(flattened, 'color');
+  const flatWhite = scoreFor(flattened, 'white');
+  const flatWinner = flatColor === flatWhite ? null : flatColor > flatWhite ? 'color' : 'white';
+
   return {
     colorScore,
     whiteScore,
@@ -84,6 +101,7 @@ export function computeBalance(goals: TimedGoal[]): MatchBalance {
     leadChanges,
     comeback: winner === null ? null : Array.from(led).some(t => t !== winner),
     tie,
+    goldenDecided: goals.some(g => g.goldenGoal) && flatWinner !== winner,
     quality,
   };
 }
