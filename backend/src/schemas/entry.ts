@@ -41,6 +41,7 @@ export const createPlayerSchema = z.object({
   phone: phoneSchema,
   onRoster: z.boolean().optional(),
   isAlumni: z.boolean().optional(),
+  staminaExempt: z.boolean().optional(),
   memberSince: z.number().int().min(1900).max(2100).nullable().optional(),
   // Class year for alumni who graduated. Null is normal and often permanent —
   // some alumni are school dads whose children are the alumni.
@@ -54,6 +55,7 @@ export const updatePlayerSchema = z.object({
   phone: phoneSchema,
   onRoster: z.boolean().optional(),
   isAlumni: z.boolean().optional(),
+  staminaExempt: z.boolean().optional(),
   memberSince: z.number().int().min(1900).max(2100).nullable().optional(),
   // Class year for alumni who graduated. Null is normal and often permanent —
   // some alumni are school dads whose children are the alumni.

@@ -26,6 +26,11 @@ model Player {
   // the club goes back to 2018, so tenure cannot be derived. Null = unknown,
   // which reads as "not yet entered" rather than "rookie".
   memberSince Int?
+  // Never counted in Lack of Stamina, however often they leave early. For a
+  // STANDING arrangement (childcare, a weekly commitment) — one setting instead
+  // of remembering to tag every departure. Per-departure reasons cover one-offs;
+  // setting both is harmless, exclusion is exclusion.
+  staminaExempt Boolean @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

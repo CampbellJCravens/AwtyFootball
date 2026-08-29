@@ -11,6 +11,7 @@ import { computeBalance, summariseBalance, pickStandoutGame, MATCH_QUALITY_LABEL
 import { summariseTempo } from '../services/tempo';
 import { computeChurn } from '../services/churn';
 import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
+import { computeDepartures, staminaAward } from '../services/departures';
 import { publicPlayer, avatarUrl, loadPlayersForDisplay } from '../services/avatar';
 
 const router = Router();
@@ -569,6 +570,14 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
       ? getTop(s => s.fouls, undefined, 0)
       : null;
 
+    // Lack of Stamina: worst departure RATE, among players over the games floor.
+    // Counted from teamChanges rather than any stat block, so it sits outside
+    // getTop. `value` is the departure count and `games` its denominator; the
+    // percentage is derived at the display end from those two.
+    const lackOfStamina = staminaAward(computeDepartures(monthGames, allPlayers))
+      .filter(r => playerMap.has(r.playerId))
+      .map(r => ({ player: playerMap.get(r.playerId)!, value: r.departures, games: r.gamesPlayed }));
+
     // Own Goal of the Month. Unlike every other award this one is absent, not
     // "unclaimed", in months with none — getTop returns null when the top value
     // is 0, and the frontend must skip the section entirely rather than render
@@ -716,6 +725,7 @@ router.get('/monthly', async (req: AuthenticatedRequest, res: Response) => {
         topDefender,
         sportsmanOfTheMonth,
         dirtiestPlayerOfTheMonth,
+        lackOfStamina,
         ownGoalOfTheMonth,
         topDuo,
         topTrio,
@@ -917,6 +927,11 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         topDefender: marquee(defensiveRating),
         sportsman: marquee(sportsmanship),
         dirtiestPlayer: marquee(fouls),
+        // Sits two tiles below ironMan on the report, which reads well: most
+        // games played, and separately most games left early.
+        lackOfStamina: staminaAward(computeDepartures(yearGames, allPlayers))
+          .filter(r => playerMap.has(r.playerId))
+          .map(r => ({ player: playerMap.get(r.playerId)!, value: r.departures, games: r.gamesPlayed })),
       },
       bestDuo: bestDuo.length ? bestDuo : null,
       bestTrio: bestTrio.length ? bestTrio : null,

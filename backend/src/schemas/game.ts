@@ -17,6 +17,14 @@ export const goalSchema = z.object({
   value: z.number().int().min(1).optional(),
 });
 
+// Why a player left. ABSENT IS NOT NEUTRAL: an untagged departure counts toward
+// Lack of Stamina, and only an explicit excusing reason removes it. That
+// asymmetry is deliberate — if the metric needed someone to volunteer 'quit'
+// while the admin tagging them stood next to them, it would read zero forever.
+// 'quit' therefore exists only to record that somebody actually asked; it
+// scores identically to a blank.
+export const leaveReasonSchema = z.enum(['injured', 'family', 'work', 'quit']);
+
 export const teamChangeSchema = z.object({
   playerId: z.string(),
   timestamp: z.string(), // ISO date string
@@ -24,6 +32,8 @@ export const teamChangeSchema = z.object({
   type: z.enum(['leave', 'swap']),
   previousTeam: z.enum(['color', 'white']).optional(),
   newTeam: z.enum(['color', 'white']).optional(),
+  // Only meaningful on type 'leave'.
+  reason: leaveReasonSchema.optional(),
 });
 
 export const gameEventSchema = z.object({

@@ -26,6 +26,9 @@ export interface SwapLike {
   timestamp?: string | Date | null;
   previousTeam?: Side | null;
   newTeam?: Side | null;
+  // Why a 'leave' happened; read by services/departures.ts. Nothing in this
+  // file uses it, but it rides along on the same records.
+  reason?: string;
 }
 
 export interface TimedGoalLike extends WeightedGoalLike {
