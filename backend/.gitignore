@@ -15,6 +15,7 @@ mark-former-backup-*.json
 dues-*-backup.json
 guest-*-backup.json
 game35-golden-backup-*.json
+leave-reasons-backup-*.json
 # Player photos, full-resolution originals — never belongs in the repo.
 avatar-backup-*.json
 
