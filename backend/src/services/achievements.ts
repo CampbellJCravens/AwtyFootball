@@ -123,10 +123,19 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     headers += taggedWith('header');
     cornerGoals += taggedWith('corner');
     deflections += taggedWith('deflection');
-    // A golden goal ends the match, so an own goal carrying that flag is one
-    // that finished it for the opposition.
-    decidingOwnGoals += game.goals.filter(
-      g => g.scorerId === playerId && isOwnGoal(g) && g.goldenGoal === true).length;
+    // An own goal that actually cost your team the match: take it back out and
+    // a different side wins, or nobody does. Keyed on the RESULT rather than on
+    // the golden-goal flag, because most of these owe nothing to that rule —
+    // game #34 was simply the last kick of a 3-3 — and a rout where the own
+    // goal made it 5-1 changed nothing and should not count.
+    const winnerOf = (gs: GoalData[]) => {
+      const c = scoreFor(gs, 'color'), w = scoreFor(gs, 'white');
+      return c === w ? null : c > w ? 'color' : 'white';
+    };
+    decidingOwnGoals += game.goals.filter((g, i) => {
+      if (g.scorerId !== playerId || !isOwnGoal(g)) return false;
+      return winnerOf(game.goals) !== winnerOf(game.goals.filter((_, j) => j !== i));
+    }).length;
 
     // One departure per game, matching services/departures.ts: a game can hold
     // two leave rows for the same player. An EXCUSED leave still breaks the
@@ -414,7 +423,7 @@ export async function computePlayerAchievements(playerId: string): Promise<Achie
     { id: 'corner_goals_3', name: 'Dead Ball Merchant', description: 'Score 3 from corners', current: Math.min(cornerGoals, 3), target: 3 },
     { id: 'first_deflection', name: 'Off the Shin', description: 'Score off a deflection', current: Math.min(deflections, 1), target: 1 },
     // Pairs with The Dagger, and is the rarest thing in the club: one holder.
-    { id: 'golden_own_goal', name: 'The Anti-Dagger', description: 'End a match by scoring an own goal', current: Math.min(decidingOwnGoals, 1), target: 1 },
+    { id: 'golden_own_goal', name: 'The Anti-Dagger', description: 'Score an own goal that hands the other team the win', current: Math.min(decidingOwnGoals, 1), target: 1 },
     // Staying on the pitch. Cannot be called Iron Man — games_50 already is.
     { id: 'full_games_10', name: 'The Full Shift', description: 'Play 10 games without leaving early', current: Math.min(fullGames, 10), target: 10 },
     { id: 'full_game_streak_15', name: 'Last Man Standing', description: 'Play 15 games in a row without leaving early', current: Math.min(bestFullGameStreak, 15), target: 15 },
