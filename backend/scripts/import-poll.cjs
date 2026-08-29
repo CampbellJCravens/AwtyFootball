@@ -15,14 +15,15 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 29Aug — FINAL read from screenshots on 2026-08-28 08:07 CDT,
-// superseding the 08-27 mid-week read (9 In / 2 Maybe / 3 Out / 0 guests).
+// Poll for 29Aug — GAME-MORNING read from screenshots on 2026-08-29 06:45 CDT
+// (game is 08:45 today), superseding the 08-28 read (12 In / 2 Maybe / 5 Out /
+// 1 guest) and the 08-27 mid-week read (9/2/3/0).
 // Capture is STILL dead despite Campbell's 2026-08-19 fix: WhatsappPoll still
 // holds exactly 2 rows ever (2026-08-07, 2026-07-15), so this week's poll was
 // never captured and the votes had nowhere to land -> manual import again.
-// This read: 12 In / 2 Maybe / 5 Out, and +1 guest (Franco Silva) — the first
-// non-zero guest count for this game. Deltas vs 08-27: +3 In (Alejandro,
-// Marcos, Joseph), +2 Out (Brian Karrs, Junior), Maybe unchanged, no retractions.
+// This read: 14 In / 2 Maybe / 5 Out, +1 guest (Franco Silva). Deltas vs 08-28:
+// +2 In (Adam "Lammy" Lammers 02:58, Jason Arizpe 21:08 Thu), everything else
+// unchanged — no retractions, same Out/Maybe lists, same single guest.
 const CONFIG = {
   gameId: 'cebee9b4-8ff4-4042-8f32-044946535303', // game #35, 2026-08-29
   // Roster names, reconciled against the poll's display names. All matched the
@@ -33,11 +34,13 @@ const CONFIG = {
   //   "Alejandro De la Morena" -> Alejandro de la Molina
   //     ^ NOTE: a separate player named plain "Alejandro" also exists. The
   //       alias mapping is the owner-resolved one; do not re-guess it.
+  //   "Adam Lammers" -> Lammy Lammers      "Jason Azirpe" -> Jason Arizpe
+  //     ^ NOTE: a separate player "Adam Zebdawi" exists; not the same person.
   yes: [
-    'Morgan-Sean McCright', 'Alejandro de la Molina', 'Marcos Conner',
-    'Joseph Garcia', 'Franco Silva', 'Brian Buhr', 'Rolando Abreu',
-    'Tommy El-Gawly', 'Josh Jackson', 'Campbell Cravens', 'Manny Suarez',
-    'Corey Rasch',
+    'Morgan-Sean McCright', 'Lammy Lammers', 'Jason Arizpe',
+    'Alejandro de la Molina', 'Marcos Conner', 'Joseph Garcia',
+    'Franco Silva', 'Brian Buhr', 'Rolando Abreu', 'Tommy El-Gawly',
+    'Josh Jackson', 'Campbell Cravens', 'Manny Suarez', 'Corey Rasch',
   ],
   maybe: ['David Ramos', 'Robert Peresich'],
   no: [
@@ -45,7 +48,7 @@ const CONFIG = {
     'Siegfried Casar',
   ],
   // Votes WITHDRAWN since a previous import: the row is deleted, not set to
-  // 'no'. All 14 voters from the 08-27 read still hold the same position, so
+  // 'no'. All 19 voters from the 08-28 read still hold the same position, so
   // nothing to retract this time.
   retracted: [],
   // Guests brought, by roster name. Only counted on a 'yes' row.
