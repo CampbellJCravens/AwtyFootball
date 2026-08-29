@@ -345,12 +345,18 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const armedEvent = gameEvents.find(e => e.type === 'goldenGoalArmed') ?? null;
   const armedN = armedEvent?.n ?? null;
 
-  // 80 minutes of PLAY, not of morning — the break no longer counts toward it.
+  // 70 minutes of PLAY, not of morning — the break no longer counts toward it.
   // Owner 2026-08-22 made this a gate rather than a prompt threshold: the bar
-  // is now the only way to arm, so before 80 there is no way to. That reverses
+  // is now the only way to arm, so before 70 there is no way to. That reverses
   // the 2026-08-15 call deliberately; if short games start losing their
   // decider, lower this number rather than adding a second control.
-  const GOLDEN_GOAL_MINUTES = 80;
+  //
+  // Lowered 80 -> 70 on 2026-08-29, which is that documented remedy firing for
+  // the first time: game #35 ran 74:41 of play (Houston heat cut it short) and
+  // finished 0 seconds' worth of arming window under the old gate, so its
+  // decider had to be applied by hand afterwards. Heat, not tactics, is what
+  // ends games here in August.
+  const GOLDEN_GOAL_MINUTES = 70;
   const elapsedMinutes = elapsedMs / 60000;
   const canArmGolden = isAdmin && !!startedAt && !gameOverAt && !armedEvent;
   const showGoldenGoal = canArmGolden && elapsedMinutes >= GOLDEN_GOAL_MINUTES;
