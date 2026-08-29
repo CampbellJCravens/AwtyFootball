@@ -247,6 +247,10 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
         item(data.awards.topGoalContributor, 'TOP GOAL CONTRIBUTOR', a => `${a.value} G+A`),
         item(data.awards.topDefender, 'TOP DEFENDER', a => `${a.goalsAllowed ?? 0} GA · ${a.games ?? 0} GP`),
         item(data.awards.sportsmanOfTheMonth, 'SPORTSMAN OF THE MONTH', a => `${a.value} SP`),
+        // Departures with their denominator: a count alone would rank someone
+        // who turned up twice above an ever-present regular.
+        item(data.awards.lackOfStamina, 'LACK OF STAMINA',
+          a => `${a.value} exit${a.value === 1 ? '' : 's'} \u00b7 ${a.games ?? 0} GP \u00b7 ${a.games ? Math.round((a.value / a.games) * 100) : 0}%`),
       ].filter((x): x is MonthlyAwardItem => x !== null);
 
       // Highest-scoring game rides in the tile grid so it fills the odd cell.
@@ -265,6 +269,10 @@ export default function HomeTab({ onPlayerClick, initialMonth, onMonthViewed }: 
           label: 'GAME OF THE MONTH',
           names: [d],
           value: `${gotm.colorScore}\u2013${gotm.whiteScore}${gotm.leadChanges ? ` \u00b7 ${gotm.leadChanges} lead change${gotm.leadChanges === 1 ? '' : 's'}` : ''}`,
+          // Pushed last AND flagged wide: it is a highlight of the month, and
+          // it used to be a full-width slab only because it happened to be the
+          // odd tile out.
+          wide: true,
         });
       }
 
