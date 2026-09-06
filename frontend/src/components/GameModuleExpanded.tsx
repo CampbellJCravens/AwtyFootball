@@ -98,7 +98,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [searchQuery, setSearchQuery] = useState('');
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
-  const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }>>([]);
+  const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap' | 'join'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
   // The side gap at the last "Not now". Re-offers only if the gap widens.
   const [rebalanceDismissedAt, setRebalanceDismissedAt] = useState<number | null>(null);
@@ -255,7 +255,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
       // Restore team changes from database
       if (gameData.teamChanges && gameData.teamChanges.length > 0) {
-        const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }> = [];
+        const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap' | 'join'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }> = [];
         
         gameData.teamChanges.forEach(change => {
           const player = playersData.find(p => p.id === change.playerId);
@@ -781,6 +781,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     const previousTeam = playerTeams[playerId];
     if (startedAt && previousTeam && previousTeam !== team) {
       recordSwap(playerId, previousTeam, team);
+    } else if (startedAt && !previousTeam) {
+      // Put on a team with the clock already running = a late arrival.
+      recordJoin(playerId, team);
+    } else if (previousTeam === team) {
+      // Deselecting takes them back off the roster, so any arrival goes too.
+      clearJoin(playerId);
     }
 
     setPlayerTeams(prev => {
@@ -804,12 +810,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const handleRemoveFromTeam = (playerId: string) => {
     // Only admins can remove players from teams
     if (!isAdmin) return;
-    
+
     setPlayerTeams(prev => {
       const newTeams = { ...prev };
       delete newTeams[playerId];
       return newTeams;
     });
+    // They are off the roster, so the arrival they never made goes with them.
+    clearJoin(playerId);
   };
 
   const handleSwapTeam = (playerId: string) => {
@@ -890,6 +898,25 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setReasonForPlayerId(null);
   };
 
+  // Joining a team AFTER kick-off is a late arrival and gets stamped as one.
+  // Arriving on time records NOTHING — being in teamAssignments with no 'join'
+  // row is itself the on-time record, so the common case costs no storage and
+  // no extra tap. services/arrivals.ts reads it that way.
+  const recordJoin = (playerId: string, team: 'color' | 'white') => {
+    const player = allPlayers.find(p => p.id === playerId);
+    if (!player) return;
+    const stamped = new Date(gameDate);
+    // Minute resolution, matching every other stamp here. The grace window is
+    // 8 minutes wide, so seconds would be false precision.
+    stamped.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
+    setTeamChanges(prev => [...prev, { player, timestamp: stamped, team, type: 'join' }]);
+  };
+
+  /** Undo an arrival — used wherever a player comes back off the roster. */
+  const clearJoin = (playerId: string) => {
+    setTeamChanges(prev => prev.filter(c => !(c.player.id === playerId && c.type === 'join')));
+  };
+
   const recordSwap = (playerId: string, previousTeam: 'color' | 'white', newTeam: 'color' | 'white') => {
     const player = allPlayers.find(p => p.id === playerId);
     if (!player) return;
@@ -949,6 +976,52 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } catch (err) {
       console.error('Error adding guest:', err);
     }
+  };
+
+  // A guest slot can only be dropped while it holds no record of having played.
+  // Removing one that scored would mean rewriting the goals JSON, and the
+  // scoreline rides on it — so the removal is refused and the reason is shown
+  // instead. The real case (added by mistake, never turned up) has nothing here.
+  const guestRemovalBlock = (slotPlayerId: string): string | null => {
+    const scored = goals.filter(g => g.scorer.id === slotPlayerId).length;
+    const assisted = goals.filter(g => g.assister?.id === slotPlayerId).length;
+    // 'join' is excluded on purpose: it records when they turned up, not that
+    // they played, and removeGuestSlot clears it anyway. Blocking on it would
+    // make a late-arriving guest permanently unremovable.
+    const changed = teamChanges.filter(
+      c => c.player.id === slotPlayerId && c.type !== 'join'
+    ).length;
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+    const parts: string[] = [];
+    if (scored) parts.push(plural(scored, 'goal'));
+    if (assisted) parts.push(plural(assisted, 'assist'));
+    if (fouls[slotPlayerId]) parts.push(plural(fouls[slotPlayerId], 'foul'));
+    if (sportsmanship[slotPlayerId]) parts.push(plural(sportsmanship[slotPlayerId], 'sportsmanship point'));
+    if (changed) parts.push(plural(changed, 'team change'));
+    if (!parts.length) return null;
+
+    return parts.length === 1
+      ? parts[0]
+      : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  };
+
+  // Drops the slot off the game. The save path already discards the GuestVisit
+  // for any slot no longer on a team, so nothing else needs unwinding — and the
+  // durable Guest identity keeps its other visits and its dues.
+  const removeGuestSlot = (slotPlayerId: string) => {
+    handleRemoveFromTeam(slotPlayerId);
+    setGuestVisits(prev => {
+      const next = { ...prev };
+      delete next[slotPlayerId];
+      return next;
+    });
+    setLeftPlayers(prev => {
+      const next = { ...prev };
+      delete next[slotPlayerId];
+      return next;
+    });
+    setGuestSlotPending(null);
   };
 
   // Assigns the pending slot to its team (no-op when editing an existing
@@ -1742,6 +1815,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                             <span className="pr-3 flex-1 pl-3">
                               {change.type === 'leave'
                                 ? `${displayName(change.player)} left the game (${change.team === 'color' ? 'Color' : 'White'})${change.reason ? ` \u00b7 ${LEAVE_REASON_LABELS[change.reason]}` : ''}`
+                                : change.type === 'join'
+                                ? `${displayName(change.player)} arrived (${change.team === 'color' ? 'Color' : 'White'})`
                                 : `${displayName(change.player)} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1905,6 +1980,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           onSave={(details) => commitGuestSlot(details)}
           onSkip={() => commitGuestSlot(null)}
           onClose={() => commitGuestSlot(null)}
+          // Only when editing a guest already on a team — while adding one,
+          // Close cancels the add and there is nothing to remove yet.
+          onRemove={
+            guestSlotPending.team === null
+              ? () => removeGuestSlot(guestSlotPending.slotPlayerId)
+              : undefined
+          }
+          removeBlockedReason={guestRemovalBlock(guestSlotPending.slotPlayerId)}
         />
       )}
 

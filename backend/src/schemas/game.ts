@@ -37,7 +37,10 @@ export const teamChangeSchema = z.object({
   playerId: z.string(),
   timestamp: z.string(), // ISO date string
   team: z.enum(['color', 'white']),
-  type: z.enum(['leave', 'swap']),
+  // 'join' = put on a team AFTER kick-off, i.e. a late arrival. Arriving on
+  // time writes nothing at all — being in teamAssignments with no 'join' row IS
+  // the on-time record, which is why the common case costs no storage.
+  type: z.enum(['leave', 'swap', 'join']),
   previousTeam: z.enum(['color', 'white']).optional(),
   newTeam: z.enum(['color', 'white']).optional(),
   // Only meaningful on type 'leave'.

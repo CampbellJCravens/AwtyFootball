@@ -969,10 +969,27 @@ export interface ReliabilitySummary {
   };
 }
 
+// Punctuality. Only games with a kick-off time (Game.startedAt) are measured,
+// so this is empty until the Start button becomes routine — a game without one
+// counts for nobody rather than scoring everyone as on time.
+export interface ArrivalRow {
+  playerId: string;
+  measuredGames: number;
+  kickoff: number;    // on a team when the whistle went
+  grace: number;      // joined within the grace window — effectively on time
+  firstHalf: number;
+  secondHalf: number;
+  late: number;       // firstHalf + secondHalf
+  onTimeRate: number | null;
+}
+
 export interface ReliabilityResponse {
   totalTrackedGames: number;
   summary: ReliabilitySummary;
   players: ReliabilityPlayer[];
+  arrivals: ArrivalRow[];
+  arrivalsMeasuredGames: number;
+  arrivalGrace: number; // minutes of grace after kick-off, from the server
 }
 
 // Admin-only. 403s for non-admins.

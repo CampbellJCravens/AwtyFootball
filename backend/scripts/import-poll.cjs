@@ -15,45 +15,59 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 29Aug — GAME-MORNING read from screenshots on 2026-08-29 06:45 CDT
-// (game is 08:45 today), superseding the 08-28 read (12 In / 2 Maybe / 5 Out /
-// 1 guest) and the 08-27 mid-week read (9/2/3/0).
-// Capture is STILL dead despite Campbell's 2026-08-19 fix: WhatsappPoll still
-// holds exactly 2 rows ever (2026-08-07, 2026-07-15), so this week's poll was
-// never captured and the votes had nowhere to land -> manual import again.
-// This read: 14 In / 2 Maybe / 5 Out, +1 guest (Franco Silva). Deltas vs 08-28:
-// +2 In (Adam "Lammy" Lammers 02:58, Jason Arizpe 21:08 Thu), everything else
-// unchanged — no retractions, same Out/Maybe lists, same single guest.
+// Poll for 5Sep (game #36) — GAME-MORNING read from screenshots on 2026-09-05
+// 06:25 CDT (kickoff 08:45), superseding the 09-02 mid-week read
+// (11 In / 3 Maybe / 6 No / 2 guests).
+// Poll screenshot totals: In 14 · Out 7 · Maybe 2 · +1 0 · +2 0.
+// This import writes 13 of the 14 In: "Amelia Hebert" has NO Player row and no
+// alias — held out pending the owner, so the app will read 13 In until she is
+// resolved. Everything else reconciles.
+// Deltas vs the 09-02 read:
+//   -> yes:  Siegfried Casar (was no), Corey Rasch (was maybe), Junior (was no)
+//   -> yes:  Eric Saito, Bayo Tojuola (new voters)
+//   -> no:   Campbell Cravens, Tommy El-Gawly, Rolando Abreu (all were yes)
+//   -> no:   Marcos Conner (was maybe); Husam Ali, Alejandro (new voters)
+//   -> maybe: David Ramos (new voter)
+//   -> guests: Josh Jackson's +2 is GONE (+1/+2 both show 0 votes) -> 0 guests
+//   -> retracted: Brian Karrs, Jason Arizpe, Jon Schwarz were 'no' on 09-02 and
+//      are absent from a COMPLETE 7-name Out section today, so their rows are
+//      deleted rather than left as stale 'no' (a withdrawn vote is not a no).
 const CONFIG = {
-  gameId: 'cebee9b4-8ff4-4042-8f32-044946535303', // game #35, 2026-08-29
+  // Game #36 was DELETED and RECREATED in the app on 2026-09-05 (old id
+  // 959267cd-dff5-4905-9445-eab7f99ad12a, gone). GameRsvp cascades on gameId,
+  // so the 22 rows imported that morning went with it. This is the re-import
+  // against the replacement row — same date (13:45Z), same read.
+  gameId: '149a457a-bc3e-4cbe-ab34-8cd4b2d24576', // game #36, 2026-09-05
   // Roster names, reconciled against the poll's display names. All matched the
   // Player table exactly or via a known alias — verified against the roster:
   //   "You" -> Morgan-Sean McCright        "Franco Silva" -> Franco Silva
   //   "Campbell" -> Campbell Cravens       "Robert-san" -> Robert Peresich
   //   "Marcos" -> Marcos Conner            "Junior" -> Junior (literal name)
+  //   "~ Bayo Tojuola" -> Bayo Tojuola     "~ Husam Ali" -> Husam Ali
+  //     ^ both confirmed by the phone number shown beside the poll name.
   //   "Alejandro De la Morena" -> Alejandro de la Molina
   //     ^ NOTE: a separate player named plain "Alejandro" also exists. The
   //       alias mapping is the owner-resolved one; do not re-guess it.
-  //   "Adam Lammers" -> Lammy Lammers      "Jason Azirpe" -> Jason Arizpe
+  //   "Adam Lammers" -> Lammy Lammers
   //     ^ NOTE: a separate player "Adam Zebdawi" exists; not the same person.
+  //   "Eric Saito" -> Eric Saito (SEPARATE person from Campbell Cravens, who
+  //       also shows as "Campbell Saito" in some poll reads).
   yes: [
-    'Morgan-Sean McCright', 'Lammy Lammers', 'Jason Arizpe',
-    'Alejandro de la Molina', 'Marcos Conner', 'Joseph Garcia',
-    'Franco Silva', 'Brian Buhr', 'Rolando Abreu', 'Tommy El-Gawly',
-    'Josh Jackson', 'Campbell Cravens', 'Manny Suarez', 'Corey Rasch',
+    'Morgan-Sean McCright', 'Lammy Lammers', 'Siegfried Casar', 'Corey Rasch',
+    'Eric Saito', 'Brian Buhr', 'Junior', 'Milad Moradi', 'Joseph Garcia',
+    'Josh Jackson', 'Bayo Tojuola', 'Manny Suarez', 'Franco Silva',
   ],
   maybe: ['David Ramos', 'Robert Peresich'],
   no: [
-    'Brian Karrs', 'Junior', 'Milad Moradi', 'Connor Shannon',
-    'Siegfried Casar',
+    'Campbell Cravens', 'Connor Shannon', 'Husam Ali', 'Marcos Conner',
+    'Alejandro de la Molina', 'Tommy El-Gawly', 'Rolando Abreu',
   ],
   // Votes WITHDRAWN since a previous import: the row is deleted, not set to
-  // 'no'. All 19 voters from the 08-28 read still hold the same position, so
-  // nothing to retract this time.
-  retracted: [],
+  // 'no'. These three held 'no' on 09-02 and are gone from today's Out list.
+  retracted: ['Brian Karrs', 'Jason Arizpe', 'Jon Schwarz'],
   // Guests brought, by roster name. Only counted on a 'yes' row.
-  // Franco Silva voted both "In" and the "1 guest" option (same timestamp).
-  guests: { 'Franco Silva': 1 },
+  // Nobody voted +1 or +2 this week (Josh Jackson's +2 was withdrawn).
+  guests: {},
 };
 
 const WHATSAPP_SOURCE = 'whatsapp';

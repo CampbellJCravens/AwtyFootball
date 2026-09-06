@@ -53,7 +53,11 @@ export interface TeamChange {
   playerId: string;
   timestamp: string; // ISO date string
   team: 'color' | 'white';
-  type: 'leave' | 'swap';
+  // 'join' = put on a team AFTER kick-off, i.e. a late arrival. On-time
+  // arrivals write nothing — presence in teamAssignments with no 'join' row is
+  // itself the record. Must stay in step with the zod enum in
+  // backend/src/schemas/game.ts.
+  type: 'leave' | 'swap' | 'join';
   previousTeam?: 'color' | 'white';
   newTeam?: 'color' | 'white';
   // Why they left. ABSENT IS NOT NEUTRAL: an untagged departure counts toward

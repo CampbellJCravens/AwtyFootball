@@ -1,4 +1,8 @@
 import prisma from '../prisma';
+import {
+  ArrivalRow, GRACE_MINUTES, computeArrivals, isMeasurableGame,
+  ArrivalChangeLike, ArrivalEventLike,
+} from './arrivals';
 
 // Per-player RSVP reliability across *tracked* games (a game with a non-empty
 // Color/White roster = "who showed up"). Guests (the GuestN pool players) are
@@ -71,12 +75,26 @@ export interface ReliabilityResult {
   turnoutHistory: number[];
   turnoutHistoryTotal: number[];
   players: ReliabilityPlayer[];
+  // Punctuality. Rides along here rather than on its own endpoint because it
+  // reads the same games and lands on the same page — one scan, not two.
+  // Only games with a startedAt contribute, so this stays empty until the
+  // Start button becomes routine.
+  arrivals: ArrivalRow[];
+  arrivalsMeasuredGames: number;
+  arrivalGrace: number;
 }
 
 export async function computeReliability(): Promise<ReliabilityResult> {
   const [players, games, rsvps] = await Promise.all([
     prisma.player.findMany({ select: { id: true, name: true, pictureUrl: true } }),
-    prisma.game.findMany({ select: { id: true, teamAssignments: true } }),
+    prisma.game.findMany({
+      select: {
+        id: true, teamAssignments: true,
+        // Punctuality inputs. startedAt is the clock; a game without one is
+        // simply not measured.
+        startedAt: true, teamChanges: true, gameEvents: true,
+      },
+    }),
     prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true, guestCount: true } }),
   ]);
 
@@ -87,6 +105,19 @@ export async function computeReliability(): Promise<ReliabilityResult> {
     if (roster.length > 0) rosterByGame.set(g.id, new Set(roster));
   }
   const totalTrackedGames = rosterByGame.size;
+
+  // Punctuality. Restricted to games with a roster AND a kick-off time — the
+  // second filter is what keeps a forgotten Start tap from reading as a
+  // perfectly punctual squad.
+  const measurableGames = games
+    .filter(g => rosterByGame.has(g.id) && isMeasurableGame(g.startedAt))
+    .map(g => ({
+      startedAt: g.startedAt,
+      teamAssignments: safeParseJSON<Record<string, 'color' | 'white'>>(g.teamAssignments, {}),
+      teamChanges: safeParseJSON<ArrivalChangeLike[]>(g.teamChanges, []),
+      gameEvents: safeParseJSON<ArrivalEventLike[]>(g.gameEvents, []),
+    }));
+  const arrivals = computeArrivals(measurableGames, players);
 
   // RSVPs keyed by game+player, restricted to tracked games.
   const rsvpByKey = new Map<string, { status: string; guestCount: number }>();
@@ -231,6 +262,9 @@ export async function computeReliability(): Promise<ReliabilityResult> {
       },
     },
     players: result,
+    arrivals,
+    arrivalsMeasuredGames: measurableGames.length,
+    arrivalGrace: GRACE_MINUTES,
   };
 }
 
