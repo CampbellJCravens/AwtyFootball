@@ -15,58 +15,36 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 5Sep (game #36) — GAME-MORNING read from screenshots on 2026-09-05
-// 06:25 CDT (kickoff 08:45), superseding the 09-02 mid-week read
-// (11 In / 3 Maybe / 6 No / 2 guests).
-// Poll screenshot totals: In 14 · Out 7 · Maybe 2 · +1 0 · +2 0.
-// This import writes 13 of the 14 In: "Amelia Hebert" has NO Player row and no
-// alias — held out pending the owner, so the app will read 13 In until she is
-// resolved. Everything else reconciles.
-// Deltas vs the 09-02 read:
-//   -> yes:  Siegfried Casar (was no), Corey Rasch (was maybe), Junior (was no)
-//   -> yes:  Eric Saito, Bayo Tojuola (new voters)
-//   -> no:   Campbell Cravens, Tommy El-Gawly, Rolando Abreu (all were yes)
-//   -> no:   Marcos Conner (was maybe); Husam Ali, Alejandro (new voters)
-//   -> maybe: David Ramos (new voter)
-//   -> guests: Josh Jackson's +2 is GONE (+1/+2 both show 0 votes) -> 0 guests
-//   -> retracted: Brian Karrs, Jason Arizpe, Jon Schwarz were 'no' on 09-02 and
-//      are absent from a COMPLETE 7-name Out section today, so their rows are
-//      deleted rather than left as stale 'no' (a withdrawn vote is not a no).
+// Poll for 12Sep (game #37) — read from owner screenshots on 2026-09-11 12:37 CDT
+// (kickoff 2026-09-12 13:45Z). Game #37 had ZERO existing RSVP rows before this
+// import, so every row below is an insert; nothing is overwritten and nothing is
+// retracted.
+// Poll screenshot totals: In 14 · Maybe 2 · Out 2.  All 18 votes are imported.
+// NOTE: the screenshots did not include any +1/+2 section, so guests are taken
+// as 0. If the poll does carry +1/+2 options, re-read and re-run.
+//
+// Name reconciliation (poll display name -> Player row):
+//   "You" -> Morgan-Sean McCright        "Campbell" -> Campbell Cravens
+//   "Marcos" -> Marcos Conner
+//   "~ Aihab" (+1 787 202-1781) -> Aihab Aboukheir
+//     ^ tilde + phone = not in the owner's contacts; "Aihab" is unique on the
+//       roster so the match is unambiguous.
+//   "Nicholas Mbaezue-Daniel" -> Nick Mbaezue-Daniel
+//     ^ roster stores the short form; surname is unique.
+//   Everyone else matched the Player table exactly.
 const CONFIG = {
-  // Game #36 was DELETED and RECREATED in the app on 2026-09-05 (old id
-  // 959267cd-dff5-4905-9445-eab7f99ad12a, gone). GameRsvp cascades on gameId,
-  // so the 22 rows imported that morning went with it. This is the re-import
-  // against the replacement row — same date (13:45Z), same read.
-  gameId: '149a457a-bc3e-4cbe-ab34-8cd4b2d24576', // game #36, 2026-09-05
-  // Roster names, reconciled against the poll's display names. All matched the
-  // Player table exactly or via a known alias — verified against the roster:
-  //   "You" -> Morgan-Sean McCright        "Franco Silva" -> Franco Silva
-  //   "Campbell" -> Campbell Cravens       "Robert-san" -> Robert Peresich
-  //   "Marcos" -> Marcos Conner            "Junior" -> Junior (literal name)
-  //   "~ Bayo Tojuola" -> Bayo Tojuola     "~ Husam Ali" -> Husam Ali
-  //     ^ both confirmed by the phone number shown beside the poll name.
-  //   "Alejandro De la Morena" -> Alejandro de la Molina
-  //     ^ NOTE: a separate player named plain "Alejandro" also exists. The
-  //       alias mapping is the owner-resolved one; do not re-guess it.
-  //   "Adam Lammers" -> Lammy Lammers
-  //     ^ NOTE: a separate player "Adam Zebdawi" exists; not the same person.
-  //   "Eric Saito" -> Eric Saito (SEPARATE person from Campbell Cravens, who
-  //       also shows as "Campbell Saito" in some poll reads).
+  gameId: 'b4ca27a1-549a-4a22-ad55-04d47aec1ff8', // game #37, 2026-09-12
   yes: [
-    'Morgan-Sean McCright', 'Lammy Lammers', 'Siegfried Casar', 'Corey Rasch',
-    'Eric Saito', 'Brian Buhr', 'Junior', 'Milad Moradi', 'Joseph Garcia',
-    'Josh Jackson', 'Bayo Tojuola', 'Manny Suarez', 'Franco Silva',
+    'Morgan-Sean McCright', 'Campbell Cravens', 'Milad Moradi', 'Marcos Conner',
+    'Aihab Aboukheir', 'Joshua Tapia', 'Joseph Garcia', 'Josh Jackson',
+    'Brian Buhr', 'Connor Shannon', 'Tommy El-Gawly', 'Franco Silva',
+    'Rolando Abreu', 'Manny Suarez',
   ],
-  maybe: ['David Ramos', 'Robert Peresich'],
-  no: [
-    'Campbell Cravens', 'Connor Shannon', 'Husam Ali', 'Marcos Conner',
-    'Alejandro de la Molina', 'Tommy El-Gawly', 'Rolando Abreu',
-  ],
-  // Votes WITHDRAWN since a previous import: the row is deleted, not set to
-  // 'no'. These three held 'no' on 09-02 and are gone from today's Out list.
-  retracted: ['Brian Karrs', 'Jason Arizpe', 'Jon Schwarz'],
-  // Guests brought, by roster name. Only counted on a 'yes' row.
-  // Nobody voted +1 or +2 this week (Josh Jackson's +2 was withdrawn).
+  maybe: ['Siegfried Casar', 'David Ramos'],
+  no: ['Nick Mbaezue-Daniel', 'Corey Rasch'],
+  // No prior rows existed for game #37, so nothing can have been withdrawn.
+  retracted: [],
+  // No +1/+2 section visible in the source screenshots.
   guests: {},
 };
 
