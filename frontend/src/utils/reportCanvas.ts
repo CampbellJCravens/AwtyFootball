@@ -91,6 +91,29 @@ export function layoutNames(
   return { lines: [truncateToWidth(ctx, names.map(abbreviateName).join(' · '), maxWidth)], fontSize: minSize };
 }
 
+/**
+ * Shrink one line of text until it fits, and only truncate if even the floor
+ * is too wide. For the fixed-height award cards, where growing the box is not
+ * an option but an ellipsis through a shared award's names is the worse
+ * outcome. Sets ctx.font to the chosen size.
+ */
+export function fitText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  baseSize: number,
+  minSize: number,
+): { text: string; fontSize: number } {
+  const size = fitFontSize(ctx, text, maxWidth, baseSize, minSize);
+  if (ctx.measureText(text).width <= maxWidth) return { text, fontSize: size };
+  // Floor reached and still too wide: abbreviate first names before cutting.
+  const abbreviated = text.includes(' · ')
+    ? text.split(' · ').map(abbreviateName).join(' · ')
+    : text;
+  if (ctx.measureText(abbreviated).width <= maxWidth) return { text: abbreviated, fontSize: minSize };
+  return { text: truncateToWidth(ctx, abbreviated, maxWidth), fontSize: minSize };
+}
+
 export function truncateToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let lo = 0, hi = text.length;

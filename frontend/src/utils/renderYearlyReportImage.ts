@@ -1,7 +1,7 @@
 // Renders a PNG "season in review" report — marquee awards + top-N leaderboards.
 // Pure 2D canvas, same brand family as the match + monthly reports.
 
-import { COLORS, FONT_STACK, loadImage, roundRect, truncateToWidth, canvasToPngBlob } from './reportCanvas';
+import { COLORS, FONT_STACK, loadImage, roundRect, truncateToWidth, fitText, canvasToPngBlob } from './reportCanvas';
 
 export interface YearlyAwardItem {
   label: string;
@@ -144,8 +144,9 @@ export async function renderYearlyReportImage(data: YearlyReportData): Promise<B
     ctx.font = `bold 15px ${FONT_STACK}`;
     const valW = ctx.measureText(a.value).width + 16;
     ctx.fillStyle = COLORS.textPrimary;
-    ctx.font = `bold 22px ${FONT_STACK}`;
-    ctx.fillText(truncateToWidth(ctx, a.names, contentW - 32 - valW), padding + 16, y + 31);
+    // Shared awards shrink rather than ellipse a winner out of their own award.
+    const heroNames = fitText(ctx, a.names, contentW - 32 - valW, 22, 13);
+    ctx.fillText(heroNames.text, padding + 16, y + 31);
 
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -172,8 +173,8 @@ export async function renderYearlyReportImage(data: YearlyReportData): Promise<B
     ctx.fillText(truncateToWidth(ctx, a.label, w - 24), tx + 13, ty + 12);
 
     ctx.fillStyle = COLORS.textPrimary;
-    ctx.font = `bold 16px ${FONT_STACK}`;
-    ctx.fillText(truncateToWidth(ctx, a.names, w - 24), tx + 13, ty + 29);
+    const tileNames = fitText(ctx, a.names, w - 24, 16, 10);
+    ctx.fillText(tileNames.text, tx + 13, ty + 29);
 
     ctx.fillStyle = COLORS.textSecondary;
     ctx.font = `13px ${FONT_STACK}`;
@@ -251,8 +252,8 @@ export async function renderYearlyReportImage(data: YearlyReportData): Promise<B
     ctx.font = `bold 14px ${FONT_STACK}`;
     const valW = a.value ? ctx.measureText(a.value).width + 14 : 0;
     ctx.fillStyle = COLORS.textPrimary;
-    ctx.font = `bold 18px ${FONT_STACK}`;
-    ctx.fillText(truncateToWidth(ctx, a.names, contentW - 28 - valW), padding + 14, by + 29);
+    const bannerNames = fitText(ctx, a.names, contentW - 28 - valW, 18, 11);
+    ctx.fillText(bannerNames.text, padding + 14, by + 29);
 
     if (a.value) {
       ctx.textAlign = 'right';
