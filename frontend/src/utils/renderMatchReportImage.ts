@@ -89,9 +89,18 @@ export async function renderMatchReportImage(data: MatchReportData): Promise<Blo
     const statText = motmStatText(winners);
     mctx.font = `bold 16px ${FONT_STACK}`;
     const statW = statText ? mctx.measureText(statText).width + 16 : 0;
-    const layout = layoutNames(mctx, winners.map(w => w.name), contentW - 32 - statW, 23, 13, 3);
+    // A line each, up to four. Packing several winners onto three lines reads
+    // ragged — one name, then two, then one — so give the list room to sit one
+    // per line and only pack beyond that.
+    const layout = layoutNames(
+      mctx, winners.map(w => w.name), contentW - 32 - statW, 23, 13,
+      Math.min(Math.max(winners.length, 1), 4),
+    );
     const lineH = layout.fontSize + 5;
-    return { statText, statW, layout, lineH, height: 35 + layout.lines.length * lineH + 9 };
+    // 9px below a single line keeps the one-winner box at its original 72px;
+    // a stacked list needs a little more so the last descender clears the border.
+    const bottom = layout.lines.length > 1 ? 14 : 9;
+    return { statText, statW, layout, lineH, height: 35 + layout.lines.length * lineH + bottom };
   })();
   const motmH = motm ? motm.height : 0;
   const gapBeforeFooter = 12;
