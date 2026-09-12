@@ -221,17 +221,35 @@ export async function renderMatchReportImage(data: MatchReportData): Promise<Blo
     ctx.textBaseline = 'top';
     ctx.fillStyle = COLORS.gold;
     ctx.font = `bold 12px ${FONT_STACK}`;
-    ctx.fillText('★ MAN OF THE MATCH', padding + 16, y + 14);
+    const winners = data.manOfTheMatch;
+    ctx.fillText(winners.length > 1 ? '★ MEN OF THE MATCH' : '★ MAN OF THE MATCH', padding + 16, y + 14);
 
-    const m = data.manOfTheMatch[0];
-    const parts: string[] = [];
-    if (m.goals > 0) parts.push(`${m.goals}G`);
-    if (m.assists > 0) parts.push(`${m.assists}A`);
-    const statText = parts.join(' · ');
+    // With one winner, show their split. With several, they are tied on TOTAL
+    // involvements but their splits can differ (2G vs 1G+1A), so showing the
+    // first player's figures beside everyone's names would credit them wrongly.
+    // Fall back to the number they actually tied on.
+    const statText = (() => {
+      if (winners.length === 1) {
+        const m = winners[0];
+        const parts: string[] = [];
+        if (m.goals > 0) parts.push(`${m.goals}G`);
+        if (m.assists > 0) parts.push(`${m.assists}A`);
+        return parts.join(' · ');
+      }
+      const sameSplit = winners.every(w => w.goals === winners[0].goals && w.assists === winners[0].assists);
+      if (sameSplit) {
+        const parts: string[] = [];
+        if (winners[0].goals > 0) parts.push(`${winners[0].goals}G`);
+        if (winners[0].assists > 0) parts.push(`${winners[0].assists}A`);
+        return parts.join(' · ');
+      }
+      const total = winners[0].goals + winners[0].assists;
+      return `${total} each`;
+    })();
     ctx.font = `bold 16px ${FONT_STACK}`;
     const statW = statText ? ctx.measureText(statText).width + 16 : 0;
 
-    const names = data.manOfTheMatch.map(m => m.name).join(' · ');
+    const names = winners.map(m => m.name).join(' · ');
     ctx.fillStyle = COLORS.textPrimary;
     ctx.font = `bold 23px ${FONT_STACK}`;
     ctx.fillText(truncateToWidth(ctx, names, contentW - 32 - statW), padding + 16, y + 35);
