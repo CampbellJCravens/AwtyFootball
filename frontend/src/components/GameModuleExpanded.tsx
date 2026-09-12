@@ -1996,6 +1996,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         <GoalAssistModal
           scorer={goalScorer}
           teamPlayers={getTeamPlayers(goalScorer)}
+          displayName={displayName}
           onSelectAssister={handleAssisterSelected}
           onClose={handleCloseGoalModal}
         />
@@ -2013,6 +2014,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           })}
           isOwnGoal={goals[editingGoalIndex].ownGoal}
           currentGoalTime={goals[editingGoalIndex].timestamp}
+          displayName={displayName}
           onSelectScorer={handleEditScorerSelected}
           onMarkOwnGoal={handleMarkOwnGoal}
           onSkip={handleEditScorerSkip}
@@ -2027,6 +2029,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           scorer={goalScorer}
           teamPlayers={getTeamPlayers(goalScorer)}
           initialQualifiers={editingGoalIndex !== null ? goals[editingGoalIndex]?.qualifiers : undefined}
+          displayName={displayName}
           onSelectAssister={handleEditAssisterSelected}
           onClose={handleCloseEditModal}
         />

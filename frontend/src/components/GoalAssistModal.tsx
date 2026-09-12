@@ -6,11 +6,16 @@ interface GoalAssistModalProps {
   scorer: Player;
   teamPlayers: Player[];
   initialQualifiers?: GoalQualifier[];
+  /** Resolves a guest slot to the name entered for this game. Without it a
+   *  guest shows as their canonical Player.name — "Guest1" — which is what
+   *  every guest-exclusion check matches on and must never be overwritten. */
+  displayName?: (player: Player) => string;
   onSelectAssister: (assister: Player | null, qualifiers: GoalQualifier[]) => void;
   onClose: () => void;
 }
 
-export default function GoalAssistModal({ scorer, teamPlayers, initialQualifiers, onSelectAssister, onClose }: GoalAssistModalProps) {
+export default function GoalAssistModal({ scorer, teamPlayers, initialQualifiers, displayName, onSelectAssister, onClose }: GoalAssistModalProps) {
+  const label = (player: Player) => displayName?.(player) ?? player.name;
   const [searchQuery, setSearchQuery] = useState('');
   // Rides in the sheet that already opens for every goal, so describing one
   // costs no extra step and skipping still leaves a plain goal. Independent
@@ -37,10 +42,10 @@ export default function GoalAssistModal({ scorer, teamPlayers, initialQualifiers
   // Filter and sort players alphabetically
   const filteredAndSortedPlayers = useMemo(() => {
     const filtered = teamPlayers.filter(player =>
-      player.name.toLowerCase().includes(searchQuery.toLowerCase())
+      label(player).toLowerCase().includes(searchQuery.toLowerCase())
     );
-    return filtered.sort((a, b) => a.name.localeCompare(b.name));
-  }, [teamPlayers, searchQuery]);
+    return filtered.sort((a, b) => label(a).localeCompare(label(b)));
+  }, [teamPlayers, searchQuery, displayName]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
@@ -136,15 +141,15 @@ export default function GoalAssistModal({ scorer, teamPlayers, initialQualifiers
                   {player.pictureUrl ? (
                     <img
                       src={player.pictureUrl}
-                      alt={player.name}
+                      alt={label(player)}
                       className="w-12 h-12 rounded-full object-cover border-2 border-border-emphasis flex-shrink-0"
                     />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-lg font-semibold flex-shrink-0">
-                      {getInitial(player.name)}
+                      {getInitial(label(player))}
                     </div>
                   )}
-                  <span className="text-base font-medium text-text-primary flex-1">{player.name}</span>
+                  <span className="text-base font-medium text-text-primary flex-1">{label(player)}</span>
                 </button>
               ))}
             </div>
