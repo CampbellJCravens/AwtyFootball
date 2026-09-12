@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-export const goalQualifierSchema = z.enum(['corner', 'header', 'deflection']);
+export const goalQualifierSchema = z.enum([
+  'corner', 'header', 'deflection',
+  'handball', 'penalty', 'freeKick', 'volley', 'longRange', 'rebound',
+  'soloRun', 'oneOnOne', 'weakFoot', 'tapIn', 'bicycle', 'nutmeg',
+]);
 
 export const goalSchema = z.object({
   scorerId: z.string(),

@@ -26,12 +26,29 @@ export const isOwnGoal = (g: { ownGoal?: boolean }) => g.ownGoal === true;
 // what a plain one is, and an empty list means nobody said. Held as a SET
 // because these are independent — corner is where it came from, header is how
 // it was met, deflection is what happened on the way.
-export type GoalQualifier = 'corner' | 'header' | 'deflection';
+export type GoalQualifier =
+  | 'corner' | 'header' | 'deflection'
+  | 'handball' | 'penalty' | 'freeKick' | 'volley' | 'longRange' | 'rebound'
+  | 'soloRun' | 'oneOnOne' | 'weakFoot' | 'tapIn' | 'bicycle' | 'nutmeg';
 
+// Order here is the order they render. Grouped by what they describe: where it
+// came from, how it was struck, then the ones worth a laugh in the group chat.
 export const GOAL_QUALIFIER_LABELS: Record<GoalQualifier, string> = {
   corner: 'Corner',
+  freeKick: 'Free kick',
+  penalty: 'Penalty',
+  rebound: 'Rebound',
   header: 'Header',
+  volley: 'Volley',
+  bicycle: 'Bicycle',
+  longRange: 'Long range',
+  weakFoot: 'Weak foot',
+  tapIn: 'Tap-in',
+  soloRun: 'Solo run',
+  oneOnOne: 'One-on-one',
+  nutmeg: 'Nutmeg',
   deflection: 'Deflection',
+  handball: 'Handball',
 };
 
 export const GOAL_QUALIFIERS = Object.keys(GOAL_QUALIFIER_LABELS) as GoalQualifier[];

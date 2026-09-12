@@ -6,6 +6,7 @@ import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
 import ActivePlayersSection from './ActivePlayersSection';
 import GoalAssistModal from './GoalAssistModal';
+import GoalDetailsModal from './GoalDetailsModal';
 import GuestDetailsModal from './GuestDetailsModal';
 import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -118,6 +119,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [gameEventToDelete, setGameEventToDelete] = useState<number | null>(null);
   const [editingGameEventIndex, setEditingGameEventIndex] = useState<number | null>(null);
   const [editingGoalIndex, setEditingGoalIndex] = useState<number | null>(null);
+  // Tags-only edit, separate from the scorer/assister edit above it.
+  const [detailsGoalIndex, setDetailsGoalIndex] = useState<number | null>(null);
   const [editingScorer, setEditingScorer] = useState<Player | null>(null);
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
   const [teamChangeToDelete, setTeamChangeToDelete] = useState<number | null>(null);
@@ -1096,6 +1099,33 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setGoalScorer(null);
   };
 
+  // One description of a goal, used both in the feed and as the subtitle of the
+  // details sheet so the two can never drift apart.
+  const goalSummary = useCallback((goal: typeof goals[number]) => {
+    const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
+    const tags = goal.qualifiers?.length
+      ? ` \u00b7 ${goal.qualifiers.map(q => GOAL_QUALIFIER_LABELS[q]).join(', ')}`
+      : '';
+    if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} \u2014 own goal${tags}`;
+    return goal.assister
+      ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}${tags}`
+      : `(${teamLabel}) ${displayName(goal.scorer)} scored!${tags}`;
+  }, [displayName]);
+
+  const handleSaveGoalDetails = (qualifiers: GoalQualifier[]) => {
+    if (detailsGoalIndex === null) return;
+    setGoals(prev => {
+      const next = [...prev];
+      // Spread: this sheet edits tags and nothing else.
+      next[detailsGoalIndex] = {
+        ...next[detailsGoalIndex],
+        qualifiers: qualifiers.length ? qualifiers : undefined,
+      };
+      return next;
+    });
+    setDetailsGoalIndex(null);
+  };
+
   const handleEditGoal = (goalIndex: number) => {
     const goal = goals[goalIndex];
     setEditingGoalIndex(goalIndex);
@@ -1173,6 +1203,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setGoals(prev => {
       const next = [...prev];
       next[editingGoalIndex] = {
+        // Spread first, same reason as handleEditAssisterSelected: rebuilding
+        // the record from scratch silently dropped whatever else it carried —
+        // its qualifiers, and the scoreline weight of a golden goal.
+        ...prev[editingGoalIndex],
         scorer,
         assister: null,
         timestamp: prev[editingGoalIndex].timestamp,
@@ -1669,22 +1703,22 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                             key={`goal-${goalIndex}-${goal.timestamp.getTime()}-${idx}`}
                             className="flex items-center justify-between text-base text-text-primary mb-2 last:mb-0"
                           >
-                          <span className="pr-3 flex-1">
-                              {(() => {
-                                const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
-                                // goal.team is the team CREDITED, so an own goal
-                                // already reads under the benefiting team.
-                                // Qualifiers are descriptive; a goal with none
-                                // reads exactly as it always has.
-                                const tags = goal.qualifiers?.length
-                                  ? ` \u00b7 ${goal.qualifiers.map(q => GOAL_QUALIFIER_LABELS[q]).join(', ')}`
-                                  : '';
-                                if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} — own goal${tags}`;
-                                return goal.assister
-                                  ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}${tags}`
-                                  : `(${teamLabel}) ${displayName(goal.scorer)} scored!${tags}`;
-                              })()}
-                            </span>
+                          {/* goal.team is the team CREDITED, so an own goal already
+                              reads under the benefiting team. Tapping the line opens
+                              the tags sheet; the pencil still does scorer/assister/time. */}
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              onClick={() => setDetailsGoalIndex(goalIndex)}
+                              className="pr-3 flex-1 text-left hover:text-accent transition-colors"
+                              aria-label="Edit goal details"
+                              data-tooltip="Add details"
+                            >
+                              {goalSummary(goal)}
+                            </button>
+                          ) : (
+                            <span className="pr-3 flex-1">{goalSummary(goal)}</span>
+                          )}
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-text-tertiary whitespace-nowrap">
                                 {new Date(goal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -2032,6 +2066,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           displayName={displayName}
           onSelectAssister={handleEditAssisterSelected}
           onClose={handleCloseEditModal}
+        />
+      )}
+
+      {/* Goal Details (tags only) */}
+      {detailsGoalIndex !== null && goals[detailsGoalIndex] && (
+        <GoalDetailsModal
+          summary={goalSummary(goals[detailsGoalIndex])}
+          initialQualifiers={goals[detailsGoalIndex].qualifiers}
+          onSave={handleSaveGoalDetails}
+          onClose={() => setDetailsGoalIndex(null)}
         />
       )}
 
