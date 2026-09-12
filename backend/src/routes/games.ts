@@ -202,7 +202,30 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
     }
 
     const data: UpdateGameInput = validationResult.data;
-    
+
+    // A logged game must not be emptied by a single request. A client whose
+    // load failed still holds an empty roster and no goals, and its autosave
+    // will happily PUT that over a fully recorded game — which is exactly how
+    // game #37 was lost on 2026-09-12. Wiping both at once is never a real
+    // edit: clearing a roster in the UI is done a player at a time.
+    const clearingRoster =
+      data.teamAssignments !== undefined && Object.keys(data.teamAssignments).length === 0;
+    const clearingGoals = data.goals !== undefined && data.goals.length === 0;
+    if (clearingRoster && clearingGoals) {
+      const current = await prisma.game.findUnique({ where: { id } });
+      if (current) {
+        const had = (raw: string | null, empty: string) => !!raw && raw !== empty && raw !== 'null';
+        if (had(current.teamAssignments, '{}') && had(current.goals, '[]')) {
+          return res.status(409).json({
+            error: 'refusing_to_empty_game',
+            message:
+              'This request would clear both the roster and every goal from a game that has them. ' +
+              'Reload and try again; if the game really should be emptied, remove the entries individually.',
+          });
+        }
+      }
+    }
+
     // Prepare update data
     const updateData: any = {};
     

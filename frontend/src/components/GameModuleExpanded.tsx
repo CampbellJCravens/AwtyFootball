@@ -92,6 +92,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   );
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  // Autosave must never run against state that was never loaded. setLoading(false)
+  // happens in a finally, so a FAILED load also clears it — and the component's
+  // defaults are an empty roster and no goals. Without this the debounced save
+  // then wrote that emptiness over a real, fully-logged game. Only a load that
+  // actually succeeded flips this.
+  const gameLoadedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [playerTeams, setPlayerTeams] = useState<Record<string, 'color' | 'white'>>({});
   const [leftPlayers, setLeftPlayers] = useState<Record<string, boolean>>({});
@@ -277,7 +283,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         
         setTeamChanges(restoredTeamChanges);
       }
+      gameLoadedRef.current = true;
     } catch (err) {
+      gameLoadedRef.current = false;
       setError(err instanceof Error ? err.message : 'Failed to load game data');
     } finally {
       setLoading(false);
@@ -764,6 +772,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // non-admin viewers can't change anything and the PUT route would 403.
   useEffect(() => {
     if (loading) return;
+    if (!gameLoadedRef.current) return;   // never overwrite a game we failed to read
+    if (error) return;
     if (!isAdmin) return;
 
     const timeoutId = setTimeout(() => {
@@ -771,7 +781,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits, loading, isAdmin, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits, loading, error, isAdmin, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
