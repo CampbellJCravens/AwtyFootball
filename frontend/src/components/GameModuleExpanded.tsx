@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
 import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, LeaveReason, LEAVE_REASON_LABELS, GoalQualifier, GOAL_QUALIFIER_LABELS, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
-import { scoreFor } from '../utils/goals';
+import { scoreFor, pickMenOfTheMatch } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
 import ActivePlayersSection from './ActivePlayersSection';
@@ -535,27 +535,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const colorScore = scoreFor(goals, 'color');
       const whiteScore = scoreFor(goals, 'white');
 
-      // Man of the Match = most goal involvements (goals + assists), guests
-      // excluded. Ties surface all winners. Omitted when nobody was involved.
-      const involvement = new Map<string, { name: string; goals: number; assists: number }>();
-      const bump = (p: Player, kind: 'goals' | 'assists') => {
-        if (p.name.includes('Guest')) return;
-        const cur = involvement.get(p.id) ?? { name: p.name, goals: 0, assists: 0 };
-        cur[kind] += 1;
-        involvement.set(p.id, cur);
-      };
-      for (const g of goals) {
-        // An own goal is not a goal involvement — it must never win MotM.
-        if (!g.ownGoal) bump(g.scorer, 'goals');
-        if (g.assister) bump(g.assister, 'assists');
-      }
-      let topInv = 0;
-      for (const s of involvement.values()) topInv = Math.max(topInv, s.goals + s.assists);
-      const manOfTheMatch = topInv > 0
-        ? Array.from(involvement.values())
-            .filter(s => s.goals + s.assists === topInv)
-            .sort((a, b) => b.goals - a.goals)
-        : null;
+      // At most two; ties of three or more are settled inside pickMenOfTheMatch.
+      const manOfTheMatch = pickMenOfTheMatch(
+        goals,
+        id => playerTeams[id],
+        name => name.includes('Guest'),
+      );
 
       const data: MatchReportData = {
         title: gameTitle.replace(/ - /g, ' · '),
@@ -590,7 +575,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSharing(false);
     }
-  }, [goals, gameNumber, gameTitle, displayName]);
+  }, [goals, gameNumber, gameTitle, displayName, playerTeams]);
 
   // Handle CSV file selection for import
   const handleFileInputChange = useCallback(async () => {
