@@ -930,12 +930,39 @@ export async function resolveContact(phone: string, playerId: string): Promise<v
   await resyncPollsForPhone(digits);
 }
 
-/** Link (or re-link) a captured poll to a game and sync its votes. */
+/**
+ * Link (or re-link) a captured poll to a game and sync its votes.
+ *
+ * Moving a poll off a game takes its RSVPs with it. syncPollToRsvps only ever
+ * adds, so before this a mis-tap in the admin picker (one tap on a phone,
+ * no confirm) copied a whole poll's votes into the wrong game and switching
+ * back left them there. Only WhatsApp-sourced rows for this poll's voters are
+ * removed; anything set in the app or by an admin is left alone.
+ */
 export async function linkPollToGame(
   pollMessageId: string,
   gameId: string,
   userId: string
 ): Promise<void> {
+  const poll = await prisma.whatsappPoll.findUnique({
+    where: { pollMessageId },
+    select: { gameId: true, latestVotes: true },
+  });
+  if (!poll) throw new Error('Poll not found');
+
+  if (poll.gameId && poll.gameId !== gameId && poll.latestVotes) {
+    const phones = Object.keys(JSON.parse(poll.latestVotes) as Record<string, unknown>);
+    if (phones.length) {
+      await prisma.gameRsvp.deleteMany({
+        where: {
+          gameId: poll.gameId,
+          setByUserId: WHATSAPP_SOURCE,
+          player: { phone: { in: phones } },
+        },
+      });
+    }
+  }
+
   await prisma.whatsappPoll.update({
     where: { pollMessageId },
     data: { gameId, linkedBy: userId },

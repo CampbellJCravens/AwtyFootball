@@ -154,11 +154,18 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
     return () => clearInterval(id);
   }, [status?.linked, refresh]);
 
-  const handleLink = async (pollMessageId: string, gameId: string) => {
-    if (!gameId) return;
+  // Linking writes the poll's votes into the chosen game, so it needs a second
+  // tap. A native select fires the moment an option is touched, and on a phone
+  // that is one scroll away from moving a week's RSVPs onto the wrong game.
+  const [pendingLink, setPendingLink] = useState<{ pollMessageId: string; gameId: string } | null>(null);
+
+  const handleLink = async () => {
+    if (!pendingLink) return;
+    const { pollMessageId, gameId } = pendingLink;
     setBusy(pollMessageId);
     try {
       await linkPoll(pollMessageId, gameId);
+      setPendingLink(null);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to link poll');
@@ -368,26 +375,57 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {polls.map((poll) => (
-                      <div key={poll.pollMessageId} className="bg-surface-raised rounded-xl p-3 border border-border">
-                        <p className="text-sm font-medium text-text-primary truncate">{poll.question}</p>
-                        <p className="text-xs text-text-tertiary mb-2">
-                          {poll.voteCount} vote{poll.voteCount === 1 ? '' : 's'}
-                          {poll.game ? ` · linked to ${gameLabel(poll.game)}` : ' · not linked'}
-                        </p>
-                        <select
-                          value={poll.gameId ?? ''}
-                          disabled={busy === poll.pollMessageId}
-                          onChange={(e) => handleLink(poll.pollMessageId, e.target.value)}
-                          className="w-full px-3 py-2 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent"
-                        >
-                          <option value="">{poll.gameId ? 'Change game…' : 'Link to game…'}</option>
-                          {games.map((g) => (
-                            <option key={g.id} value={g.id}>{gameLabel(g)}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
+                    {polls.map((poll) => {
+                      const pending = pendingLink?.pollMessageId === poll.pollMessageId ? pendingLink : null;
+                      const target = pending ? games.find((g) => g.id === pending.gameId) : null;
+                      return (
+                        <div key={poll.pollMessageId} className="bg-surface-raised rounded-xl p-3 border border-border">
+                          <p className="text-sm font-medium text-text-primary truncate">{poll.question}</p>
+                          <p className="text-xs text-text-tertiary mb-2">
+                            {poll.voteCount} vote{poll.voteCount === 1 ? '' : 's'}
+                            {poll.game ? ` · linked to ${gameLabel(poll.game)}` : ' · not linked'}
+                          </p>
+                          <select
+                            value={pending?.gameId ?? poll.gameId ?? ''}
+                            disabled={busy === poll.pollMessageId}
+                            onChange={(e) => {
+                              const gameId = e.target.value;
+                              if (!gameId || gameId === poll.gameId) setPendingLink(null);
+                              else setPendingLink({ pollMessageId: poll.pollMessageId, gameId });
+                            }}
+                            className="w-full px-3 py-2 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent"
+                          >
+                            <option value="">{poll.gameId ? 'Change game…' : 'Link to game…'}</option>
+                            {games.map((g) => (
+                              <option key={g.id} value={g.id}>{gameLabel(g)}</option>
+                            ))}
+                          </select>
+                          {pending && target && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <p className="flex-1 text-xs text-text-secondary">
+                                {poll.game
+                                  ? `Move ${poll.voteCount} vote${poll.voteCount === 1 ? '' : 's'} from ${gameLabel(poll.game)} to ${gameLabel(target)}?`
+                                  : `Write ${poll.voteCount} vote${poll.voteCount === 1 ? '' : 's'} to ${gameLabel(target)}?`}
+                              </p>
+                              <button
+                                onClick={() => setPendingLink(null)}
+                                disabled={busy === poll.pollMessageId}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:bg-surface-active transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={handleLink}
+                                disabled={busy === poll.pollMessageId}
+                                className="px-3 py-1.5 rounded-lg bg-gold text-text-on-accent text-xs font-bold hover:bg-gold-hover disabled:opacity-50 transition-colors"
+                              >
+                                {busy === poll.pollMessageId ? '…' : poll.game ? 'Move' : 'Link'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </section>
