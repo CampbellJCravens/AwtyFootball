@@ -22,6 +22,7 @@ import makeWASocket, {
   proto,
 } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
+import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { useWhatsappAuthState, clearWhatsappAuthState } from './authState';
 import prisma from '../../prisma';
@@ -89,6 +90,38 @@ function logMessageShape(msg: any, via: 'upsert' | 'history'): void {
 
 /** How far back a history chunk's messages still count as "live" for capture. */
 const HISTORY_RECENT_WINDOW_S = 6 * 60 * 60;
+
+/**
+ * Baileys' own logger. Every internal path that can drop a message without
+ * telling us — "ignored msmsg", "absorbed message upsert in message set", the
+ * retry and resend decisions — logs at debug, and the default is info. Run at
+ * debug until the missing-poll problem is understood; WHATSAPP_LOG_LEVEL turns
+ * it back down without a code change. Same timestamp format as the default.
+ */
+const baileysLogger = pino({
+  level: process.env.WHATSAPP_LOG_LEVEL || 'debug',
+  timestamp: () => `,"time":"${new Date().toJSON()}"`,
+}).child({ class: 'baileys' });
+
+/**
+ * Log every message stanza for the scoped group as it comes off the wire,
+ * before Baileys decrypts, buffers or routes it. Attributes and the encryption
+ * part types only (pkmsg = pairwise, skmsg = group sender key, msmsg = message
+ * secret), never content. Separates "never reached the process" from "reached
+ * it and was dropped inside", which the 15 Sep 2026 test could not.
+ */
+function logWireMessage(node: any): void {
+  const a = node?.attrs ?? {};
+  if (!isInScope(a.from)) return;
+  const children: any[] = Array.isArray(node?.content) ? node.content : [];
+  const enc = children.filter((c) => c?.tag === 'enc').map((c) => c.attrs?.type ?? '?');
+  const other = children.filter((c) => c?.tag && c.tag !== 'enc').map((c) => c.tag);
+  console.log(
+    `[whatsapp] Wire: message id=${a.id} from=${a.participant ?? a.from}` +
+      ` enc=[${enc.join(',')}]${other.length ? ` also=[${other.join(',')}]` : ''}` +
+      `${a.offline ? ' offline' : ''}${a.type ? ` type=${a.type}` : ''}`
+  );
+}
 
 /**
  * A stanza can carry several encrypted parts — typically a pairwise
@@ -364,6 +397,7 @@ export async function startWhatsappListener(): Promise<void> {
     sock = makeWASocket({
       version,
       auth: state,
+      logger: baileysLogger,
       // Read-only posture: don't announce ourselves as the active device.
       markOnlineOnConnect: false,
       browser: ['AwtyFootball', 'Chrome', '1.0.0'],
@@ -380,6 +414,16 @@ export async function startWhatsappListener(): Promise<void> {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // Raw arrival, one level below Baileys' event pipeline.
+    (sock as any).ws?.on?.('CB:message', (node: any) => {
+      if (myGeneration !== generation) return;
+      try {
+        logWireMessage(node);
+      } catch {
+        /* diagnostics must never break receiving */
+      }
+    });
 
     const processIncoming = async (messages: any[], via: 'upsert' | 'history') => {
       const meId = sock?.user?.id;
