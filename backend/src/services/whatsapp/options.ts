@@ -58,9 +58,12 @@ export function parsePollOption(raw: string): ParsedOption | null {
  * The real group poll uses standalone "In / Maybe / Out" plus separate "+1"/"+2",
  * so "in with one guest" arrives as ["In", "+1"]. Collapse rule:
  *   - any Out/No       -> no  (guest count irrelevant)
- *   - else any In/Yes OR any "+N" -> yes, guestCount = SUM of the +N options
+ *   - else any In/Yes  -> yes, guestCount = SUM of the +N options
  *     (the group's +1/+2 are additive, so picking both = 3 guests), capped.
- *   - else any Maybe   -> maybe
+ *   - else any Maybe   -> maybe (a "+N" alongside it doesn't promote to yes;
+ *     someone unsure about coming is unsure about their guest too — seen live
+ *     on 15 Sep 2026, when Maybe + "+1" rendered as In +1)
+ *   - else any "+N"    -> yes (a bare "+1" with no status is "me plus one")
  *   - else             -> null (nothing recognizable / vote cleared)
  */
 export function combineSelections(labels: string[]): ParsedOption | null {
@@ -87,7 +90,8 @@ export function combineSelections(labels: string[]): ParsedOption | null {
   if (guestCount > GUEST_CAP) guestCount = GUEST_CAP;
 
   if (hasNo) return { status: 'no', guestCount: 0 };
-  if (hasYes || guestCount > 0) return { status: 'yes', guestCount };
+  if (hasYes) return { status: 'yes', guestCount };
   if (hasMaybe) return { status: 'maybe', guestCount: 0 };
+  if (guestCount > 0) return { status: 'yes', guestCount };
   return null;
 }
