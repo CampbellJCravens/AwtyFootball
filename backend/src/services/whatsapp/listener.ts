@@ -19,6 +19,7 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   BufferJSON,
+  proto,
 } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
@@ -66,6 +67,38 @@ function logUnhandledMessage(message: any): void {
 }
 
 /**
+ * One line per in-scope message, before any handler decides what it is. The
+ * 15 Sep 2026 test poll arrived as a non-empty message holding nothing but a
+ * senderKeyDistributionMessage — every handler said "not mine", every type was
+ * on the ignore list, and the run produced no line at all. Volume is a few
+ * dozen a day in a group this size, so always-on is affordable, and it means
+ * a missed poll can be explained from the logs instead of theorised about.
+ * Field names, stub codes and Baileys' error text only; never message content.
+ */
+function logMessageShape(msg: any): void {
+  const inner = unwrapMessage(msg?.message);
+  const keys = inner ? Object.keys(inner).join(',') : '(empty)';
+  const stub = msg?.messageStubType;
+  const stubText = msg?.messageStubParameters?.[0];
+  console.log(
+    `[whatsapp] Message id=${msg?.key?.id} from=${msg?.key?.participant ?? msg?.key?.remoteJid}` +
+      `${msg?.key?.fromMe ? ' (me)' : ''} fields=[${keys}]` +
+      (stub ? ` stub=${stub}${stubText ? ` (${stubText})` : ''}` : '')
+  );
+}
+
+/**
+ * A stanza can carry several encrypted parts — typically a pairwise
+ * senderKeyDistributionMessage alongside the group-encrypted content. Baileys
+ * merges whatever decrypts and marks the message CIPHERTEXT if any part failed,
+ * so "has content" and "fully decrypted" are different questions. Treat a
+ * partial decrypt as a failed one: the poll is in the part we didn't get.
+ */
+function isPartialDecrypt(msg: any): boolean {
+  return msg?.messageStubType === proto.WebMessageInfo.StubType.CIPHERTEXT;
+}
+
+/**
  * A message that arrived with no readable content. Baileys emits these as
  * CIPHERTEXT stubs when decryption fails — typically when the sender's Signal
  * session is rotating ("identity key changed", "Closing open session in favor of
@@ -81,8 +114,10 @@ async function handleUndecryptableMessage(
   requestResend: (key: any) => Promise<void>
 ): Promise<void> {
   const stub = msg?.messageStubType;
+  const reason = msg?.messageStubParameters?.[0];
   console.warn(
-    `[whatsapp] Undecryptable message in scope (stubType=${stub ?? 'none'}, id=${msg?.key?.id}) ` +
+    `[whatsapp] Undecryptable message in scope (stubType=${stub ?? 'none'}` +
+      `${reason ? `, reason="${reason}"` : ''}, id=${msg?.key?.id}) ` +
       `from ${msg?.key?.participant ?? msg?.key?.remoteJid}. Requesting a resend — ` +
       `if this was a poll creation, that is why the poll went missing.`
   );
@@ -353,6 +388,7 @@ export async function startWhatsappListener(): Promise<void> {
         try {
           // Ignore anything outside the configured group (if one is set).
           if (!isInScope(msg.key?.remoteJid)) continue;
+          logMessageShape(msg);
           if (msg.pushName && msg.key?.participant) {
             await noteContact(msg.key.participant, msg.pushName);
           }
@@ -361,9 +397,9 @@ export async function startWhatsappListener(): Promise<void> {
             await capturePoll(msg, meId, meLid);
           } else if (getPollUpdate(msg.message)) {
             await handlePollUpdateMessage(msg, meId, meLid, { requestResend });
-          } else if (!unwrapMessage(msg.message)) {
-            // No readable content: a failed decrypt. This is the case that was
-            // silently swallowing poll creations.
+          } else if (!unwrapMessage(msg.message) || isPartialDecrypt(msg)) {
+            // No readable content, or content missing a part: a failed decrypt.
+            // This is the case that was silently swallowing poll creations.
             await handleUndecryptableMessage(msg, requestResend);
           } else {
             logUnhandledMessage(msg.message);
