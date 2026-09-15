@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+export const goalQualifierSchema = z.enum([
+  'corner', 'header', 'deflection',
+  'handball', 'penalty', 'freeKick', 'volley', 'longRange', 'rebound',
+  'soloRun', 'oneOnOne', 'weakFoot', 'tapIn', 'bicycle', 'nutmeg',
+]);
+
 export const goalSchema = z.object({
   scorerId: z.string(),
   assisterId: z.string().nullable(),
@@ -15,15 +21,34 @@ export const goalSchema = z.object({
   // ALWAYS credited 1 regardless of this, or one freak comeback distorts a
   // season's leaderboards.
   value: z.number().int().min(1).optional(),
+  // How the goal was scored. Purely descriptive — a qualified goal is worth
+  // exactly the same as a plain one, and an empty or absent list just means
+  // nobody said. A SET, not one choice: a header from a corner is the most
+  // ordinary set-piece goal there is, and forcing a pick between the two would
+  // record a falsehood either way.
+  qualifiers: z.array(goalQualifierSchema).optional(),
 });
+
+// Why a player left. ABSENT IS NOT NEUTRAL: an untagged departure counts toward
+// Lack of Stamina, and only an explicit excusing reason removes it. That
+// asymmetry is deliberate — if the metric needed someone to volunteer 'quit'
+// while the admin tagging them stood next to them, it would read zero forever.
+// 'quit' therefore exists only to record that somebody actually asked; it
+// scores identically to a blank.
+export const leaveReasonSchema = z.enum(['injured', 'family', 'work', 'quit']);
 
 export const teamChangeSchema = z.object({
   playerId: z.string(),
   timestamp: z.string(), // ISO date string
   team: z.enum(['color', 'white']),
-  type: z.enum(['leave', 'swap']),
+  // 'join' = put on a team AFTER kick-off, i.e. a late arrival. Arriving on
+  // time writes nothing at all — being in teamAssignments with no 'join' row IS
+  // the on-time record, which is why the common case costs no storage.
+  type: z.enum(['leave', 'swap', 'join']),
   previousTeam: z.enum(['color', 'white']).optional(),
   newTeam: z.enum(['color', 'white']).optional(),
+  // Only meaningful on type 'leave'.
+  reason: leaveReasonSchema.optional(),
 });
 
 export const gameEventSchema = z.object({

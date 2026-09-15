@@ -52,6 +52,7 @@ const serializePlayer = (p: any, isAdmin: boolean, req?: AuthenticatedRequest) =
   isAlumni: p.isAlumni,
   graduationYear: p.graduationYear,
   memberSince: p.memberSince,
+  staminaExempt: p.staminaExempt,
   createdAt: p.createdAt,
   updatedAt: p.updatedAt,
   hasPhone: !!p.phone,
@@ -86,6 +87,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
         ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
         ...(validatedData.graduationYear !== undefined && { graduationYear: validatedData.graduationYear }),
         ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
+        ...(validatedData.staminaExempt !== undefined && { staminaExempt: validatedData.staminaExempt }),
       },
     });
     res.status(201).json(serializePlayer(player, isReqAdmin(req), req));
@@ -182,6 +184,7 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
         ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
         ...(validatedData.graduationYear !== undefined && { graduationYear: validatedData.graduationYear }),
         ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
+        ...(validatedData.staminaExempt !== undefined && { staminaExempt: validatedData.staminaExempt }),
       },
     });
 

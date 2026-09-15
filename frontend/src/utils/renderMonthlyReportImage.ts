@@ -7,6 +7,10 @@ export interface MonthlyAwardItem {
   label: string;    // "TOP SCORER"
   names: string[];  // tied winners; one entry for a single winner
   value: string;    // "7 goals"
+  // Always take a full-width row. Game of the Month used to get this by
+  // accident — it was simply last in an odd-length list — so adding any tile
+  // after it silently demoted it. Saying so explicitly makes it survive.
+  wide?: boolean;
 }
 
 export interface MonthlyReportData {
@@ -47,10 +51,23 @@ export async function renderMonthlyReportImage(data: MonthlyReportData): Promise
     : null;
 
   const n = data.awards.length;
-  const tileLayouts: Layout[] = data.awards.map((a, i) => {
-    const w = (n % 2 === 1 && i === n - 1) ? contentW : tileW;
-    return layoutNames(meas, a.names, w - 24, 16, 10, 2);
-  });
+
+  // Pack the tiles into rows first, in order: a wide tile takes a row to
+  // itself, everything else pairs up, and a lone tile at the end of a row
+  // stretches. Widths and heights both fall out of this, so the measuring pass
+  // and the drawing pass cannot disagree about the layout.
+  const tileRowIdx: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    if (data.awards[i].wide) { tileRowIdx.push([i]); continue; }
+    const next = i + 1;
+    if (next < n && !data.awards[next].wide) { tileRowIdx.push([i, next]); i = next; }
+    else tileRowIdx.push([i]);
+  }
+  const tileWidthFor = (i: number) =>
+    (tileRowIdx.find(r => r.includes(i))!.length === 1 ? contentW : tileW);
+
+  const tileLayouts: Layout[] = data.awards.map((a, i) =>
+    layoutNames(meas, a.names, tileWidthFor(i) - 24, 16, 10, 2));
   const bannerLayouts: Layout[] = data.banners.map(a => {
     const bValW = valW(a.value, `bold 14px ${FONT_STACK}`, 14);
     return layoutNames(meas, a.names, contentW - 28 - bValW, 18, 12, 2);
@@ -71,13 +88,9 @@ export async function renderMonthlyReportImage(data: MonthlyReportData): Promise
 
   const tileLineH = 17;
   const tileHeightFor = (lines: number) => 54 + lines * tileLineH;
-  const tileRows = Math.ceil(n / 2);
-  const rowLines: number[] = [];
-  for (let r = 0; r < tileRows; r++) {
-    const a = tileLayouts[r * 2]?.lines.length ?? 1;
-    const b = tileLayouts[r * 2 + 1]?.lines.length ?? 0;
-    rowLines.push(Math.max(a, b, 1));
-  }
+  const tileRows = tileRowIdx.length;
+  const rowLines: number[] = tileRowIdx.map(row =>
+    Math.max(1, ...row.map(i => tileLayouts[i]?.lines.length ?? 1)));
   const tilesH = rowLines.reduce((s, l) => s + tileHeightFor(l), 0) + (tileRows > 0 ? (tileRows - 1) * tileGap : 0);
   const gapAfterTiles = n ? 16 : 0;
 
@@ -194,18 +207,14 @@ export async function renderMonthlyReportImage(data: MonthlyReportData): Promise
   };
 
   let ty = y;
-  for (let r = 0; r < tileRows; r++) {
+  tileRowIdx.forEach((row, r) => {
     const rowH = tileHeightFor(rowLines[r]);
-    const left = r * 2;
-    const right = r * 2 + 1;
-    if (n % 2 === 1 && left === n - 1) {
-      drawTile(padding, ty, contentW, rowH, data.awards[left], tileLayouts[left]);
-    } else {
-      drawTile(padding, ty, tileW, rowH, data.awards[left], tileLayouts[left]);
-      if (right < n) drawTile(padding + tileW + tileGap, ty, tileW, rowH, data.awards[right], tileLayouts[right]);
-    }
+    row.forEach((i, col) => {
+      const w = row.length === 1 ? contentW : tileW;
+      drawTile(padding + col * (tileW + tileGap), ty, w, rowH, data.awards[i], tileLayouts[i]);
+    });
     ty += rowH + tileGap;
-  }
+  });
   y += tilesH + gapAfterTiles;
 
   // Full-width banners (Top Duo)

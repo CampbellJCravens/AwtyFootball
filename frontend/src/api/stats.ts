@@ -163,6 +163,7 @@ export interface MonthlyStatsResponse {
     topDefender: MonthlyAward[] | null;
     sportsmanOfTheMonth: MonthlyAward[] | null;
     dirtiestPlayerOfTheMonth: MonthlyAward[] | null;
+    lackOfStamina: MonthlyAward[] | null;
     // null in any month without an own goal — the section is then not rendered.
     ownGoalOfTheMonth: MonthlyAward[] | null;
     topDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
@@ -213,6 +214,7 @@ export interface MatchBalance {
   leadChanges: number;
   comeback: boolean | null;
   tie: boolean;
+  goldenDecided: boolean;
   quality: MatchQuality;
   qualityLabel: string;
 }
@@ -265,6 +267,12 @@ export interface StandoutGame {
   totalGoals: number;
   quality: MatchQuality;
   qualityLabel: string;
+  /** Winner trailed at some point. Null on a draw. */
+  comeback?: boolean | null;
+  margin?: number;
+  tie?: boolean;
+  /** The golden goal's extra weight changed the result. Implies `comeback`. */
+  goldenDecided?: boolean;
 }
 
 // Admin-only. Never render this anywhere a non-admin can reach — a public list
@@ -319,6 +327,7 @@ export interface YearlyStatsResponse {
     topDefender: MonthlyAward[] | null;
     sportsman: MonthlyAward[] | null;
     dirtiestPlayer: MonthlyAward[] | null;
+    lackOfStamina: MonthlyAward[] | null;
   };
   bestDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
   bestTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;
@@ -960,10 +969,27 @@ export interface ReliabilitySummary {
   };
 }
 
+// Punctuality. Only games with a kick-off time (Game.startedAt) are measured,
+// so this is empty until the Start button becomes routine — a game without one
+// counts for nobody rather than scoring everyone as on time.
+export interface ArrivalRow {
+  playerId: string;
+  measuredGames: number;
+  kickoff: number;    // on a team when the whistle went
+  grace: number;      // joined within the grace window — effectively on time
+  firstHalf: number;
+  secondHalf: number;
+  late: number;       // firstHalf + secondHalf
+  onTimeRate: number | null;
+}
+
 export interface ReliabilityResponse {
   totalTrackedGames: number;
   summary: ReliabilitySummary;
   players: ReliabilityPlayer[];
+  arrivals: ArrivalRow[];
+  arrivalsMeasuredGames: number;
+  arrivalGrace: number; // minutes of grace after kick-off, from the server
 }
 
 // Admin-only. 403s for non-admins.

@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
-import { scoreFor } from '../utils/goals';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, LeaveReason, LEAVE_REASON_LABELS, GoalQualifier, GOAL_QUALIFIER_LABELS, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { scoreFor, pickMenOfTheMatch } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
 import ActivePlayersSection from './ActivePlayersSection';
 import GoalAssistModal from './GoalAssistModal';
+import GoalDetailsModal from './GoalDetailsModal';
 import GuestDetailsModal from './GuestDetailsModal';
 import EditGoalscorerModal from './EditGoalscorerModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -46,6 +47,7 @@ type LocalGoal = {
   ownGoal?: boolean;
   goldenGoal?: boolean;
   value?: number;
+  qualifiers?: GoalQualifier[];
 };
 
 interface GameModuleExpandedProps {
@@ -90,13 +92,20 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   );
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  // Autosave must never run against state that was never loaded. setLoading(false)
+  // happens in a finally, so a FAILED load also clears it — and the component's
+  // defaults are an empty roster and no goals. Without this the debounced save
+  // then wrote that emptiness over a real, fully-logged game. Only a load that
+  // actually succeeded flips this.
+  const gameLoadedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [playerTeams, setPlayerTeams] = useState<Record<string, 'color' | 'white'>>({});
   const [leftPlayers, setLeftPlayers] = useState<Record<string, boolean>>({});
+  const [reasonForPlayerId, setReasonForPlayerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [goalScorer, setGoalScorer] = useState<Player | null>(null);
   const [goals, setGoals] = useState<Array<LocalGoal>>([]);
-  const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }>>([]);
+  const [teamChanges, setTeamChanges] = useState<Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap' | 'join'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }>>([]);
   const [gameEvents, setGameEvents] = useState<Array<{ type: 'halfTime' | 'secondHalfStart' | 'gameOver' | 'goldenGoalArmed'; timestamp: Date; n?: number; trailing?: 'color' | 'white' | null }>>([]);
   // The side gap at the last "Not now". Re-offers only if the gap widens.
   const [rebalanceDismissedAt, setRebalanceDismissedAt] = useState<number | null>(null);
@@ -116,6 +125,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [gameEventToDelete, setGameEventToDelete] = useState<number | null>(null);
   const [editingGameEventIndex, setEditingGameEventIndex] = useState<number | null>(null);
   const [editingGoalIndex, setEditingGoalIndex] = useState<number | null>(null);
+  // Tags-only edit, separate from the scorer/assister edit above it.
+  const [detailsGoalIndex, setDetailsGoalIndex] = useState<number | null>(null);
   const [editingScorer, setEditingScorer] = useState<Player | null>(null);
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
   const [teamChangeToDelete, setTeamChangeToDelete] = useState<number | null>(null);
@@ -223,6 +234,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             ownGoal: goal.ownGoal,
             goldenGoal: goal.goldenGoal,
             value: goal.value,
+            qualifiers: goal.qualifiers,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -252,7 +264,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
       // Restore team changes from database
       if (gameData.teamChanges && gameData.teamChanges.length > 0) {
-        const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white' }> = [];
+        const restoredTeamChanges: Array<{ player: Player; timestamp: Date; team: 'color' | 'white'; type: 'leave' | 'swap' | 'join'; previousTeam?: 'color' | 'white'; newTeam?: 'color' | 'white'; reason?: LeaveReason }> = [];
         
         gameData.teamChanges.forEach(change => {
           const player = playersData.find(p => p.id === change.playerId);
@@ -264,13 +276,16 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               type: change.type,
               previousTeam: change.previousTeam,
               newTeam: change.newTeam,
+              reason: change.reason,
             });
           }
         });
         
         setTeamChanges(restoredTeamChanges);
       }
+      gameLoadedRef.current = true;
     } catch (err) {
+      gameLoadedRef.current = false;
       setError(err instanceof Error ? err.message : 'Failed to load game data');
     } finally {
       setLoading(false);
@@ -345,12 +360,18 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const armedEvent = gameEvents.find(e => e.type === 'goldenGoalArmed') ?? null;
   const armedN = armedEvent?.n ?? null;
 
-  // 80 minutes of PLAY, not of morning — the break no longer counts toward it.
+  // 70 minutes of PLAY, not of morning — the break no longer counts toward it.
   // Owner 2026-08-22 made this a gate rather than a prompt threshold: the bar
-  // is now the only way to arm, so before 80 there is no way to. That reverses
+  // is now the only way to arm, so before 70 there is no way to. That reverses
   // the 2026-08-15 call deliberately; if short games start losing their
   // decider, lower this number rather than adding a second control.
-  const GOLDEN_GOAL_MINUTES = 80;
+  //
+  // Lowered 80 -> 70 on 2026-08-29, which is that documented remedy firing for
+  // the first time: game #35 ran 74:41 of play (Houston heat cut it short) and
+  // finished 0 seconds' worth of arming window under the old gate, so its
+  // decider had to be applied by hand afterwards. Heat, not tactics, is what
+  // ends games here in August.
+  const GOLDEN_GOAL_MINUTES = 70;
   const elapsedMinutes = elapsedMs / 60000;
   const canArmGolden = isAdmin && !!startedAt && !gameOverAt && !armedEvent;
   const showGoldenGoal = canArmGolden && elapsedMinutes >= GOLDEN_GOAL_MINUTES;
@@ -428,6 +449,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         ...(goal.ownGoal ? { ownGoal: true } : {}),
         ...(goal.goldenGoal ? { goldenGoal: true } : {}),
         ...(goal.value !== undefined ? { value: goal.value } : {}),
+        ...(goal.qualifiers?.length ? { qualifiers: goal.qualifiers } : {}),
       }));
       
       // Convert team changes to API format
@@ -438,6 +460,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         type: change.type,
         previousTeam: change.previousTeam,
         newTeam: change.newTeam,
+        ...(change.reason ? { reason: change.reason } : {}),
       }));
 
       // Convert game events to API format
@@ -512,27 +535,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       const colorScore = scoreFor(goals, 'color');
       const whiteScore = scoreFor(goals, 'white');
 
-      // Man of the Match = most goal involvements (goals + assists), guests
-      // excluded. Ties surface all winners. Omitted when nobody was involved.
-      const involvement = new Map<string, { name: string; goals: number; assists: number }>();
-      const bump = (p: Player, kind: 'goals' | 'assists') => {
-        if (p.name.includes('Guest')) return;
-        const cur = involvement.get(p.id) ?? { name: p.name, goals: 0, assists: 0 };
-        cur[kind] += 1;
-        involvement.set(p.id, cur);
-      };
-      for (const g of goals) {
-        // An own goal is not a goal involvement — it must never win MotM.
-        if (!g.ownGoal) bump(g.scorer, 'goals');
-        if (g.assister) bump(g.assister, 'assists');
-      }
-      let topInv = 0;
-      for (const s of involvement.values()) topInv = Math.max(topInv, s.goals + s.assists);
-      const manOfTheMatch = topInv > 0
-        ? Array.from(involvement.values())
-            .filter(s => s.goals + s.assists === topInv)
-            .sort((a, b) => b.goals - a.goals)
-        : null;
+      // At most two; ties of three or more are settled inside pickMenOfTheMatch.
+      const manOfTheMatch = pickMenOfTheMatch(
+        goals,
+        id => playerTeams[id],
+        name => name.includes('Guest'),
+      );
 
       const data: MatchReportData = {
         title: gameTitle.replace(/ - /g, ' · '),
@@ -567,7 +575,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     } finally {
       setSharing(false);
     }
-  }, [goals, gameNumber, gameTitle, displayName]);
+  }, [goals, gameNumber, gameTitle, displayName, playerTeams]);
 
   // Handle CSV file selection for import
   const handleFileInputChange = useCallback(async () => {
@@ -653,6 +661,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
             ownGoal: goal.ownGoal,
             goldenGoal: goal.goldenGoal,
             value: goal.value,
+            qualifiers: goal.qualifiers,
           };
         }).filter((g): g is LocalGoal => g !== null);
         
@@ -748,6 +757,8 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // non-admin viewers can't change anything and the PUT route would 403.
   useEffect(() => {
     if (loading) return;
+    if (!gameLoadedRef.current) return;   // never overwrite a game we failed to read
+    if (error) return;
     if (!isAdmin) return;
 
     const timeoutId = setTimeout(() => {
@@ -755,7 +766,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }, 500); // Debounce saves by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits, loading, isAdmin, saveGameData]);
+  }, [playerTeams, goals, teamChanges, gameEvents, sportsmanship, fouls, guestVisits, loading, error, isAdmin, saveGameData]);
 
   const handleTeamSelect = (playerId: string, team: 'color' | 'white') => {
     // Only admins can modify team assignments
@@ -768,6 +779,12 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     const previousTeam = playerTeams[playerId];
     if (startedAt && previousTeam && previousTeam !== team) {
       recordSwap(playerId, previousTeam, team);
+    } else if (startedAt && !previousTeam) {
+      // Put on a team with the clock already running = a late arrival.
+      recordJoin(playerId, team);
+    } else if (previousTeam === team) {
+      // Deselecting takes them back off the roster, so any arrival goes too.
+      clearJoin(playerId);
     }
 
     setPlayerTeams(prev => {
@@ -791,12 +808,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const handleRemoveFromTeam = (playerId: string) => {
     // Only admins can remove players from teams
     if (!isAdmin) return;
-    
+
     setPlayerTeams(prev => {
       const newTeams = { ...prev };
       delete newTeams[playerId];
       return newTeams;
     });
+    // They are off the roster, so the arrival they never made goes with them.
+    clearJoin(playerId);
   };
 
   const handleSwapTeam = (playerId: string) => {
@@ -860,7 +879,40 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         ...prev,
         { player, timestamp: now, team, type: 'leave' },
       ]);
+      // The departure is already recorded. The sheet only ever ADDS a reason to
+      // it, so dismissing it loses nothing — never put the tap behind a modal,
+      // because a missed departure is worse than an untagged one.
+      setReasonForPlayerId(playerId);
     }
+  };
+
+  /** Tag an already-recorded departure, or clear the tag when re-picking. */
+  const setLeaveReason = (playerId: string, reason: LeaveReason | null) => {
+    setTeamChanges(prev => {
+      const lastIdx = prev.map(c => c.player.id === playerId && c.type === 'leave').lastIndexOf(true);
+      if (lastIdx === -1) return prev;
+      return prev.map((c, i) => (i === lastIdx ? { ...c, reason: reason ?? undefined } : c));
+    });
+    setReasonForPlayerId(null);
+  };
+
+  // Joining a team AFTER kick-off is a late arrival and gets stamped as one.
+  // Arriving on time records NOTHING — being in teamAssignments with no 'join'
+  // row is itself the on-time record, so the common case costs no storage and
+  // no extra tap. services/arrivals.ts reads it that way.
+  const recordJoin = (playerId: string, team: 'color' | 'white') => {
+    const player = allPlayers.find(p => p.id === playerId);
+    if (!player) return;
+    const stamped = new Date(gameDate);
+    // Minute resolution, matching every other stamp here. The grace window is
+    // 8 minutes wide, so seconds would be false precision.
+    stamped.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
+    setTeamChanges(prev => [...prev, { player, timestamp: stamped, team, type: 'join' }]);
+  };
+
+  /** Undo an arrival — used wherever a player comes back off the roster. */
+  const clearJoin = (playerId: string) => {
+    setTeamChanges(prev => prev.filter(c => !(c.player.id === playerId && c.type === 'join')));
   };
 
   const recordSwap = (playerId: string, previousTeam: 'color' | 'white', newTeam: 'color' | 'white') => {
@@ -924,6 +976,52 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }
   };
 
+  // A guest slot can only be dropped while it holds no record of having played.
+  // Removing one that scored would mean rewriting the goals JSON, and the
+  // scoreline rides on it — so the removal is refused and the reason is shown
+  // instead. The real case (added by mistake, never turned up) has nothing here.
+  const guestRemovalBlock = (slotPlayerId: string): string | null => {
+    const scored = goals.filter(g => g.scorer.id === slotPlayerId).length;
+    const assisted = goals.filter(g => g.assister?.id === slotPlayerId).length;
+    // 'join' is excluded on purpose: it records when they turned up, not that
+    // they played, and removeGuestSlot clears it anyway. Blocking on it would
+    // make a late-arriving guest permanently unremovable.
+    const changed = teamChanges.filter(
+      c => c.player.id === slotPlayerId && c.type !== 'join'
+    ).length;
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+    const parts: string[] = [];
+    if (scored) parts.push(plural(scored, 'goal'));
+    if (assisted) parts.push(plural(assisted, 'assist'));
+    if (fouls[slotPlayerId]) parts.push(plural(fouls[slotPlayerId], 'foul'));
+    if (sportsmanship[slotPlayerId]) parts.push(plural(sportsmanship[slotPlayerId], 'sportsmanship point'));
+    if (changed) parts.push(plural(changed, 'team change'));
+    if (!parts.length) return null;
+
+    return parts.length === 1
+      ? parts[0]
+      : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  };
+
+  // Drops the slot off the game. The save path already discards the GuestVisit
+  // for any slot no longer on a team, so nothing else needs unwinding — and the
+  // durable Guest identity keeps its other visits and its dues.
+  const removeGuestSlot = (slotPlayerId: string) => {
+    handleRemoveFromTeam(slotPlayerId);
+    setGuestVisits(prev => {
+      const next = { ...prev };
+      delete next[slotPlayerId];
+      return next;
+    });
+    setLeftPlayers(prev => {
+      const next = { ...prev };
+      delete next[slotPlayerId];
+      return next;
+    });
+    setGuestSlotPending(null);
+  };
+
   // Assigns the pending slot to its team (no-op when editing an existing
   // guest, whose team is already set) and closes the modal.
   const commitGuestSlot = (details: { guestName: string | null; hostPlayerId: string | null } | null) => {
@@ -977,20 +1075,50 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }
   };
 
-  const handleAssisterSelected = (assister: Player | null) => {
+  const handleAssisterSelected = (assister: Player | null, qualifiers: GoalQualifier[] = []) => {
     if (goalScorer) {
       const scorerTeam = playerTeams[goalScorer.id] || null;
       // Use game date, not today's date, so timestamps are on the correct date
       const gameDateObj = new Date(gameDate);
       const now = new Date(gameDateObj);
       now.setHours(new Date().getHours(), new Date().getMinutes(), 0, 0);
-      recordGoal({ scorer: goalScorer, assister, timestamp: now, team: scorerTeam });
+      recordGoal({
+        scorer: goalScorer, assister, timestamp: now, team: scorerTeam,
+        ...(qualifiers.length ? { qualifiers } : {}),
+      });
       setGoalScorer(null);
     }
   };
 
   const handleCloseGoalModal = () => {
     setGoalScorer(null);
+  };
+
+  // One description of a goal, used both in the feed and as the subtitle of the
+  // details sheet so the two can never drift apart.
+  const goalSummary = useCallback((goal: typeof goals[number]) => {
+    const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
+    const tags = goal.qualifiers?.length
+      ? ` \u00b7 ${goal.qualifiers.map(q => GOAL_QUALIFIER_LABELS[q]).join(', ')}`
+      : '';
+    if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} \u2014 own goal${tags}`;
+    return goal.assister
+      ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}${tags}`
+      : `(${teamLabel}) ${displayName(goal.scorer)} scored!${tags}`;
+  }, [displayName]);
+
+  const handleSaveGoalDetails = (qualifiers: GoalQualifier[]) => {
+    if (detailsGoalIndex === null) return;
+    setGoals(prev => {
+      const next = [...prev];
+      // Spread: this sheet edits tags and nothing else.
+      next[detailsGoalIndex] = {
+        ...next[detailsGoalIndex],
+        qualifiers: qualifiers.length ? qualifiers : undefined,
+      };
+      return next;
+    });
+    setDetailsGoalIndex(null);
   };
 
   const handleEditGoal = (goalIndex: number) => {
@@ -1032,18 +1160,24 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     }
   };
 
-  const handleEditAssisterSelected = (assister: Player | null) => {
+  const handleEditAssisterSelected = (assister: Player | null, qualifiers: GoalQualifier[] = []) => {
     if (editingGoalIndex !== null && editingScorer) {
       const scorerTeam = playerTeams[editingScorer.id] || null;
       setGoals(prev => {
         const newGoals = [...prev];
         newGoals[editingGoalIndex] = {
+          // Spread first: correcting WHO scored must not silently discard what
+          // the goal was worth. This used to rebuild the record from scratch,
+          // so editing the scorer of a golden goal reset its scoreline weight
+          // and turned a 4-3 back into a 3-3 with nothing on screen to say so.
+          ...prev[editingGoalIndex],
           scorer: editingScorer,
           assister,
           timestamp: prev[editingGoalIndex].timestamp, // Keep original timestamp
           team: scorerTeam,
           // Re-picking a scorer the normal way makes this an ordinary goal again.
           ownGoal: false,
+          ...(qualifiers.length ? { qualifiers } : { qualifiers: undefined }),
         };
         return newGoals;
       });
@@ -1064,6 +1198,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
     setGoals(prev => {
       const next = [...prev];
       next[editingGoalIndex] = {
+        // Spread first, same reason as handleEditAssisterSelected: rebuilding
+        // the record from scratch silently dropped whatever else it carried —
+        // its qualifiers, and the scoreline weight of a golden goal.
+        ...prev[editingGoalIndex],
         scorer,
         assister: null,
         timestamp: prev[editingGoalIndex].timestamp,
@@ -1560,17 +1698,22 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                             key={`goal-${goalIndex}-${goal.timestamp.getTime()}-${idx}`}
                             className="flex items-center justify-between text-base text-text-primary mb-2 last:mb-0"
                           >
-                          <span className="pr-3 flex-1">
-                              {(() => {
-                                const teamLabel = goal.team === 'color' ? 'Color' : goal.team === 'white' ? 'White' : 'Unassigned';
-                                // goal.team is the team CREDITED, so an own goal
-                                // already reads under the benefiting team.
-                                if (goal.ownGoal) return `(${teamLabel}) ${displayName(goal.scorer)} — own goal`;
-                                return goal.assister
-                                  ? `(${teamLabel}) ${displayName(goal.scorer)} scored! Assisted by ${displayName(goal.assister)}`
-                                  : `(${teamLabel}) ${displayName(goal.scorer)} scored!`;
-                              })()}
-                            </span>
+                          {/* goal.team is the team CREDITED, so an own goal already
+                              reads under the benefiting team. Tapping the line opens
+                              the tags sheet; the pencil still does scorer/assister/time. */}
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              onClick={() => setDetailsGoalIndex(goalIndex)}
+                              className="pr-3 flex-1 text-left hover:text-accent transition-colors"
+                              aria-label="Edit goal details"
+                              data-tooltip="Add details"
+                            >
+                              {goalSummary(goal)}
+                            </button>
+                          ) : (
+                            <span className="pr-3 flex-1">{goalSummary(goal)}</span>
+                          )}
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-text-tertiary whitespace-nowrap">
                                 {new Date(goal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1700,7 +1843,9 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                           >
                             <span className="pr-3 flex-1 pl-3">
                               {change.type === 'leave'
-                                ? `${displayName(change.player)} left the game (${change.team === 'color' ? 'Color' : 'White'})`
+                                ? `${displayName(change.player)} left the game (${change.team === 'color' ? 'Color' : 'White'})${change.reason ? ` \u00b7 ${LEAVE_REASON_LABELS[change.reason]}` : ''}`
+                                : change.type === 'join'
+                                ? `${displayName(change.player)} arrived (${change.team === 'color' ? 'Color' : 'White'})`
                                 : `${displayName(change.player)} swapped from ${change.previousTeam === 'color' ? 'Color' : 'White'} to ${change.newTeam === 'color' ? 'Color' : 'White'}`}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1864,6 +2009,14 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           onSave={(details) => commitGuestSlot(details)}
           onSkip={() => commitGuestSlot(null)}
           onClose={() => commitGuestSlot(null)}
+          // Only when editing a guest already on a team — while adding one,
+          // Close cancels the add and there is nothing to remove yet.
+          onRemove={
+            guestSlotPending.team === null
+              ? () => removeGuestSlot(guestSlotPending.slotPlayerId)
+              : undefined
+          }
+          removeBlockedReason={guestRemovalBlock(guestSlotPending.slotPlayerId)}
         />
       )}
 
@@ -1872,6 +2025,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         <GoalAssistModal
           scorer={goalScorer}
           teamPlayers={getTeamPlayers(goalScorer)}
+          displayName={displayName}
           onSelectAssister={handleAssisterSelected}
           onClose={handleCloseGoalModal}
         />
@@ -1889,6 +2043,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           })}
           isOwnGoal={goals[editingGoalIndex].ownGoal}
           currentGoalTime={goals[editingGoalIndex].timestamp}
+          displayName={displayName}
           onSelectScorer={handleEditScorerSelected}
           onMarkOwnGoal={handleMarkOwnGoal}
           onSkip={handleEditScorerSkip}
@@ -1902,8 +2057,20 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         <GoalAssistModal
           scorer={goalScorer}
           teamPlayers={getTeamPlayers(goalScorer)}
+          initialQualifiers={editingGoalIndex !== null ? goals[editingGoalIndex]?.qualifiers : undefined}
+          displayName={displayName}
           onSelectAssister={handleEditAssisterSelected}
           onClose={handleCloseEditModal}
+        />
+      )}
+
+      {/* Goal Details (tags only) */}
+      {detailsGoalIndex !== null && goals[detailsGoalIndex] && (
+        <GoalDetailsModal
+          summary={goalSummary(goals[detailsGoalIndex])}
+          initialQualifiers={goals[detailsGoalIndex].qualifiers}
+          onSave={handleSaveGoalDetails}
+          onClose={() => setDetailsGoalIndex(null)}
         />
       )}
 
@@ -1964,6 +2131,42 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
                   Arm it
                 </button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Why they left. Opens AFTER the departure is already recorded, so
+          dismissing it simply leaves the reason blank — which still counts
+          toward Lack of Stamina. Only Injured/Family/Work clear it. */}
+      {reasonForPlayerId !== null && (() => {
+        const leaver = allPlayers.find(p => p.id === reasonForPlayerId);
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center z-50 p-4">
+            <div className="bg-surface rounded-xl shadow-modal max-w-sm w-full p-6 border border-border-emphasis">
+              <h3 className="text-lg font-semibold text-text-primary mb-1">
+                {leaver ? displayName(leaver) : 'Player'} left — why?
+              </h3>
+              <p className="text-sm text-text-secondary mb-4">
+                Already recorded. Injured, family or work keeps it out of Lack of Stamina.
+              </p>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {(Object.keys(LEAVE_REASON_LABELS) as LeaveReason[]).map(r => (
+                  <button
+                    key={r}
+                    onClick={() => setLeaveReason(reasonForPlayerId, r)}
+                    className="px-4 py-3 border border-border-emphasis text-text-primary rounded-xl text-sm font-medium hover:bg-surface-hover active:bg-surface-active transition-colors"
+                  >
+                    {LEAVE_REASON_LABELS[r]}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setReasonForPlayerId(null)}
+                className="w-full px-4 py-2 text-text-secondary rounded-xl text-sm font-medium hover:bg-surface-hover transition-colors"
+              >
+                Skip
+              </button>
             </div>
           </div>
         );

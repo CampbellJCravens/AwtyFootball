@@ -1,12 +1,12 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { fetchReliability, ReliabilityPlayer, ReliabilitySummary } from '../api/stats';
+import { ArrivalRow, fetchReliability, ReliabilityPlayer, ReliabilitySummary } from '../api/stats';
 
 const MIN_GAMES = 5;   // "In" votes needed to be "qualified"
 const TOP_N = 20;      // focus each leaderboard on the top 20
 
 type SortKey = 'reliability' | 'noShow' | 'converted' | 'ghost' | 'response';
 type SortDir = 'asc' | 'desc';
-type SectionId = 'attendance' | 'guests' | 'qualified' | 'unqualified';
+type SectionId = 'attendance' | 'guests' | 'punctuality' | 'qualified' | 'unqualified';
 
 const pct = (rate: number | null) => (rate === null ? '—' : `${Math.round(rate * 100)}%`);
 
@@ -45,19 +45,29 @@ export default function ReliabilityTab() {
   const [players, setPlayers] = useState<ReliabilityPlayer[]>([]);
   const [totalTracked, setTotalTracked] = useState(0);
   const [summary, setSummary] = useState<ReliabilitySummary | null>(null);
+  const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
+  const [arrivalGames, setArrivalGames] = useState(0);
+  const [grace, setGrace] = useState(8);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('reliability');
   const [sortDir, setSortDir] = useState<SortDir>('asc'); // worst-first = actionable
   const [open, setOpen] = useState<Record<SectionId, boolean>>({
-    attendance: true, guests: true, qualified: true, unqualified: false,
+    attendance: true, guests: true, punctuality: true, qualified: true, unqualified: false,
   });
 
   const toggle = (id: SectionId) => setOpen(o => ({ ...o, [id]: !o[id] }));
 
   useEffect(() => {
     fetchReliability()
-      .then(data => { setPlayers(data.players); setTotalTracked(data.totalTrackedGames); setSummary(data.summary); })
+      .then(data => {
+        setPlayers(data.players);
+        setTotalTracked(data.totalTrackedGames);
+        setSummary(data.summary);
+        setArrivals(data.arrivals ?? []);
+        setArrivalGames(data.arrivalsMeasuredGames ?? 0);
+        if (data.arrivalGrace) setGrace(data.arrivalGrace);
+      })
       .catch(() => setError('Could not load reliability stats.'))
       .finally(() => setLoading(false));
   }, []);
@@ -75,6 +85,22 @@ export default function ReliabilityTab() {
   );
   const totalGuests = useMemo(() => players.reduce((s, p) => s + p.guestsBrought, 0), [players]);
   const maxGuests = guestBoard[0]?.guestsBrought ?? 0;
+
+  // Punctuality, worst first — the same actionable ordering the tables use.
+  // Everyone measured is listed, including the spotless: on a metric this new,
+  // "nobody was late" is information, and hiding it looks like a broken card.
+  const nameById = useMemo(() => new Map(players.map(p => [p.id, p.name])), [players]);
+  const punctuality = useMemo(
+    () => arrivals
+      .filter(a => a.measuredGames > 0 && nameById.has(a.playerId))
+      .sort((a, b) => (a.onTimeRate ?? 1) - (b.onTimeRate ?? 1) || b.late - a.late)
+      .slice(0, TOP_N),
+    [arrivals, nameById]
+  );
+  const qualifiedPunctuality = useMemo(
+    () => punctuality.filter(a => a.measuredGames >= MIN_GAMES),
+    [punctuality]
+  );
 
   const sortRows = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -257,6 +283,69 @@ export default function ReliabilityTab() {
           </div>
         </Section>
       )}
+
+      <Section
+        title="Punctuality"
+        subtitle={
+          arrivalGames === 0
+            ? 'Needs a kick-off time — tap Start when the game begins.'
+            : `${arrivalGames} game${arrivalGames === 1 ? '' : 's'} with a clock · on time = on a team at kick-off or within ${grace} min.`
+        }
+        open={open.punctuality}
+        onToggle={() => toggle('punctuality')}
+      >
+        {arrivalGames === 0 ? (
+          <p className="text-[12px] text-text-secondary leading-relaxed">
+            No games have a kick-off time yet, so nobody can be measured. Tap{' '}
+            <span className="text-gold font-semibold">Start</span> when a game begins and this
+            fills from that game on. A game without a start time counts for nobody — it never
+            scores everyone as on time.
+          </p>
+        ) : punctuality.length === 0 ? (
+          <p className="text-text-tertiary text-center py-4 text-sm">Nobody measured yet.</p>
+        ) : (
+          <>
+            {qualifiedPunctuality.length === 0 && (
+              <p className="text-[11px] text-text-tertiary mb-2">
+                Under {MIN_GAMES} measured games each — thin sample, read with caution.
+              </p>
+            )}
+            <div className="space-y-1">
+              {punctuality.map(a => {
+                const rate = a.onTimeRate;
+                const bar = rate === null ? 0 : rate * 100;
+                return (
+                  <div key={a.playerId} className="flex items-center gap-2">
+                    <span className="text-[12px] text-text-primary truncate w-28 shrink-0">
+                      {nameById.get(a.playerId)}
+                    </span>
+                    <div className="flex-1 bg-surface-hover rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          rate !== null && rate >= 0.9 ? 'bg-emerald-400/80'
+                            : rate !== null && rate >= 0.7 ? 'bg-yellow-400/80'
+                            : 'bg-red-400/80'
+                        }`}
+                        style={{ width: `${bar}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-text-secondary w-24 text-right shrink-0 tabular-nums">
+                      {pct(rate)}
+                      <span className="text-text-tertiary">
+                        {' '}· {a.late || '0'} late/{a.measuredGames}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-text-tertiary mt-2 leading-relaxed">
+              Late = joined after the {grace}-minute grace window.{' '}
+              {punctuality.reduce((s, a) => s + a.secondHalf, 0)} of those arrived in the second half.
+            </p>
+          </>
+        )}
+      </Section>
 
       {!hasRsvpData ? (
         <div className="p-3 rounded-lg border border-gold/40 bg-gold/5 text-[12px] text-text-secondary">

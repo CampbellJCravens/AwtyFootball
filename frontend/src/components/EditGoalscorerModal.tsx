@@ -3,6 +3,8 @@ import { Player } from '../api/players';
 import TimePickerModal from './TimePickerModal';
 
 interface EditGoalscorerModalProps {
+  /** Same guest-name resolver as GoalAssistModal; see the note there. */
+  displayName?: (player: Player) => string;
   currentScorer: Player;
   teamPlayers: Player[];
   // Players on the team that CONCEDED. An own goal is scored by one of them —
@@ -17,7 +19,8 @@ interface EditGoalscorerModalProps {
   onClose: () => void;
 }
 
-export default function EditGoalscorerModal({ currentScorer, teamPlayers, opposingPlayers, currentGoalTime, isOwnGoal = false, onSelectScorer, onMarkOwnGoal, onSkip, onTimeChange, onClose }: EditGoalscorerModalProps) {
+export default function EditGoalscorerModal({ currentScorer, teamPlayers, opposingPlayers, currentGoalTime, isOwnGoal = false, onSelectScorer, onMarkOwnGoal, onSkip, onTimeChange, onClose, displayName }: EditGoalscorerModalProps) {
+  const label = (player: Player) => displayName?.(player) ?? player.name;
   const [searchQuery, setSearchQuery] = useState('');
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [ownGoalMode, setOwnGoalMode] = useState(isOwnGoal);
@@ -37,9 +40,9 @@ export default function EditGoalscorerModal({ currentScorer, teamPlayers, opposi
   // Filter and sort players alphabetically
   const filteredAndSortedPlayers = useMemo(() => {
     const filtered = sourceList.filter(player =>
-      player.name.toLowerCase().includes(searchQuery.toLowerCase())
+      label(player).toLowerCase().includes(searchQuery.toLowerCase())
     );
-    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+    return filtered.sort((a, b) => label(a).localeCompare(label(b)));
   }, [sourceList, searchQuery]);
 
   return (
@@ -101,7 +104,7 @@ export default function EditGoalscorerModal({ currentScorer, teamPlayers, opposi
             </div>
           </div>
           <p className="text-text-secondary text-base">
-            {ownGoalMode ? 'Own goal — pick who put it in their own net' : `Goal Scored by ${currentScorer.name}`}
+            {ownGoalMode ? 'Own goal — pick who put it in their own net' : `Goal Scored by ${label(currentScorer)}`}
           </p>
           <button
             onClick={() => { setOwnGoalMode(v => !v); setSearchQuery(''); }}
@@ -153,15 +156,15 @@ export default function EditGoalscorerModal({ currentScorer, teamPlayers, opposi
                   {player.pictureUrl ? (
                     <img
                       src={player.pictureUrl}
-                      alt={player.name}
+                      alt={label(player)}
                       className="w-12 h-12 rounded-full object-cover border-2 border-border-emphasis flex-shrink-0"
                     />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-lg font-semibold flex-shrink-0">
-                      {getInitial(player.name)}
+                      {getInitial(label(player))}
                     </div>
                   )}
-                  <span className="text-base font-medium text-text-primary flex-1">{player.name}</span>
+                  <span className="text-base font-medium text-text-primary flex-1">{label(player)}</span>
                 </button>
               ))}
             </div>

@@ -14,6 +14,7 @@ export interface Goal {
   goldenGoal?: boolean;
   // Scoreline weight; absent or 1 = normal. Player credit is ALWAYS 1.
   value?: number;
+  qualifiers?: GoalQualifier[];
 }
 
 // Own goals credit the opposition, so `team` handles the scoreline. Never
@@ -21,13 +22,65 @@ export interface Goal {
 export const isScoringGoal = (g: { ownGoal?: boolean }) => !g.ownGoal;
 export const isOwnGoal = (g: { ownGoal?: boolean }) => g.ownGoal === true;
 
+// How a goal was scored. Descriptive only: a qualified goal is worth exactly
+// what a plain one is, and an empty list means nobody said. Held as a SET
+// because these are independent — corner is where it came from, header is how
+// it was met, deflection is what happened on the way.
+export type GoalQualifier =
+  | 'corner' | 'header' | 'deflection'
+  | 'handball' | 'penalty' | 'freeKick' | 'volley' | 'longRange' | 'rebound'
+  | 'soloRun' | 'oneOnOne' | 'weakFoot' | 'tapIn' | 'bicycle' | 'nutmeg';
+
+// Order here is the order they render. Grouped by what they describe: where it
+// came from, how it was struck, then the ones worth a laugh in the group chat.
+export const GOAL_QUALIFIER_LABELS: Record<GoalQualifier, string> = {
+  corner: 'Corner',
+  freeKick: 'Free kick',
+  penalty: 'Penalty',
+  rebound: 'Rebound',
+  header: 'Header',
+  volley: 'Volley',
+  bicycle: 'Bicycle',
+  longRange: 'Long range',
+  weakFoot: 'Weak foot',
+  tapIn: 'Tap-in',
+  soloRun: 'Solo run',
+  oneOnOne: 'One-on-one',
+  nutmeg: 'Nutmeg',
+  deflection: 'Deflection',
+  handball: 'Handball',
+};
+
+export const GOAL_QUALIFIERS = Object.keys(GOAL_QUALIFIER_LABELS) as GoalQualifier[];
+
+export type LeaveReason = 'injured' | 'family' | 'work' | 'quit';
+
+export const LEAVE_REASON_LABELS: Record<LeaveReason, string> = {
+  injured: 'Injured',
+  family: 'Family',
+  work: 'Work',
+  quit: 'Had enough',
+};
+
+// The reasons that clear a departure. Kept beside the labels so a new reason
+// cannot be added to one without a decision about the other.
+export const EXCUSED_LEAVE_REASONS: LeaveReason[] = ['injured', 'family', 'work'];
+
 export interface TeamChange {
   playerId: string;
   timestamp: string; // ISO date string
   team: 'color' | 'white';
-  type: 'leave' | 'swap';
+  // 'join' = put on a team AFTER kick-off, i.e. a late arrival. On-time
+  // arrivals write nothing — presence in teamAssignments with no 'join' row is
+  // itself the record. Must stay in step with the zod enum in
+  // backend/src/schemas/game.ts.
+  type: 'leave' | 'swap' | 'join';
   previousTeam?: 'color' | 'white';
   newTeam?: 'color' | 'white';
+  // Why they left. ABSENT IS NOT NEUTRAL: an untagged departure counts toward
+  // Lack of Stamina, and only injured/family/work clears it. 'quit' records
+  // that somebody actually asked and scores the same as a blank.
+  reason?: LeaveReason;
 }
 
 export interface GameEvent {

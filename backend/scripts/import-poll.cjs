@@ -15,44 +15,36 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const prisma = new PrismaClient();
 
-// Poll for 22Aug, final pre-game read from screenshots on 2026-08-22 10:58 CDT.
-// The poll creation message was dropped before the 08-19 fixes deployed
-// (Campbell's 656faa3 landed 08:26, ~2h after the poll went up), so no
-// WhatsappPoll row exists and the votes never had anywhere to land — hence
-// three rounds of manual import for this one game.
-// Final: 11 In / 3 Maybe / 5 Out, guests confirmed zero (+1 and +2 both empty).
-// Deltas vs the 08-21 09:08 read: Campbell Cravens in -> maybe, Siegfried Casar
-// out -> in, Lammy Lammers + Eric Saito new in, Nick Mbaezue-Daniel + Joseph
-// Garcia new out, and Bayo Tojuola WITHDREW (see `retracted`).
+// Poll for 12Sep (game #37) — read from owner screenshots on 2026-09-11 12:37 CDT
+// (kickoff 2026-09-12 13:45Z). Game #37 had ZERO existing RSVP rows before this
+// import, so every row below is an insert; nothing is overwritten and nothing is
+// retracted.
+// Poll screenshot totals: In 14 · Maybe 2 · Out 2.  All 18 votes are imported.
+// NOTE: the screenshots did not include any +1/+2 section, so guests are taken
+// as 0. If the poll does carry +1/+2 options, re-read and re-run.
+//
+// Name reconciliation (poll display name -> Player row):
+//   "You" -> Morgan-Sean McCright        "Campbell" -> Campbell Cravens
+//   "Marcos" -> Marcos Conner
+//   "~ Aihab" (+1 787 202-1781) -> Aihab Aboukheir
+//     ^ tilde + phone = not in the owner's contacts; "Aihab" is unique on the
+//       roster so the match is unambiguous.
+//   "Nicholas Mbaezue-Daniel" -> Nick Mbaezue-Daniel
+//     ^ roster stores the short form; surname is unique.
+//   Everyone else matched the Player table exactly.
 const CONFIG = {
-  gameId: 'a86657df-e3ae-48aa-9069-cce374052ec7', // game #34, 2026-08-22
-  // Roster names, reconciled against the poll's display names. All matched the
-  // Player table exactly or via a known alias — none ambiguous this week:
-  //   "You" -> Morgan-Sean McCright        "Marcos" -> Marcos Conner
-  //   "Franco" -> Franco Silva             "Robert-san" -> Robert Peresich
-  //   "Adam Lammers" -> Lammy Lammers      "Jason Azirpe" -> Jason Arizpe
-  //   "Nicholas Mbaezue-Daniel" -> Nick Mbaezue-Daniel
-  //   "Campbell" -> Campbell Cravens (Eric Saito is a separate player, and he
-  //      is In this week, so both names appear)
+  gameId: 'b4ca27a1-549a-4a22-ad55-04d47aec1ff8', // game #37, 2026-09-12
   yes: [
-    'Morgan-Sean McCright', 'Lammy Lammers', 'Siegfried Casar', 'Eric Saito',
-    'Milad Moradi', 'Manny Suarez', 'Marcos Conner', 'Josh Jackson',
-    'Franco Silva', 'Connor Shannon', 'Rolando Abreu',
+    'Morgan-Sean McCright', 'Campbell Cravens', 'Milad Moradi', 'Marcos Conner',
+    'Aihab Aboukheir', 'Joshua Tapia', 'Joseph Garcia', 'Josh Jackson',
+    'Brian Buhr', 'Connor Shannon', 'Tommy El-Gawly', 'Franco Silva',
+    'Rolando Abreu', 'Manny Suarez',
   ],
-  maybe: ['Campbell Cravens', 'Jason Arizpe', 'Robert Peresich'],
-  no: [
-    'Nick Mbaezue-Daniel', 'Joseph Garcia', 'Tommy El-Gawly', 'Adam Zebdawi',
-    'Corey Rasch',
-  ],
-  // Votes WITHDRAWN since a previous import: the row is deleted, not set to
-  // 'no'. Bayo Tojuola (the raw 954 number, unnamed because he isn't in the
-  // linked account's contacts) was In on 08-19 and 08-21 and appears in no
-  // section at all today. Leaving the stale 'yes' row would score him as a
-  // no-show; deleting it returns him to the silent majority, which is what
-  // the poll now says.
-  retracted: ['Bayo Tojuola'],
-  // Guests brought, by roster name. Only counted on a 'yes' row.
-  // +1 and +2 both read 0 votes this time, so zero is confirmed, not assumed.
+  maybe: ['Siegfried Casar', 'David Ramos'],
+  no: ['Nick Mbaezue-Daniel', 'Corey Rasch'],
+  // No prior rows existed for game #37, so nothing can have been withdrawn.
+  retracted: [],
+  // No +1/+2 section visible in the source screenshots.
   guests: {},
 };
 

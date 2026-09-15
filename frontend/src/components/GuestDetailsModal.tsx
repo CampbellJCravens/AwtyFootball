@@ -13,6 +13,11 @@ interface GuestDetailsModalProps {
   onSave: (details: { guestName: string | null; hostPlayerId: string | null }) => void;
   onSkip: () => void;
   onClose: () => void;
+  // Drops the slot off the game entirely. Only passed when editing a guest who
+  // is already on a team — while adding one, Close already cancels.
+  onRemove?: () => void;
+  // Set when the guest has played: the remove is refused and this says why.
+  removeBlockedReason?: string | null;
 }
 
 // Captures who a guest is and who invited them. Both fields are optional by
@@ -26,11 +31,15 @@ export default function GuestDetailsModal({
   onSave,
   onSkip,
   onClose,
+  onRemove,
+  removeBlockedReason = null,
 }: GuestDetailsModalProps) {
   const [name, setName] = useState(initialName ?? '');
   const [hostId, setHostId] = useState<string | null>(initialHostId);
   const [hostQuery, setHostQuery] = useState('');
   const [knownGuests, setKnownGuests] = useState<Guest[]>([]);
+  // Two taps, because the add was one tap and the removal is silent.
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
     fetchGuests().then(setKnownGuests).catch(() => setKnownGuests([]));
@@ -167,7 +176,29 @@ export default function GuestDetailsModal({
           </div>
         </div>
 
-        <div className="p-4 border-t border-border flex gap-2">
+        {onRemove && (
+          <div className="px-4 pt-4 border-t border-border">
+            {removeBlockedReason ? (
+              <p className="text-xs text-text-tertiary text-center leading-relaxed">
+                Can't remove — they have {removeBlockedReason} recorded. Clear those first.
+              </p>
+            ) : (
+              <button
+                onClick={() => (confirmRemove ? onRemove() : setConfirmRemove(true))}
+                onBlur={() => setConfirmRemove(false)}
+                className={`w-full px-4 py-2 rounded-xl font-medium text-sm transition-colors ${
+                  confirmRemove
+                    ? 'bg-error text-text-on-accent'
+                    : 'border border-error-border text-error hover:bg-error-bg'
+                }`}
+              >
+                {confirmRemove ? 'Tap again to remove' : 'Remove from game'}
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className={`p-4 flex gap-2 ${onRemove ? '' : 'border-t border-border'}`}>
           <button
             onClick={onSkip}
             className="flex-1 px-4 py-2 border border-border-emphasis text-text-secondary rounded-xl font-medium hover:bg-surface-hover transition-colors text-sm"

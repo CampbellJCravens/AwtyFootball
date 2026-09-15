@@ -1,37 +1,51 @@
 import { useState, useMemo } from 'react';
 import { Player } from '../api/players';
+import { GoalQualifier, GOAL_QUALIFIERS, GOAL_QUALIFIER_LABELS } from '../api/games';
 
 interface GoalAssistModalProps {
   scorer: Player;
   teamPlayers: Player[];
-  onSelectAssister: (assister: Player | null) => void;
+  initialQualifiers?: GoalQualifier[];
+  /** Resolves a guest slot to the name entered for this game. Without it a
+   *  guest shows as their canonical Player.name — "Guest1" — which is what
+   *  every guest-exclusion check matches on and must never be overwritten. */
+  displayName?: (player: Player) => string;
+  onSelectAssister: (assister: Player | null, qualifiers: GoalQualifier[]) => void;
   onClose: () => void;
 }
 
-export default function GoalAssistModal({ scorer, teamPlayers, onSelectAssister, onClose }: GoalAssistModalProps) {
+export default function GoalAssistModal({ scorer, teamPlayers, initialQualifiers, displayName, onSelectAssister, onClose }: GoalAssistModalProps) {
+  const label = (player: Player) => displayName?.(player) ?? player.name;
   const [searchQuery, setSearchQuery] = useState('');
+  // Rides in the sheet that already opens for every goal, so describing one
+  // costs no extra step and skipping still leaves a plain goal. Independent
+  // toggles rather than one choice: a header from a corner is both.
+  const [qualifiers, setQualifiers] = useState<GoalQualifier[]>(initialQualifiers ?? []);
+
+  const toggleQualifier = (q: GoalQualifier) =>
+    setQualifiers(prev => (prev.includes(q) ? prev.filter(x => x !== q) : [...prev, q]));
 
   const getInitial = (name: string) => {
     return name.charAt(0).toUpperCase();
   };
 
   const handlePlayerClick = (player: Player) => {
-    onSelectAssister(player);
+    onSelectAssister(player, qualifiers);
     onClose();
   };
 
   const handleSkip = () => {
-    onSelectAssister(null);
+    onSelectAssister(null, qualifiers);
     onClose();
   };
 
   // Filter and sort players alphabetically
   const filteredAndSortedPlayers = useMemo(() => {
     const filtered = teamPlayers.filter(player =>
-      player.name.toLowerCase().includes(searchQuery.toLowerCase())
+      label(player).toLowerCase().includes(searchQuery.toLowerCase())
     );
-    return filtered.sort((a, b) => a.name.localeCompare(b.name));
-  }, [teamPlayers, searchQuery]);
+    return filtered.sort((a, b) => label(a).localeCompare(label(b)));
+  }, [teamPlayers, searchQuery, displayName]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
@@ -75,6 +89,28 @@ export default function GoalAssistModal({ scorer, teamPlayers, onSelectAssister,
 
         {/* Scrollable Player List */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col">
+          {/* How it was scored. Optional, multi-select, and applied whether an
+              assister is chosen or the sheet is skipped. */}
+          <div className="mb-4 flex-shrink-0">
+            <p className="text-xs font-medium text-text-tertiary mb-2">How was it scored? (optional)</p>
+            <div className="flex flex-wrap gap-2">
+              {GOAL_QUALIFIERS.map(q => {
+                const on = qualifiers.includes(q);
+                return (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => toggleQualifier(q)}
+                    aria-pressed={on}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${on ? 'bg-accent text-text-on-accent border-accent' : 'bg-surface-raised text-text-secondary border-border-emphasis hover:bg-surface-hover'}`}
+                  >
+                    {GOAL_QUALIFIER_LABELS[q]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Search Bar */}
           <div className="mb-4 flex-shrink-0">
             <input
@@ -105,15 +141,15 @@ export default function GoalAssistModal({ scorer, teamPlayers, onSelectAssister,
                   {player.pictureUrl ? (
                     <img
                       src={player.pictureUrl}
-                      alt={player.name}
+                      alt={label(player)}
                       className="w-12 h-12 rounded-full object-cover border-2 border-border-emphasis flex-shrink-0"
                     />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-surface-active flex items-center justify-center text-text-primary text-lg font-semibold flex-shrink-0">
-                      {getInitial(player.name)}
+                      {getInitial(label(player))}
                     </div>
                   )}
-                  <span className="text-base font-medium text-text-primary flex-1">{player.name}</span>
+                  <span className="text-base font-medium text-text-primary flex-1">{label(player)}</span>
                 </button>
               ))}
             </div>
