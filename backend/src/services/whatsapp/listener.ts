@@ -75,17 +75,20 @@ function logUnhandledMessage(message: any): void {
  * a missed poll can be explained from the logs instead of theorised about.
  * Field names, stub codes and Baileys' error text only; never message content.
  */
-function logMessageShape(msg: any): void {
+function logMessageShape(msg: any, via: 'upsert' | 'history'): void {
   const inner = unwrapMessage(msg?.message);
   const keys = inner ? Object.keys(inner).join(',') : '(empty)';
   const stub = msg?.messageStubType;
   const stubText = msg?.messageStubParameters?.[0];
   console.log(
-    `[whatsapp] Message id=${msg?.key?.id} from=${msg?.key?.participant ?? msg?.key?.remoteJid}` +
+    `[whatsapp] Message id=${msg?.key?.id} via=${via} from=${msg?.key?.participant ?? msg?.key?.remoteJid}` +
       `${msg?.key?.fromMe ? ' (me)' : ''} fields=[${keys}]` +
       (stub ? ` stub=${stub}${stubText ? ` (${stubText})` : ''}` : '')
   );
 }
+
+/** How far back a history chunk's messages still count as "live" for capture. */
+const HISTORY_RECENT_WINDOW_S = 6 * 60 * 60;
 
 /**
  * A stanza can carry several encrypted parts — typically a pairwise
@@ -378,17 +381,14 @@ export async function startWhatsappListener(): Promise<void> {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Poll creations AND votes both arrive on messages.upsert. Baileys 7 no
-    // longer decrypts poll votes, so we handle pollUpdateMessage ourselves.
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-      if (myGeneration !== generation) return; // stale socket, ignore
+    const processIncoming = async (messages: any[], via: 'upsert' | 'history') => {
       const meId = sock?.user?.id;
       const meLid = (sock?.user as any)?.lid;
       for (const msg of messages) {
         try {
           // Ignore anything outside the configured group (if one is set).
           if (!isInScope(msg.key?.remoteJid)) continue;
-          logMessageShape(msg);
+          logMessageShape(msg, via);
           if (msg.pushName && msg.key?.participant) {
             await noteContact(msg.key.participant, msg.pushName);
           }
@@ -405,9 +405,36 @@ export async function startWhatsappListener(): Promise<void> {
             logUnhandledMessage(msg.message);
           }
         } catch (err) {
-          console.error('[whatsapp] messages.upsert handler error:', err);
+          console.error(`[whatsapp] ${via} handler error:`, err);
         }
       }
+    };
+
+    // Poll creations AND votes both arrive on messages.upsert. Baileys 7 no
+    // longer decrypts poll votes, so we handle pollUpdateMessage ourselves.
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      if (myGeneration !== generation) return; // stale socket, ignore
+      await processIncoming(messages, 'upsert');
+    });
+
+    // The other door a live message can come through. Baileys processes each
+    // incoming stanza inside a short event-buffer window, and a message whose
+    // id also appears in a history-sync chunk landing in that window is
+    // absorbed into the history set (event-buffer.js, 'messages.upsert' case)
+    // and emitted HERE instead of on messages.upsert. The phone keeps pushing
+    // history chunks for a while after a pairing, built from its live state,
+    // so a poll posted minutes after re-linking can be swallowed this way with
+    // no trace. Only recent messages are considered: a genuine history replay
+    // would otherwise re-capture months of old polls and rewrite their RSVPs.
+    sock.ev.on('messaging-history.set', async ({ messages }) => {
+      if (myGeneration !== generation) return;
+      const cutoff = Date.now() / 1000 - HISTORY_RECENT_WINDOW_S;
+      const recent = (messages ?? []).filter((m: any) => Number(m?.messageTimestamp) >= cutoff);
+      if (recent.length === 0) return;
+      console.log(
+        `[whatsapp] History chunk carried ${recent.length} recent message(s) of ${messages.length}; processing them.`
+      );
+      await processIncoming(recent, 'history');
     });
 
     sock.ev.on('connection.update', (update) => {
