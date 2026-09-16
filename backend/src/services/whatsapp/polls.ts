@@ -435,8 +435,12 @@ export function forgetMissingPoll(pollMessageId: string): void {
 }
 
 export interface PollUpdateOptions {
-  /** Ask WhatsApp to resend the poll's creation message. Throttled by the caller. */
-  requestResend?: (key: any) => Promise<void>;
+  /**
+   * Ask WhatsApp to resend the poll's creation message. Throttled by the
+   * caller. The anchor is the vote itself, so the caller can also ask for the
+   * messages that preceded it.
+   */
+  requestResend?: (key: any, anchor?: { key: any; timestampMs: number }) => Promise<void>;
   /** False while replaying buffered votes, so they can't re-buffer themselves. */
   allowBuffer?: boolean;
 }
@@ -475,7 +479,11 @@ export async function handlePollUpdateMessage(
     }
     if (requestResend) {
       try {
-        await requestResend(creationKey);
+        // Live messages carry a number; history-sourced ones can carry a Long.
+        const rawTs = msg.messageTimestamp;
+        const ts = rawTs && typeof rawTs === 'object' && 'toNumber' in rawTs ? rawTs.toNumber() : Number(rawTs);
+        const anchor = ts > 0 ? { key: msg.key, timestampMs: ts * 1000 } : undefined;
+        await requestResend(creationKey, anchor);
       } catch (err) {
         console.error('[whatsapp] Failed to request poll creation message:', err);
       }

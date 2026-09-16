@@ -175,8 +175,19 @@ const RESEND_MAX_ATTEMPTS = 3;
 const RESEND_MIN_GAP_MS = 10 * 60 * 1000;
 const resendAttempts = new Map<string, { count: number; last: number }>();
 
-function makeResendRequester(sock: WASocket | null): (key: any) => Promise<void> {
-  return async (key: any) => {
+/** How many messages before the anchor to ask the phone for. A poll and its votes span minutes, not hours. */
+const HISTORY_FETCH_COUNT = 50;
+
+export interface ResendAnchor {
+  /** A message we DID receive, later than the one we're missing — typically the vote. */
+  key: any;
+  timestampMs: number;
+}
+
+function makeResendRequester(
+  sock: WASocket | null
+): (key: any, anchor?: ResendAnchor) => Promise<void> {
+  return async (key: any, anchor?: ResendAnchor) => {
     const id = key?.id;
     if (!id || !sock) return;
     const seen = resendAttempts.get(id) ?? { count: 0, last: 0 };
@@ -188,6 +199,22 @@ function makeResendRequester(sock: WASocket | null): (key: any) => Promise<void>
       `[whatsapp] Requesting resend of message ${id} (attempt ${seen.count + 1}/${RESEND_MAX_ATTEMPTS}).`
     );
     await (sock as any).requestPlaceholderResend?.(key);
+
+    // Second route to the same message. On 16 Sep 2026 the phone acknowledged
+    // the placeholder request and then simply didn't answer it. An on-demand
+    // history fetch asks a different question — "the messages before this
+    // one" — and the reply arrives as a history chunk, which we process like
+    // live traffic. Anchored on the vote, so the window covers the poll.
+    if (anchor?.key?.id && anchor.timestampMs) {
+      try {
+        console.log(
+          `[whatsapp] Also asking the phone for the ${HISTORY_FETCH_COUNT} messages before ${anchor.key.id}.`
+        );
+        await (sock as any).fetchMessageHistory?.(HISTORY_FETCH_COUNT, anchor.key, anchor.timestampMs);
+      } catch (err) {
+        console.error('[whatsapp] On-demand history fetch failed:', err);
+      }
+    }
   };
 }
 
