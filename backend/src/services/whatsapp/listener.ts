@@ -25,6 +25,7 @@ import type { WASocket } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { useWhatsappAuthState, clearWhatsappAuthState } from './authState';
+import { installPollCreationV6Patch } from './protoPatch';
 import prisma from '../../prisma';
 import {
   capturePoll,
@@ -388,6 +389,9 @@ export async function startWhatsappListener(): Promise<void> {
 
   const myGeneration = ++generation;
   teardownSocket(); // never leave a previous socket running alongside this one
+
+  // Must be in place before the first message is decoded. Idempotent.
+  installPollCreationV6Patch();
 
   try {
     await refreshScope(); // load the group-scope setting before we start capturing
