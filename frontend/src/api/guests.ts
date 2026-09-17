@@ -15,6 +15,8 @@ export interface GuestLedgerRow {
   lastSeen: string | null;
   usualHostId: string | null;
   usualHostVisits: number;
+  promotedPlayerId: string | null; // set once they joined; the Player they became
+  promotedYear: number | null;     // dues year the per-game meter stopped in
 }
 
 export async function fetchGuests(): Promise<Guest[]> {
@@ -64,4 +66,54 @@ export async function renameGuest(
     throw new Error(body.error || 'Failed to rename guest');
   }
   return response.json();
+}
+
+export interface PromotionPlan {
+  guestId: string;
+  guestName: string;
+  duesYear: number;
+  attachPlayerId: string | null;
+  playerName: string;
+  memberSince: number | null;
+  phone: string | null;
+  visitsRetiredFromBilling: number;
+  billableVisitsRemaining: number;
+  paymentsCredited: { count: number; total: string };
+  memberAmount: string;
+  nameClashPlayerIds: string[];
+}
+
+export interface PromotionRefused {
+  error: string;
+  playerIds?: string[];
+}
+
+/** What converting this guest would change — the confirm screen reads this. */
+export async function fetchPromotionPlan(
+  guestId: string,
+  duesYear: number,
+  attachPlayerId?: string | null
+): Promise<PromotionPlan | PromotionRefused> {
+  const q = new URLSearchParams({ duesYear: String(duesYear) });
+  if (attachPlayerId) q.set('attachPlayerId', attachPlayerId);
+  const res = await fetch(`${API_BASE_URL}/guests/${guestId}/promotion?${q}`, { credentials: 'include' });
+  const body = await res.json();
+  if (!res.ok) return body as PromotionRefused;
+  return body as PromotionPlan;
+}
+
+export async function promoteGuest(
+  guestId: string,
+  duesYear: number,
+  opts: { attachPlayerId?: string | null; acknowledgeNameClash?: boolean } = {}
+): Promise<{ playerId: string; created: boolean } | PromotionRefused> {
+  const res = await fetch(`${API_BASE_URL}/guests/${guestId}/promote`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ duesYear, ...opts }),
+  });
+  const body = await res.json();
+  if (!res.ok) return body as PromotionRefused;
+  return body;
 }

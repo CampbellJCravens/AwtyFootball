@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Player } from '../api/players';
-import { GuestLedgerRow, fetchGuestLedger, renameGuest } from '../api/guests';
+import {
+  GuestLedgerRow,
+  fetchGuestLedger,
+  renameGuest,
+  fetchPromotionPlan,
+  promoteGuest,
+  type PromotionPlan,
+} from '../api/guests';
 import { DuesGuestRow, DuesYearNotConfigured, fetchDuesReport } from '../api/dues';
 
 interface GuestLedgerTabProps {
@@ -38,6 +45,9 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
   // back to counts rather than inventing a total.
   const [dues, setDues] = useState<Map<string, DuesGuestRow> | null>(null);
   const [memberAmount, setMemberAmount] = useState<string | null>(null);
+  const [plan, setPlan] = useState<PromotionPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [promoting, setPromoting] = useState(false);
 
   useEffect(() => {
     fetchGuestLedger()
@@ -55,6 +65,45 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
         setDues(null);
       });
   }, []);
+
+  const duesYear = new Date().getFullYear();
+
+  // The preview IS the confirm step: promotion writes across four tables, so
+  // nothing happens until the admin has seen what changes.
+  async function openPromotion(guestId: string) {
+    setPlanError(null);
+    setPlan(null);
+    const result = await fetchPromotionPlan(guestId, duesYear);
+    if ('error' in result) {
+      setPlanError(
+        result.error === 'name_taken'
+          ? 'A player with that name already exists — rename one of them first, so two people are never merged by accident.'
+          : result.error
+      );
+      return;
+    }
+    setPlan(result);
+  }
+
+  async function confirmPromotion() {
+    if (!plan) return;
+    setPromoting(true);
+    const result = await promoteGuest(plan.guestId, plan.duesYear, {
+      acknowledgeNameClash: plan.nameClashPlayerIds.length > 0,
+    });
+    setPromoting(false);
+    if ('error' in result) {
+      setPlanError(result.error);
+      return;
+    }
+    setPlan(null);
+    const [ledger, report] = await Promise.all([
+      fetchGuestLedger(),
+      fetchDuesReport(duesYear).catch(() => null),
+    ]);
+    setRows(ledger);
+    if (report) setDues(new Map(report.guests.map(g => [g.guestId, g])));
+  }
 
   async function saveRename(guestId: string, merge = false) {
     const name = draftName.trim();
@@ -243,10 +292,23 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
                           ✎
                         </button>
                       )}
-                      {row.guestId && dues?.get(row.guestId)?.shouldConvert && (
-                        <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap">
-                          convert
+                      {row.promotedPlayerId ? (
+                        <span
+                          className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-tertiary whitespace-nowrap"
+                          title={`Joined in ${row.promotedYear ?? ''} — kept here as the history of how they got here`}
+                        >
+                          member{row.promotedYear ? ` since ${row.promotedYear}` : ''}
                         </span>
+                      ) : (
+                        row.guestId && dues?.get(row.guestId)?.shouldConvert && (
+                          <button
+                            onClick={() => openPromotion(row.guestId!)}
+                            className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap hover:brightness-110"
+                            title="Their balance has passed what membership costs — make them a member"
+                          >
+                            convert →
+                          </button>
+                        )
                       )}
                     </>
                   )}
@@ -288,6 +350,79 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
           </tbody>
         </table>
       </div>
+
+      {planError && !plan && (
+        <p className="mt-3 text-xs text-red-400">{planError}</p>
+      )}
+
+      {plan && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface rounded-xl border border-border shadow-modal w-full max-w-md p-4">
+            <h3 className="text-lg font-semibold text-text-primary">Make {plan.guestName} a member</h3>
+            <p className="text-xs text-text-tertiary mt-1">
+              Dues year {plan.duesYear}. This is what changes — nothing has happened yet.
+            </p>
+
+            <ul className="mt-3 space-y-1.5 text-sm text-text-secondary">
+              <li>
+                {plan.attachPlayerId ? 'Attaches to the existing player' : 'Creates the player'}{' '}
+                <strong className="text-text-primary">{plan.playerName}</strong>
+                {plan.memberSince != null && (
+                  <span className="text-text-tertiary"> · member since {plan.memberSince} (first turned up)</span>
+                )}
+              </li>
+              <li>
+                Owes the full member amount{' '}
+                <strong className="text-text-primary">${plan.memberAmount}</strong>
+              </li>
+              <li>
+                Stops billing <strong className="text-text-primary">{plan.visitsRetiredFromBilling}</strong>{' '}
+                guest game{plan.visitsRetiredFromBilling === 1 ? '' : 's'} from {plan.duesYear} on
+              </li>
+              {plan.billableVisitsRemaining > 0 && (
+                <li className="text-warning">
+                  Still owes for <strong>{plan.billableVisitsRemaining}</strong> guest game
+                  {plan.billableVisitsRemaining === 1 ? '' : 's'} from earlier years — joining now does not clear those
+                </li>
+              )}
+              {plan.paymentsCredited.count > 0 && (
+                <li>
+                  Credits <strong className="text-text-primary">${plan.paymentsCredited.total}</strong> already paid as
+                  a guest against their member dues
+                </li>
+              )}
+              {plan.phone && <li>Moves their WhatsApp number onto the member</li>}
+              <li className="text-text-tertiary">
+                Past games are left exactly as played — they already show their name.
+              </li>
+            </ul>
+
+            {plan.nameClashPlayerIds.length > 0 && (
+              <p className="mt-3 text-xs text-warning">
+                A player called {plan.playerName} already exists. Confirming creates a SECOND one — if they are the same
+                person, cancel and rename instead.
+              </p>
+            )}
+            {planError && <p className="mt-3 text-xs text-red-400">{planError}</p>}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={confirmPromotion}
+                disabled={promoting}
+                className="flex-1 px-3 py-2 rounded-lg bg-gold text-black text-sm font-semibold disabled:opacity-50"
+              >
+                {promoting ? 'Converting…' : 'Make a member'}
+              </button>
+              <button
+                onClick={() => { setPlan(null); setPlanError(null); }}
+                className="px-3 py-2 rounded-lg border border-border text-sm text-text-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

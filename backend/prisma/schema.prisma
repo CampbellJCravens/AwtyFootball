@@ -78,6 +78,11 @@ model Guest {
   // dues count, whereas two real Rickys just means typing a surname.
   normalizedName String   @unique
   notes          String?
+  // Became a member. The guest row is KEPT: it is how she got here, the visits
+  // hang off it, and both facts are wanted — see promotedYear vs Player.memberSince.
+  promotedPlayerId String?   @unique
+  promotedAt       DateTime?
+  promotedYear     Int?      // dues year the per-game meter stopped in
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

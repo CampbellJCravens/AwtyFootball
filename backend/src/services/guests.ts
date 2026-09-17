@@ -202,6 +202,10 @@ export interface GuestLedgerRow {
   lastSeen: string | null;
   usualHostId: string | null;
   usualHostVisits: number;
+  // Set once she has joined: the Player she became and the dues year the
+  // per-game meter stopped in. Null for a guest who is still a guest.
+  promotedPlayerId: string | null;
+  promotedYear: number | null;
 }
 
 // Dues ledger. The GUEST is the unit of collection (owner decision 2026-08-07):
@@ -211,10 +215,16 @@ export interface GuestLedgerRow {
 // A guest occupying two slots in one game (left and came back) counts once:
 // dues follow appearances, not slots.
 export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
-  const [visits, games] = await Promise.all([
+  const [visits, games, promotions] = await Promise.all([
     prisma.guestVisit.findMany({ include: { guest: { select: { name: true } } } }),
     prisma.game.findMany({ select: { id: true, createdAt: true } }),
+    prisma.guest.findMany({
+      where: { promotedPlayerId: { not: null } },
+      select: { id: true, promotedPlayerId: true, promotedYear: true },
+    }),
   ]);
+
+  const promotionByGuestId = new Map(promotions.map(p => [p.id, p]));
 
   const gameDates = new Map(games.map(g => [g.id, g.createdAt]));
 
@@ -272,8 +282,13 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
       const year = duesYearOf(date);
       visitsByDuesYear.set(year, (visitsByDuesYear.get(year) ?? 0) + 1);
     }
+    // Joining stops the per-game meter for the dues year she joined in and
+    // every year after — membership replaces it. Years BEFORE that still bill:
+    // a debt from last year is not forgiven by joining this year.
+    const promoted = isUnnamed ? null : promotionByGuestId.get(key) ?? null;
     let billableVisits = 0;
-    for (const count of visitsByDuesYear.values()) {
+    for (const [year, count] of visitsByDuesYear) {
+      if (promoted?.promotedYear != null && year >= promoted.promotedYear) continue;
       billableVisits += Math.max(0, count - FREE_TRIAL_VISITS);
     }
 
@@ -286,6 +301,8 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
       lastSeen: dates[dates.length - 1]?.toISOString() ?? null,
       usualHostId,
       usualHostVisits,
+      promotedPlayerId: promoted?.promotedPlayerId ?? null,
+      promotedYear: promoted?.promotedYear ?? null,
     });
   }
 
@@ -350,6 +367,208 @@ export async function slotsForGuestPhones(gameId: string, phones: string[]): Pro
   for (const g of guests) {
     const slot = await ensureGuestSlot(gameId, g.id);
     if (slot) out.set(g.phone!, slot);
+  }
+  return out;
+}
+
+// ── Guest becomes a member ────────────────────────────────────────────────────
+//
+// Guests are a trial funnel — two free games a year, then an uncapped per-game
+// rate whose whole purpose is to make joining the cheaper choice. The dues
+// report already flags `shouldConvert`; this is the action behind that flag.
+//
+// Owner decisions (2026-09-17):
+//  · membership REPLACES the guest balance for the year she joins (and after);
+//    earlier dues years still bill, because joining now does not forgive a debt
+//    from last year.
+//  · money already paid as a guest CREDITS against her member dues.
+//  · `Player.memberSince` is her FIRST APPEARANCE, not the year she joined —
+//    she has been turning up, and that is what tenure means here. The year she
+//    joined is kept separately as `Guest.promotedYear`; both facts are wanted.
+//  · history attribution is NOT rewritten. Past games already display her name
+//    (`displayName` resolves it per game from GuestVisit), so nothing needs to
+//    change for them to read correctly, and rewriting teamAssignments/goals
+//    inside stored per-game JSON is how orphaned player ids happened before.
+//  · a game in progress is left as played; membership starts from the next one.
+
+export interface PromotionPlan {
+  guestId: string;
+  guestName: string;
+  duesYear: number;
+  /** Existing player to attach to, or null when a new one is created. */
+  attachPlayerId: string | null;
+  playerName: string;
+  memberSince: number | null;
+  phone: string | null;
+  visitsRetiredFromBilling: number;
+  billableVisitsRemaining: number; // earlier dues years, still owed
+  paymentsCredited: { count: number; total: string };
+  memberAmount: string;
+  /** Same name as an existing player — the caller has to choose. */
+  nameClashPlayerIds: string[];
+  blocked: string | null;
+}
+
+export class PromotionBlocked extends Error {}
+
+/**
+ * What promoting this guest would do. The write below runs off this same plan,
+ * so the confirm screen and the transaction cannot disagree.
+ */
+export async function planPromotion(
+  guestId: string,
+  duesYear: number,
+  opts: { attachPlayerId?: string | null } = {},
+): Promise<PromotionPlan> {
+  const guest = await prisma.guest.findUnique({ where: { id: guestId } });
+  if (!guest) throw new PromotionBlocked('no_such_guest');
+  if (guest.promotedPlayerId) throw new PromotionBlocked('already_a_member');
+
+  const config = await prisma.duesYearConfig.findUnique({ where: { duesYear } });
+  if (!config) throw new PromotionBlocked('dues_year_not_open');
+
+  const ledger = (await computeGuestLedger()).find(r => r.guestId === guestId);
+  const visitsByYear = await visitYearsForGuest(guestId);
+  const retired = [...visitsByYear.entries()]
+    .filter(([year]) => year >= duesYear)
+    .reduce((n, [, count]) => n + count, 0);
+
+  const payments = await prisma.duesPayment.findMany({ where: { guestId, duesYear, playerId: null } });
+  const total = payments.reduce((sum, p) => sum.plus(p.amount), new Prisma.Decimal(0));
+
+  const attach = opts.attachPlayerId ?? null;
+  if (attach) {
+    const target = await prisma.player.findUnique({ where: { id: attach } });
+    if (!target) throw new PromotionBlocked('no_such_player');
+  }
+
+  // A number is one person. Refuse rather than move it off somebody else.
+  if (guest.phone) {
+    const holder = await prisma.player.findFirst({ where: { phone: guest.phone } });
+    if (holder && holder.id !== attach) throw new PromotionBlocked(`phone_held_by:${holder.name}`);
+  }
+
+  const clashes = attach
+    ? []
+    : (await prisma.player.findMany({ where: { name: guest.name }, select: { id: true } })).map(p => p.id);
+
+  const firstSeen = ledger?.firstSeen ? new Date(ledger.firstSeen) : null;
+
+  return {
+    guestId,
+    guestName: guest.name,
+    duesYear,
+    attachPlayerId: attach,
+    playerName: guest.name,
+    memberSince: firstSeen ? duesYearOf(firstSeen) : duesYear,
+    phone: guest.phone,
+    visitsRetiredFromBilling: retired,
+    billableVisitsRemaining: ledger?.billableVisits ?? 0,
+    paymentsCredited: { count: payments.length, total: total.toFixed(2) },
+    memberAmount: new Prisma.Decimal(config.memberAmount).toFixed(2),
+    nameClashPlayerIds: clashes,
+    blocked: null,
+  };
+}
+
+export interface PromotionResult {
+  playerId: string;
+  created: boolean;
+  rosterEntryId: string;
+  creditedPaymentIds: string[];
+}
+
+/** Everything in one transaction: a half-promotion is a split identity. */
+export async function promoteGuest(
+  guestId: string,
+  duesYear: number,
+  opts: { attachPlayerId?: string | null; acknowledgeNameClash?: boolean } = {},
+): Promise<PromotionResult> {
+  const plan = await planPromotion(guestId, duesYear, opts);
+  if (plan.nameClashPlayerIds.length && !opts.acknowledgeNameClash) {
+    throw new PromotionBlocked(`name_taken:${plan.nameClashPlayerIds.join(',')}`);
+  }
+
+  return prisma.$transaction(async tx => {
+    const player = plan.attachPlayerId
+      ? await tx.player.update({
+          where: { id: plan.attachPlayerId },
+          data: {
+            onRoster: true,
+            memberSince: plan.memberSince,
+            ...(plan.phone ? { phone: plan.phone } : {}),
+          },
+        })
+      : await tx.player.create({
+          data: {
+            name: plan.playerName,
+            onRoster: true,
+            memberSince: plan.memberSince,
+            ...(plan.phone ? { phone: plan.phone } : {}),
+          },
+        });
+
+    // The number moves to the member path; leaving it on the guest would have
+    // two rows claiming one human's votes.
+    await tx.guest.update({
+      where: { id: guestId },
+      data: {
+        phone: null,
+        promotedPlayerId: player.id,
+        promotedAt: new Date(),
+        promotedYear: duesYear,
+      },
+    });
+
+    // Credit what she paid as a guest. guestId is KEPT for provenance: the dues
+    // report reads `if (playerId) … else if (guestId)`, so setting playerId
+    // credits the member and stops crediting the guest, with no double count.
+    const toCredit = await tx.duesPayment.findMany({
+      where: { guestId, duesYear, playerId: null },
+      select: { id: true },
+    });
+    if (toCredit.length) {
+      await tx.duesPayment.updateMany({
+        where: { id: { in: toCredit.map(p => p.id) } },
+        data: { playerId: player.id },
+      });
+    }
+
+    // Without a roster entry she lands in "unrostered payments" instead of the
+    // member table. Full member amount (owner 2026-09-17); discounts stay a
+    // human decision recorded in `note`.
+    const entry = await tx.duesRosterEntry.upsert({
+      where: { duesYear_playerId: { duesYear, playerId: player.id } },
+      update: {},
+      create: {
+        duesYear,
+        playerId: player.id,
+        amountOwed: new Prisma.Decimal(plan.memberAmount),
+        joinedAt: new Date(),
+        note: `Converted from guest (${plan.guestName})`,
+      },
+    });
+
+    return {
+      playerId: player.id,
+      created: !plan.attachPlayerId,
+      rosterEntryId: entry.id,
+      creditedPaymentIds: toCredit.map(p => p.id),
+    };
+  });
+}
+
+/** Appearances per dues year for one guest. */
+async function visitYearsForGuest(guestId: string): Promise<Map<number, number>> {
+  const visits = await prisma.guestVisit.findMany({ where: { guestId }, select: { gameId: true } });
+  const games = await prisma.game.findMany({
+    where: { id: { in: [...new Set(visits.map(v => v.gameId))] } },
+    select: { id: true, createdAt: true },
+  });
+  const out = new Map<number, number>();
+  for (const g of games) {
+    const year = duesYearOf(g.createdAt);
+    out.set(year, (out.get(year) ?? 0) + 1);
   }
   return out;
 }
