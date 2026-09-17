@@ -132,10 +132,18 @@ export async function setWhatsappSettings(patch: Partial<WhatsappSettings>): Pro
   return res.json();
 }
 
-export async function resolveUnmatched(phone: string, playerId: string): Promise<void> {
+/**
+ * Link a number to a member (`playerId`) or to a guest identity (`guestId`).
+ * Never pass a GuestN slot player as `playerId` — the slot is a different person
+ * each week, and the link is permanent.
+ */
+export async function resolveUnmatched(
+  phone: string,
+  target: { playerId?: string; guestId?: string }
+): Promise<void> {
   const res = await fetch(
     `${API_BASE_URL}/whatsapp/unmatched/resolve`,
-    opts({ method: 'POST', body: JSON.stringify({ phone, playerId }) })
+    opts({ method: 'POST', body: JSON.stringify({ phone, ...target }) })
   );
   if (!res.ok) throw new Error('Failed to resolve vote');
 }

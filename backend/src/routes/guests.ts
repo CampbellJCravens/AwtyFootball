@@ -1,6 +1,13 @@
 import { Router, Response } from 'express';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
-import { computeGuestLedger, listGuests, renameGuest } from '../services/guests';
+import {
+  computeGuestLedger,
+  listGuests,
+  renameGuest,
+  planPromotion,
+  promoteGuest,
+  PromotionBlocked,
+} from '../services/guests';
 
 const router = Router();
 
@@ -49,6 +56,71 @@ router.patch('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Respon
     if (error?.message === 'empty_name') return res.status(400).json({ error: 'A name is required' });
     console.error('Error renaming guest:', error);
     return res.status(500).json({ error: 'Failed to rename guest' });
+  }
+});
+
+// Why a promotion was refused, in words the admin can act on. Each of these is
+// a decision only a human can make — never guessed at.
+const promotionError = (message: string): { status: number; body: object } => {
+  if (message === 'no_such_guest') return { status: 404, body: { error: 'Guest not found' } };
+  if (message === 'no_such_player') return { status: 404, body: { error: 'That player no longer exists' } };
+  if (message === 'already_a_member') return { status: 409, body: { error: 'That guest is already a member' } };
+  if (message === 'dues_year_not_open') {
+    return { status: 409, body: { error: 'Open the dues year first — the member amount comes from it' } };
+  }
+  if (message.startsWith('phone_held_by:')) {
+    const who = message.slice('phone_held_by:'.length);
+    return { status: 409, body: { error: `${who} already has that number. A number belongs to one person.` } };
+  }
+  if (message.startsWith('name_taken:')) {
+    return {
+      status: 409,
+      body: { error: 'name_taken', playerIds: message.slice('name_taken:'.length).split(',') },
+    };
+  }
+  return { status: 500, body: { error: 'Failed to promote guest' } };
+};
+
+const duesYearFrom = (value: unknown): number | null => {
+  const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
+  return Number.isInteger(n) && n > 2000 && n < 2100 ? n : null;
+};
+
+// GET /api/guests/:id/promotion?duesYear= — what converting would change. The
+// confirm screen runs off this; the write runs off the same plan.
+router.get('/:id/promotion', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const duesYear = duesYearFrom(req.query.duesYear);
+  if (duesYear === null) return res.status(400).json({ error: 'duesYear is required' });
+  try {
+    res.json(await planPromotion(req.params.id, duesYear, {
+      attachPlayerId: typeof req.query.attachPlayerId === 'string' ? req.query.attachPlayerId : null,
+    }));
+  } catch (error: any) {
+    if (error instanceof PromotionBlocked) {
+      const { status, body } = promotionError(error.message);
+      return res.status(status).json(body);
+    }
+    console.error('Error planning promotion:', error);
+    res.status(500).json({ error: 'Failed to plan promotion' });
+  }
+});
+
+// POST /api/guests/:id/promote — make this guest a member.
+router.post('/:id/promote', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const duesYear = duesYearFrom(req.body?.duesYear);
+  if (duesYear === null) return res.status(400).json({ error: 'duesYear is required' });
+  try {
+    res.json(await promoteGuest(req.params.id, duesYear, {
+      attachPlayerId: typeof req.body?.attachPlayerId === 'string' ? req.body.attachPlayerId : null,
+      acknowledgeNameClash: req.body?.acknowledgeNameClash === true,
+    }));
+  } catch (error: any) {
+    if (error instanceof PromotionBlocked) {
+      const { status, body } = promotionError(error.message);
+      return res.status(status).json(body);
+    }
+    console.error('Error promoting guest:', error);
+    res.status(500).json({ error: 'Failed to promote guest' });
   }
 });
 

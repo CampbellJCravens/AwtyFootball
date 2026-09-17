@@ -24,6 +24,7 @@ import {
   linkPollToGame,
   getUnmatched,
   resolveContact,
+  resolveContactToGuest,
   getWhatsappSettings,
   setWhatsappSettings,
 } from '../services/whatsapp/polls';
@@ -121,14 +122,22 @@ router.get('/unmatched', async (req: AuthenticatedRequest, res: Response, next: 
   }
 });
 
-// Map a phone number to a player (backfills Player.phone) and re-sync.
+// Map a phone number to a player (backfills Player.phone) or to a guest
+// identity (backfills Guest.phone), then re-sync that number's votes.
 router.post('/unmatched/resolve', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { phone, playerId } = req.body ?? {};
-    if (typeof phone !== 'string' || typeof playerId !== 'string' || !phone || !playerId) {
-      return res.status(400).json({ error: 'phone and playerId are required' });
+    const { phone, playerId, guestId } = req.body ?? {};
+    if (typeof phone !== 'string' || !phone) {
+      return res.status(400).json({ error: 'phone is required' });
     }
-    await resolveContact(phone, playerId);
+    // A number is one person: a member or a guest, never both.
+    if (typeof guestId === 'string' && guestId) {
+      await resolveContactToGuest(phone, guestId);
+    } else if (typeof playerId === 'string' && playerId) {
+      await resolveContact(phone, playerId);
+    } else {
+      return res.status(400).json({ error: 'playerId or guestId is required' });
+    }
     res.json({ ok: true });
   } catch (err) {
     next(err);
