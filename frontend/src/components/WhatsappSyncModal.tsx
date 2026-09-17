@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Game } from '../api/games';
 import type { Player } from '../api/players';
+import { fetchGuests, type Guest } from '../api/guests';
 import {
   getWhatsappStatus,
   getWhatsappQr,
@@ -32,7 +33,10 @@ const gameLabel = (g: { gameNumber: number | null; createdAt: string }) => {
   return g.gameNumber != null ? `Game ${g.gameNumber} · ${d}` : d;
 };
 
+const isGuestSlot = (name: string) => /^Guest\s*\d+$/i.test(name.trim());
+
 export default function WhatsappSyncModal({ games, players, onClose }: Props) {
+  const [guests, setGuests] = useState<Guest[]>([]);
   const [status, setStatus] = useState<WhatsappStatus | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [polls, setPolls] = useState<WhatsappPoll[]>([]);
@@ -147,6 +151,10 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    fetchGuests().then(setGuests).catch(() => setGuests([]));
+  }, []);
+
   // While waiting to link, poll for the QR / linked state every few seconds.
   useEffect(() => {
     if (status?.linked) return;
@@ -167,11 +175,14 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
     }
   };
 
-  const handleResolve = async (phone: string, playerId: string) => {
-    if (!playerId) return;
+  // "p:<id>" for a member, "g:<id>" for a guest identity. A GuestN slot must
+  // never take a permanent number: it is a different person next week.
+  const handleResolve = async (phone: string, value: string) => {
+    if (!value) return;
+    const [kind, id] = [value.slice(0, 1), value.slice(2)];
     setBusy(phone);
     try {
-      await resolveUnmatched(phone, playerId);
+      await resolveUnmatched(phone, kind === 'g' ? { guestId: id } : { playerId: id });
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to resolve');
@@ -415,10 +426,19 @@ export default function WhatsappSyncModal({ games, players, onClose }: Props) {
                           onChange={(e) => handleResolve(v.phone, e.target.value)}
                           className="w-full px-3 py-2 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent"
                         >
-                          <option value="">Assign to player…</option>
-                          {players.map((p) => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
+                          <option value="">Assign to…</option>
+                          {guests.length > 0 && (
+                            <optgroup label="Guests">
+                              {guests.map((g) => (
+                                <option key={g.id} value={`g:${g.id}`}>{g.name}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                          <optgroup label="Members">
+                            {players.filter((p) => !isGuestSlot(p.name)).map((p) => (
+                              <option key={p.id} value={`p:${p.id}`}>{p.name}</option>
+                            ))}
+                          </optgroup>
                         </select>
                       </div>
                     ))}

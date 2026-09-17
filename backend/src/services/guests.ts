@@ -297,3 +297,59 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
     return b.visits - a.visits || a.name.localeCompare(b.name);
   });
 }
+
+/** A GuestN pool slot, e.g. "Guest3". Matched on name because that is what the
+ * rest of the app keys guests off; nothing here writes Player.name. */
+const isGuestSlotName = (name: string) => /^Guest\s*\d+$/i.test(name.trim());
+
+/**
+ * The slot a guest occupies in a game, claiming the next free one if she has
+ * none yet.
+ *
+ * Auto-assigning is the owner's call (2026-09-17): a named guest who voted is
+ * coming, and making an admin place her by hand every week is the friction this
+ * was meant to remove. It returns null when every slot is taken, which is a real
+ * state, not an error — the caller leaves the vote unattributed rather than
+ * evicting somebody.
+ */
+export async function ensureGuestSlot(gameId: string, guestId: string): Promise<string | null> {
+  const existing = await prisma.guestVisit.findFirst({ where: { gameId, guestId } });
+  if (existing) return existing.slotPlayerId;
+
+  const pool = (await prisma.player.findMany({ select: { id: true, name: true } }))
+    .filter(p => isGuestSlotName(p.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (pool.length === 0) return null;
+
+  const taken = new Set(
+    (await prisma.guestVisit.findMany({ where: { gameId }, select: { slotPlayerId: true } }))
+      .map(v => v.slotPlayerId),
+  );
+  const free = pool.find(p => !taken.has(p.id));
+  if (!free) return null;
+
+  // @@unique([gameId, slotPlayerId]) makes the race harmless: if another request
+  // claimed the slot first, take whatever it left her.
+  try {
+    await prisma.guestVisit.create({ data: { gameId, slotPlayerId: free.id, guestId } });
+    return free.id;
+  } catch {
+    const retry = await prisma.guestVisit.findFirst({ where: { gameId, guestId } });
+    return retry?.slotPlayerId ?? null;
+  }
+}
+
+/** Slot player id for each guest phone that voted, claiming slots as needed. */
+export async function slotsForGuestPhones(gameId: string, phones: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (phones.length === 0) return out;
+  const guests = await prisma.guest.findMany({
+    where: { phone: { in: phones } },
+    select: { id: true, phone: true },
+  });
+  for (const g of guests) {
+    const slot = await ensureGuestSlot(gameId, g.id);
+    if (slot) out.set(g.phone!, slot);
+  }
+  return out;
+}

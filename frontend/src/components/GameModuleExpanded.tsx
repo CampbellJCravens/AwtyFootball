@@ -436,6 +436,29 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   };
 
   // Save game data to backend
+  /**
+   * Linking a number to a guest claims her a slot server-side. This state is
+   * what the auto-save ships back wholesale (replaceGuestVisits deletes and
+   * recreates the game's visits), so without re-reading it the very next save
+   * would delete the slot that was just assigned.
+   */
+  const reloadGuestVisits = useCallback(async () => {
+    setPollVersion(v => v + 1);
+    try {
+      const gameData = await fetchGame(gameId);
+      setGuestVisits(
+        Object.fromEntries(
+          (gameData.guestVisits ?? []).map(v => [
+            v.slotPlayerId,
+            { guestName: v.guestName, hostPlayerId: v.hostPlayerId },
+          ])
+        )
+      );
+    } catch {
+      // leave state alone; a stale label is better than dropping what is there
+    }
+  }, [gameId]);
+
   const saveGameData = useCallback(async () => {
     try {
       setSaving(true);
@@ -1419,7 +1442,10 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
               <WhatsappUnmatchedFlag
                 gameId={gameId}
                 players={allPlayers}
-                onResolved={() => setPollVersion((v) => v + 1)}
+                guestNamesBySlot={Object.fromEntries(
+                  Object.entries(guestVisits).map(([slotId, d]) => [slotId, d.guestName])
+                )}
+                onResolved={reloadGuestVisits}
               />
             )}
             <GameRsvpSection gameId={gameId} gameNumber={gameNumber} refreshSignal={pollVersion} isAdmin={isAdmin} />

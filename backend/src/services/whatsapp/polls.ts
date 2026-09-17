@@ -23,6 +23,7 @@ import {
   BufferJSON,
 } from '@whiskeysockets/baileys';
 import prisma from '../../prisma';
+import { slotsForGuestPhones } from '../guests';
 import { combineSelections } from './options';
 import { findGameForPollTitle } from './gameMatch';
 import { bufferPendingVote, takePendingVotes } from './pendingVotes';
@@ -669,6 +670,13 @@ export async function syncPollToRsvps(pollMessageId: string): Promise<void> {
   });
   const byPhone = new Map(players.map((p) => [p.phone!, p.id]));
 
+  // A guest's number belongs to her identity, not to a GuestN slot: resolve it
+  // to whichever slot she holds in this game, claiming a free one if she has
+  // none yet. Members win any collision — a number can only be one of the two.
+  for (const [phone, slotPlayerId] of await slotsForGuestPhones(poll.gameId, phones)) {
+    if (!byPhone.has(phone)) byPhone.set(phone, slotPlayerId);
+  }
+
   for (const phone of phones) {
     const playerId = byPhone.get(phone);
     if (!playerId) continue; // unmatched — resolved by admin later
@@ -734,7 +742,11 @@ export async function getUnmatched(gameId?: string): Promise<UnmatchedVote[]> {
     where: { phone: { in: [...allPhones] } },
     select: { phone: true },
   });
-  const knownSet = new Set(known.map((k) => k.phone!));
+  const knownGuests = await prisma.guest.findMany({
+    where: { phone: { in: [...allPhones] } },
+    select: { phone: true },
+  });
+  const knownSet = new Set([...known.map((k) => k.phone!), ...knownGuests.map((g) => g.phone!)]);
 
   const contacts = await prisma.whatsappContact.findMany({
     where: { phone: { in: [...allPhones] } },
@@ -924,6 +936,20 @@ async function getGamePollFromRsvps(gameId: string): Promise<GamePoll> {
 }
 
 /** Assign a phone to a player (backfills Player.phone) and re-sync all polls. */
+/**
+ * Link a number to a GUEST identity.
+ *
+ * Deliberately not `resolveContact(phone, guestSlotPlayerId)`: `Player.phone` is
+ * unique and permanent, so writing a number onto Guest3 would bind every future
+ * vote from it to a slot that is a different human next week, and burn the slot
+ * for everyone else. The number goes on the Guest; the slot is per game.
+ */
+export async function resolveContactToGuest(phone: string, guestId: string): Promise<void> {
+  const digits = phone.replace(/\D/g, '');
+  await prisma.guest.update({ where: { id: guestId }, data: { phone: digits } });
+  await resyncPollsForPhone(digits);
+}
+
 export async function resolveContact(phone: string, playerId: string): Promise<void> {
   const digits = phone.replace(/\D/g, '');
   await prisma.player.update({ where: { id: playerId }, data: { phone: digits } });

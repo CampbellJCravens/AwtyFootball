@@ -1,22 +1,34 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Player } from '../api/players';
+import { fetchGuests, type Guest } from '../api/guests';
 import { getUnmatchedVotes, resolveUnmatched, type UnmatchedVote } from '../api/whatsapp';
 
 interface Props {
   gameId: string;
   players: Player[];
+  /** Slot player id -> the guest's name in THIS game, for labelling the slots. */
+  guestNamesBySlot?: Record<string, string | null>;
   onResolved?: () => void;
 }
+
+/** A GuestN pool slot rather than a person. */
+const isGuestSlot = (name: string) => /^Guest\s*\d+$/i.test(name.trim());
 
 /**
  * Admin-only flag surfaced on a game's RSVP tab: WhatsApp poll votes for this
  * game from numbers not yet linked to a player. Resolve inline (assign a number
  * to a player) and the vote is attributed into this game's RSVPs.
  */
-export default function WhatsappUnmatchedFlag({ gameId, players, onResolved }: Props) {
+export default function WhatsappUnmatchedFlag({ gameId, players, guestNamesBySlot, onResolved }: Props) {
   const [unmatched, setUnmatched] = useState<UnmatchedVote[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const { members, slots } = useMemo(() => ({
+    members: players.filter((p) => !isGuestSlot(p.name)),
+    slots: players.filter((p) => isGuestSlot(p.name)),
+  }), [players]);
 
   const load = useCallback(async () => {
     try {
@@ -31,12 +43,20 @@ export default function WhatsappUnmatchedFlag({ gameId, players, onResolved }: P
     load();
   }, [load]);
 
-  const handleResolve = async (phone: string, playerId: string) => {
-    if (!playerId) return;
+  useEffect(() => {
+    fetchGuests().then(setGuests).catch(() => setGuests([]));
+  }, []);
+
+  // value is "p:<playerId>" or "g:<guestId>" — a guest is not a player, and
+  // linking her number to the GuestN slot she sat in would bind it permanently
+  // to a slot somebody else uses next week.
+  const handleResolve = async (phone: string, value: string) => {
+    if (!value) return;
+    const [kind, id] = [value.slice(0, 1), value.slice(2)];
     setBusy(phone);
     setError(null);
     try {
-      await resolveUnmatched(phone, playerId);
+      await resolveUnmatched(phone, kind === 'g' ? { guestId: id } : { playerId: id });
       await load();
       onResolved?.();
     } catch (e) {
@@ -56,7 +76,10 @@ export default function WhatsappUnmatchedFlag({ gameId, players, onResolved }: P
         </svg>
         {unmatched.length} WhatsApp vote{unmatched.length === 1 ? '' : 's'} from unlinked number{unmatched.length === 1 ? '' : 's'}
       </p>
-      <p className="text-xs text-text-tertiary mt-0.5 mb-2">Link each number to a player to count their vote.</p>
+      <p className="text-xs text-text-tertiary mt-0.5 mb-2">
+        Link each number to a member or a named guest to count their vote. A guest keeps her own
+        number, and is given a free guest slot in each game she votes for.
+      </p>
 
       {error && <p className="text-xs text-error mb-2">{error}</p>}
 
@@ -74,9 +97,30 @@ export default function WhatsappUnmatchedFlag({ gameId, players, onResolved }: P
               className="px-2 py-1.5 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent max-w-[45%]"
             >
               <option value="">Link to…</option>
-              {players.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              {guests.length > 0 && (
+                <optgroup label="Guests">
+                  {guests.map((g) => (
+                    <option key={g.id} value={`g:${g.id}`}>{g.name}</option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Members">
+                {members.map((p) => (
+                  <option key={p.id} value={`p:${p.id}`}>{p.name}</option>
+                ))}
+              </optgroup>
+              {slots.length > 0 && (
+                <optgroup label="Guest slots (this game only)">
+                  {slots.map((p) => {
+                    const named = guestNamesBySlot?.[p.id];
+                    return (
+                      <option key={p.id} value={`p:${p.id}`}>
+                        {named ? `${p.name} · ${named}` : p.name}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
             </select>
           </div>
         ))}

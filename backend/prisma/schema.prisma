@@ -71,6 +71,9 @@ model Game {
 model Guest {
   id             String   @id @default(uuid())
   name           String   // as typed, e.g. "Ricky B"
+  // E.164 digits, so a guest's WhatsApp votes attribute to HER, not to the
+  // GuestN slot she happened to occupy — those are a different human each week.
+  phone          String?  @unique
   // lower+trimmed. Unique on purpose: a split identity is a silently wrong
   // dues count, whereas two real Rickys just means typing a surname.
   normalizedName String   @unique
