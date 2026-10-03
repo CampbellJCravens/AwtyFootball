@@ -863,14 +863,21 @@ export async function getGamePoll(gameId: string): Promise<GamePoll> {
   }
 
   const phones = [...byPhone.keys()];
-  const [players, contacts] = await Promise.all([
+  const [players, guests, contacts] = await Promise.all([
     prisma.player.findMany({
       where: { phone: { in: phones } },
       select: { id: true, name: true, pictureUrl: true, phone: true },
     }),
+    // A number linked to a guest identity is linked too — syncPollToRsvps and
+    // getUnmatched already treat it so; this view has to agree.
+    prisma.guest.findMany({
+      where: { phone: { in: phones } },
+      select: { id: true, name: true, phone: true },
+    }),
     prisma.whatsappContact.findMany({ where: { phone: { in: phones } } }),
   ]);
   const playerByPhone = new Map(players.map((p) => [p.phone!, p]));
+  const guestByPhone = new Map(guests.map((g) => [g.phone!, g]));
   const nameByPhone = new Map(contacts.map((c) => [c.phone, c.pushName]));
 
   const result = emptyPoll('poll');
@@ -880,16 +887,18 @@ export async function getGamePoll(gameId: string): Promise<GamePoll> {
     const parsed = combineSelections(names);
     if (!parsed) continue; // vote cleared / unrecognized
 
+    // Members win a collision, as in syncPollToRsvps.
     const player = playerByPhone.get(phone);
+    const guest = player ? undefined : guestByPhone.get(phone);
     const entry: GamePollEntry = {
-      key: player ? player.id : `wa:${anon}`,
+      key: player ? player.id : guest ? `guest:${guest.id}` : `wa:${anon}`,
       // Unlinked voters: use their WhatsApp display name if we have it, else a
       // numbered "Guest" so multiple unlinked people stay distinguishable. Never
       // the phone number.
-      name: player ? player.name : nameByPhone.get(phone) || `Guest ${++anon}`,
+      name: player ? player.name : guest ? guest.name : nameByPhone.get(phone) || `Guest ${++anon}`,
       pictureUrl: player ? player.pictureUrl : null,
       guestCount: parsed.status === 'yes' ? parsed.guestCount : 0,
-      linked: !!player,
+      linked: !!player || !!guest,
       playerId: player ? player.id : null,
     };
 
