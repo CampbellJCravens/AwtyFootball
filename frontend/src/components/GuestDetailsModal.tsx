@@ -10,7 +10,8 @@ interface GuestDetailsModalProps {
   isGuestPlayer: (player: Player) => boolean;
   initialName?: string | null;
   initialHostId?: string | null;
-  onSave: (details: { guestName: string | null; hostPlayerId: string | null }) => void;
+  initialFormerPlayerId?: string | null;
+  onSave: (details: { guestName: string | null; hostPlayerId: string | null; formerPlayerId: string | null }) => void;
   onSkip: () => void;
   onClose: () => void;
   // Drops the slot off the game entirely. Only passed when editing a guest who
@@ -28,6 +29,7 @@ export default function GuestDetailsModal({
   isGuestPlayer,
   initialName = null,
   initialHostId = null,
+  initialFormerPlayerId = null,
   onSave,
   onSkip,
   onClose,
@@ -36,6 +38,9 @@ export default function GuestDetailsModal({
 }: GuestDetailsModalProps) {
   const [name, setName] = useState(initialName ?? '');
   const [hostId, setHostId] = useState<string | null>(initialHostId);
+  // A former member is picked, not typed: the link to her player is what keeps
+  // her visits on one identity. Editing the name afterwards drops the link.
+  const [formerId, setFormerId] = useState<string | null>(initialFormerPlayerId);
   const [hostQuery, setHostQuery] = useState('');
   const [knownGuests, setKnownGuests] = useState<Guest[]>([]);
   // Two taps, because the add was one tap and the removal is silent.
@@ -60,6 +65,17 @@ export default function GuestDetailsModal({
 
   const suggestionLabel = name.trim() ? 'Been before?' : 'Recent guests';
 
+  // Former members matching what is typed. Only while typing - the list is long
+  // and the recent-guests chips already cover the empty box.
+  const formerMatches = useMemo(() => {
+    const q = name.trim().toLowerCase();
+    if (!q || formerId) return [];
+    return players
+      .filter(p => !isGuestPlayer(p) && p.onRoster === false && p.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, MATCH_LIMIT);
+  }, [name, players, isGuestPlayer, formerId]);
+
   // Hosts: any non-guest player. Prior members stay selectable — a former
   // member can still bring a mate, and excluding them would just lose the host.
   const { currentRoster, priorMembers } = useMemo(() => {
@@ -75,7 +91,7 @@ export default function GuestDetailsModal({
   }, [players, hostQuery, isGuestPlayer]);
 
   const handleSave = () => {
-    onSave({ guestName: name.trim() || null, hostPlayerId: hostId });
+    onSave({ guestName: name.trim() || null, hostPlayerId: hostId, formerPlayerId: formerId });
   };
 
   const hostButton = (p: Player) => (
@@ -128,12 +144,37 @@ export default function GuestDetailsModal({
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Ricky"
+              onChange={(e) => { setName(e.target.value); setFormerId(null); }}
+              placeholder="e.g. Ricky, or a former member's name"
               className="w-full px-4 py-2 border border-border-emphasis rounded-xl outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base bg-surface-raised text-text-primary placeholder-text-muted"
               autoFocus
             />
-            {suggestions.length > 0 && (
+            {formerId && (
+              <div className="mt-2 flex items-center gap-2 text-xs">
+                <span className="px-2 py-0.5 rounded-full bg-surface-active text-text-primary font-semibold">former member</span>
+                <span className="text-text-tertiary flex-1">tracked as a guest under their player record</span>
+                <button onClick={() => setFormerId(null)} className="text-text-tertiary hover:text-text-primary" aria-label="Not this former member">
+                  ×
+                </button>
+              </div>
+            )}
+            {formerMatches.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-text-tertiary mb-1">Former member?</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {formerMatches.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => { setName(p.name); setFormerId(p.id); }}
+                      className="px-2.5 py-1 border border-border-emphasis hover:bg-surface-active text-text-primary text-xs rounded-lg transition-colors"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {suggestions.length > 0 && !formerId && (
               <div className="mt-2">
                 <p className="text-xs text-text-tertiary mb-1">{suggestionLabel}</p>
                 <div className="flex flex-wrap gap-1.5">

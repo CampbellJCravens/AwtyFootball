@@ -292,6 +292,14 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
                           ✎
                         </button>
                       )}
+                      {row.formerPlayerId && !row.promotedPlayerId && (
+                        <span
+                          className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-secondary whitespace-nowrap"
+                          title="Was a member; visiting as a guest. Converting re-attaches them to their player record."
+                        >
+                          former member
+                        </span>
+                      )}
                       {row.promotedPlayerId ? (
                         <span
                           className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-tertiary whitespace-nowrap"

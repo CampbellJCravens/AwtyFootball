@@ -13,6 +13,8 @@ export interface GuestVisitInput {
   slotPlayerId: string;
   guestName: string | null;
   hostPlayerId: string | null;
+  // Set when the guest is a former member picked from the roster, not typed.
+  formerPlayerId?: string | null;
 }
 
 export interface GuestVisitDto {
@@ -20,6 +22,7 @@ export interface GuestVisitDto {
   guestId: string | null;
   guestName: string | null;
   hostPlayerId: string | null;
+  formerPlayerId: string | null;
 }
 
 export const normalizeGuestName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -33,8 +36,32 @@ export async function replaceGuestVisits(
   visits: GuestVisitInput[],
 ): Promise<void> {
   const guestIdByNormalized = new Map<string, string>();
+  const guestIdByFormer = new Map<string, string>();
+
+  // A former member resolves through her player, never through a typed name: the
+  // name is only a label. Earlier typed-name visits under the same name are the
+  // same person by the app's identity rule (unique normalized name), so that
+  // guest is linked rather than duplicated.
+  for (const visit of visits) {
+    const fid = visit.formerPlayerId;
+    if (!fid || guestIdByFormer.has(fid)) continue;
+    const player = await tx.player.findUnique({ where: { id: fid }, select: { name: true } });
+    if (!player) continue;
+    let guest = await tx.guest.findUnique({ where: { formerPlayerId: fid } });
+    if (!guest) {
+      const normalizedName = normalizeGuestName(player.name);
+      const byName = await tx.guest.findUnique({ where: { normalizedName } });
+      guest = byName && !byName.formerPlayerId
+        ? await tx.guest.update({ where: { id: byName.id }, data: { formerPlayerId: fid } })
+        : byName
+          ? null
+          : await tx.guest.create({ data: { name: player.name, normalizedName, formerPlayerId: fid } });
+    }
+    if (guest) guestIdByFormer.set(fid, guest.id);
+  }
 
   for (const visit of visits) {
+    if (visit.formerPlayerId && guestIdByFormer.has(visit.formerPlayerId)) continue;
     const name = visit.guestName?.trim();
     if (!name) continue;
     const normalizedName = normalizeGuestName(name);
@@ -55,10 +82,11 @@ export async function replaceGuestVisits(
   await tx.guestVisit.createMany({
     data: visits.map(visit => {
       const name = visit.guestName?.trim();
+      const formerGuest = visit.formerPlayerId ? guestIdByFormer.get(visit.formerPlayerId) : undefined;
       return {
         gameId,
         slotPlayerId: visit.slotPlayerId,
-        guestId: name ? guestIdByNormalized.get(normalizeGuestName(name))! : null,
+        guestId: formerGuest ?? (name ? guestIdByNormalized.get(normalizeGuestName(name))! : null),
         hostPlayerId: visit.hostPlayerId,
       };
     }),
@@ -130,7 +158,7 @@ export async function renameGuest(
 export async function getGuestVisits(gameId: string): Promise<GuestVisitDto[]> {
   const rows = await prisma.guestVisit.findMany({
     where: { gameId },
-    include: { guest: { select: { name: true } } },
+    include: { guest: { select: { name: true, formerPlayerId: true } } },
   });
 
   return rows.map(row => ({
@@ -138,6 +166,7 @@ export async function getGuestVisits(gameId: string): Promise<GuestVisitDto[]> {
     guestId: row.guestId,
     guestName: row.guest?.name ?? null,
     hostPlayerId: row.hostPlayerId,
+    formerPlayerId: row.guest?.formerPlayerId ?? null,
   }));
 }
 
@@ -206,6 +235,8 @@ export interface GuestLedgerRow {
   // per-game meter stopped in. Null for a guest who is still a guest.
   promotedPlayerId: string | null;
   promotedYear: number | null;
+  // A former member visiting as a guest: the player she was.
+  formerPlayerId: string | null;
 }
 
 // Dues ledger. The GUEST is the unit of collection (owner decision 2026-08-07):
@@ -215,16 +246,21 @@ export interface GuestLedgerRow {
 // A guest occupying two slots in one game (left and came back) counts once:
 // dues follow appearances, not slots.
 export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
-  const [visits, games, promotions] = await Promise.all([
+  const [visits, games, promotions, formers] = await Promise.all([
     prisma.guestVisit.findMany({ include: { guest: { select: { name: true } } } }),
     prisma.game.findMany({ select: { id: true, createdAt: true } }),
     prisma.guest.findMany({
       where: { promotedPlayerId: { not: null } },
       select: { id: true, promotedPlayerId: true, promotedYear: true },
     }),
+    prisma.guest.findMany({
+      where: { formerPlayerId: { not: null } },
+      select: { id: true, formerPlayerId: true },
+    }),
   ]);
 
   const promotionByGuestId = new Map(promotions.map(p => [p.id, p]));
+  const formerByGuestId = new Map(formers.map(f => [f.id, f.formerPlayerId]));
 
   const gameDates = new Map(games.map(g => [g.id, g.createdAt]));
 
@@ -303,6 +339,7 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
       usualHostVisits,
       promotedPlayerId: promoted?.promotedPlayerId ?? null,
       promotedYear: promoted?.promotedYear ?? null,
+      formerPlayerId: isUnnamed ? null : formerByGuestId.get(key) ?? null,
     });
   }
 
@@ -436,10 +473,13 @@ export async function planPromotion(
   const payments = await prisma.duesPayment.findMany({ where: { guestId, duesYear, playerId: null } });
   const total = payments.reduce((sum, p) => sum.plus(p.amount), new Prisma.Decimal(0));
 
-  const attach = opts.attachPlayerId ?? null;
+  // A former member rejoins as herself, never as a same-named twin.
+  const attach = opts.attachPlayerId ?? guest.formerPlayerId ?? null;
+  let keptMemberSince: number | null = null;
   if (attach) {
     const target = await prisma.player.findUnique({ where: { id: attach } });
     if (!target) throw new PromotionBlocked('no_such_player');
+    keptMemberSince = target.memberSince;
   }
 
   // A number is one person. Refuse rather than move it off somebody else.
@@ -460,7 +500,9 @@ export async function planPromotion(
     duesYear,
     attachPlayerId: attach,
     playerName: guest.name,
-    memberSince: firstSeen ? duesYearOf(firstSeen) : duesYear,
+    // An existing player keeps the tenure she already has; only a new one is
+    // dated from the first time she turned up.
+    memberSince: keptMemberSince ?? (firstSeen ? duesYearOf(firstSeen) : duesYear),
     phone: guest.phone,
     visitsRetiredFromBilling: retired,
     billableVisitsRemaining: ledger?.billableVisits ?? 0,

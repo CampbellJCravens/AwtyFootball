@@ -83,6 +83,10 @@ model Guest {
   promotedPlayerId String?   @unique
   promotedAt       DateTime?
   promotedYear     Int?      // dues year the per-game meter stopped in
+  // A former member visiting as a guest: the player she already is. One guest
+  // identity per former member, so her visits never split across typed names,
+  // and converting her re-attaches to this player instead of creating a twin.
+  formerPlayerId   String?   @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
