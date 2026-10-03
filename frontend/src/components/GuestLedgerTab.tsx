@@ -8,7 +8,7 @@ import {
   promoteGuest,
   type PromotionPlan,
 } from '../api/guests';
-import { DuesGuestRow, DuesYearNotConfigured, fetchDuesReport } from '../api/dues';
+import { DuesGuestRow, DuesYearNotConfigured, fetchDuesReport, isCollectionWindow } from '../api/dues';
 
 interface GuestLedgerTabProps {
   players: Player[];
@@ -66,7 +66,10 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
       });
   }, []);
 
-  const duesYear = new Date().getFullYear();
+  // Converting makes her a member of the year being collected for. October to
+  // December that is NEXT year: the current one is already closed (owner
+  // 2026-10-03, converting Amelia into 2027 while 2026 was underway).
+  const duesYear = new Date().getFullYear() + (isCollectionWindow() ? 1 : 0);
 
   // The preview IS the confirm step: promotion writes across four tables, so
   // nothing happens until the admin has seen what changes.
@@ -99,7 +102,8 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
     setPlan(null);
     const [ledger, report] = await Promise.all([
       fetchGuestLedger(),
-      fetchDuesReport(duesYear).catch(() => null),
+      // Balances are for the year the games were played, same as the first load.
+      fetchDuesReport(new Date().getFullYear()).catch(() => null),
     ]);
     setRows(ledger);
     if (report) setDues(new Map(report.guests.map(g => [g.guestId, g])));
