@@ -37,7 +37,10 @@ const STATUS_CLASS: Record<DuesStatus, string> = {
 // they sit behind their own chip instead of padding the working list.
 type Filter = 'active' | 'owing' | 'partial' | 'paid' | 'exempt' | 'left';
 
-const currentDuesYear = () => new Date().getFullYear();
+// October to December he collects for NEXT year; the current one is closed
+// (owner 2026-10-03: "I collect in 2026 for 2027"). If that year has not been
+// set up yet, the page lands on its set-up screen, which is the right nudge.
+const currentDuesYear = () => new Date().getFullYear() + (isCollectionWindow() ? 1 : 0);
 
 export default function DuesTab({ players }: { players: Player[] }) {
   const [year, setYear] = useState(currentDuesYear());
