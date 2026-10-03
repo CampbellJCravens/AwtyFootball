@@ -150,7 +150,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [balance, setBalance] = useState<Game['balance']>(undefined);
   const [currentDate, setCurrentDate] = useState<string>(gameDate);
   // Guest name + host, keyed by the GuestN pool player holding the slot.
-  const [guestVisits, setGuestVisits] = useState<Record<string, { guestName: string | null; hostPlayerId: string | null }>>({});
+  const [guestVisits, setGuestVisits] = useState<Record<string, { guestName: string | null; hostPlayerId: string | null; formerPlayerId?: string | null }>>({});
   // Slot awaiting details: `team` is set when the guest is being added (assign
   // on confirm), null when an existing guest is being edited.
   const [guestSlotPending, setGuestSlotPending] = useState<{ slotPlayerId: string; team: 'color' | 'white' | null } | null>(null);
@@ -206,7 +206,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         Object.fromEntries(
           (gameData.guestVisits ?? []).map(v => [
             v.slotPlayerId,
-            { guestName: v.guestName, hostPlayerId: v.hostPlayerId },
+            { guestName: v.guestName, hostPlayerId: v.hostPlayerId, formerPlayerId: v.formerPlayerId ?? null },
           ])
         )
       );
@@ -450,7 +450,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
         Object.fromEntries(
           (gameData.guestVisits ?? []).map(v => [
             v.slotPlayerId,
-            { guestName: v.guestName, hostPlayerId: v.hostPlayerId },
+            { guestName: v.guestName, hostPlayerId: v.hostPlayerId, formerPlayerId: v.formerPlayerId ?? null },
           ])
         )
       );
@@ -502,6 +502,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           slotPlayerId,
           guestName: details.guestName,
           hostPlayerId: details.hostPlayerId,
+          formerPlayerId: details.formerPlayerId ?? null,
         }));
 
       await updateGame(gameId, {
@@ -1047,7 +1048,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   // Assigns the pending slot to its team (no-op when editing an existing
   // guest, whose team is already set) and closes the modal.
-  const commitGuestSlot = (details: { guestName: string | null; hostPlayerId: string | null } | null) => {
+  const commitGuestSlot = (details: { guestName: string | null; hostPlayerId: string | null; formerPlayerId: string | null } | null) => {
     if (!guestSlotPending) return;
     const { slotPlayerId, team } = guestSlotPending;
 
@@ -2032,6 +2033,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           isGuestPlayer={isGuestPlayer}
           initialName={guestVisits[guestSlotPending.slotPlayerId]?.guestName ?? null}
           initialHostId={guestVisits[guestSlotPending.slotPlayerId]?.hostPlayerId ?? null}
+          initialFormerPlayerId={guestVisits[guestSlotPending.slotPlayerId]?.formerPlayerId ?? null}
           onSave={(details) => commitGuestSlot(details)}
           onSkip={() => commitGuestSlot(null)}
           onClose={() => commitGuestSlot(null)}

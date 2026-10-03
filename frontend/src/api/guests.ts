@@ -17,6 +17,7 @@ export interface GuestLedgerRow {
   usualHostVisits: number;
   promotedPlayerId: string | null; // set once they joined; the Player they became
   promotedYear: number | null;     // dues year the per-game meter stopped in
+  formerPlayerId?: string | null;
 }
 
 export async function fetchGuests(): Promise<Guest[]> {

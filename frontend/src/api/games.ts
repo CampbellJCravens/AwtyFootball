@@ -104,6 +104,7 @@ export interface GuestVisit {
   guestId: string | null;
   guestName: string | null;
   hostPlayerId: string | null;
+  formerPlayerId?: string | null;
 }
 
 // What the client sends: the name is unresolved text, the server maps it to a
@@ -112,6 +113,8 @@ export interface GuestVisitInput {
   slotPlayerId: string;
   guestName: string | null;
   hostPlayerId: string | null;
+  // A former member picked from the roster; the server links the guest to her.
+  formerPlayerId?: string | null;
 }
 
 export interface Game {
