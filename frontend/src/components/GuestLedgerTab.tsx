@@ -300,14 +300,27 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
                           member{row.promotedYear ? ` since ${row.promotedYear}` : ''}
                         </span>
                       ) : (
-                        row.guestId && dues?.get(row.guestId)?.shouldConvert && (
-                          <button
-                            onClick={() => openPromotion(row.guestId!)}
-                            className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap hover:brightness-110"
-                            title="Their balance has passed what membership costs — make them a member"
-                          >
-                            convert →
-                          </button>
+                        // Any named guest can join at any time - most decide within their two free
+                        // games. The warning colour still marks the ones whose balance has passed
+                        // what membership costs.
+                        row.guestId && (
+                          dues?.get(row.guestId)?.shouldConvert ? (
+                            <button
+                              onClick={() => openPromotion(row.guestId!)}
+                              className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap hover:brightness-110"
+                              title="Their balance has passed what membership costs — make them a member"
+                            >
+                              convert →
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => openPromotion(row.guestId!)}
+                              className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-secondary whitespace-nowrap hover:text-gold"
+                              title="Make this guest a member"
+                            >
+                              convert →
+                            </button>
+                          )
                         )
                       )}
                     </>
