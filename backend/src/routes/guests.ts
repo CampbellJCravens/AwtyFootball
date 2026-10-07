@@ -8,6 +8,9 @@ import {
   promoteGuest,
   PromotionBlocked,
 } from '../services/guests';
+import { unlinkGuestPhone } from '../services/phoneLinks';
+import { resyncPollsForPhone } from '../services/whatsapp/polls';
+import prisma from '../prisma';
 
 const router = Router();
 
@@ -110,10 +113,20 @@ router.post('/:id/promote', requireAdmin, async (req: AuthenticatedRequest, res:
   const duesYear = duesYearFrom(req.body?.duesYear);
   if (duesYear === null) return res.status(400).json({ error: 'duesYear is required' });
   try {
-    res.json(await promoteGuest(req.params.id, duesYear, {
+    const result = await promoteGuest(req.params.id, duesYear, {
       attachPlayerId: typeof req.body?.attachPlayerId === 'string' ? req.body.attachPlayerId : null,
       acknowledgeNameClash: req.body?.acknowledgeNameClash === true,
-    }));
+    });
+    // Her number now points at the member: give upcoming polls to the member row.
+    const player = await prisma.player.findUnique({ where: { id: result.playerId }, select: { phone: true } });
+    if (player?.phone) {
+      try {
+        await resyncPollsForPhone(player.phone, { onlyUpcoming: true });
+      } catch (e) {
+        console.error('[guests] resync after promotion failed:', e);
+      }
+    }
+    res.json(result);
   } catch (error: any) {
     if (error instanceof PromotionBlocked) {
       const { status, body } = promotionError(error.message);
@@ -121,6 +134,18 @@ router.post('/:id/promote', requireAdmin, async (req: AuthenticatedRequest, res:
     }
     console.error('Error promoting guest:', error);
     res.status(500).json({ error: 'Failed to promote guest' });
+  }
+});
+
+// DELETE /api/guests/:id/phone — take a wrongly linked number off a guest. It
+// shows up as an unmatched vote again, where it is re-linked to the right person.
+router.delete('/:id/phone', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    res.json(await unlinkGuestPhone(req.params.id));
+  } catch (error: any) {
+    if (error?.message === 'not_found') return res.status(404).json({ error: 'Guest not found' });
+    console.error('Error unlinking guest phone:', error);
+    res.status(500).json({ error: 'Failed to unlink number' });
   }
 });
 

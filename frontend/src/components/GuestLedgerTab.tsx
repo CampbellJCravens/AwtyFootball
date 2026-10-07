@@ -6,6 +6,7 @@ import {
   renameGuest,
   fetchPromotionPlan,
   promoteGuest,
+  unlinkGuestPhone,
   type PromotionPlan,
 } from '../api/guests';
 import { DuesGuestRow, DuesYearNotConfigured, fetchDuesReport, isCollectionWindow } from '../api/dues';
@@ -20,6 +21,13 @@ const money = (v: string) => {
   const n = Number(v);
   return `${n < 0 ? '\u2212' : ''}$${Math.abs(n).toFixed(2)}`;
 };
+
+const isGuestSlot = (name: string) => /^Guest\s*\d+$/i.test(name.trim());
+
+const fmtPhone = (digits: string) =>
+  digits.length === 11 && digits.startsWith('1')
+    ? `+1 ${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`
+    : `+${digits}`;
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
@@ -48,6 +56,8 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
   const [plan, setPlan] = useState<PromotionPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+  const [unlinkNote, setUnlinkNote] = useState<string | null>(null);
 
   useEffect(() => {
     fetchGuestLedger()
@@ -73,10 +83,10 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
 
   // The preview IS the confirm step: promotion writes across four tables, so
   // nothing happens until the admin has seen what changes.
-  async function openPromotion(guestId: string) {
+  async function openPromotion(guestId: string, attachPlayerId?: string | null) {
     setPlanError(null);
-    setPlan(null);
-    const result = await fetchPromotionPlan(guestId, duesYear);
+    if (!attachPlayerId) setPlan(null);
+    const result = await fetchPromotionPlan(guestId, duesYear, attachPlayerId);
     if ('error' in result) {
       setPlanError(
         result.error === 'name_taken'
@@ -92,6 +102,7 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
     if (!plan) return;
     setPromoting(true);
     const result = await promoteGuest(plan.guestId, plan.duesYear, {
+      attachPlayerId: plan.attachPlayerId,
       acknowledgeNameClash: plan.nameClashPlayerIds.length > 0,
     });
     setPromoting(false);
@@ -108,6 +119,37 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
     setRows(ledger);
     if (report) setDues(new Map(report.guests.map(g => [g.guestId, g])));
   }
+
+  async function unlinkPhone(row: GuestLedgerRow) {
+    if (!row.guestId || !row.phone) return;
+    const ok = window.confirm(
+      `Take ${fmtPhone(row.phone)} off ${row.name}?\n\n` +
+      'Their WhatsApp answers for games not yet played are removed. Played games stay as they are. ' +
+      'The number then shows as unmatched on the game\'s RSVP tab, where you can link it to the right person.'
+    );
+    if (!ok) return;
+    setUnlinking(row.guestId);
+    setUnlinkNote(null);
+    try {
+      await unlinkGuestPhone(row.guestId);
+      setRows(await fetchGuestLedger());
+      setUnlinkNote(`${fmtPhone(row.phone)} is no longer linked to ${row.name}. Link it from the game's RSVP tab.`);
+    } catch (err) {
+      setUnlinkNote(err instanceof Error ? err.message : 'Could not unlink the number');
+    } finally {
+      setUnlinking(null);
+    }
+  }
+
+  // Members a guest might already be, for converting onto an existing record
+  // instead of creating a twin. Current roster first.
+  const attachChoices = useMemo(
+    () =>
+      players
+        .filter(p => !isGuestSlot(p.name))
+        .sort((a, b) => Number(b.onRoster) - Number(a.onRoster) || a.name.localeCompare(b.name)),
+    [players]
+  );
 
   async function saveRename(guestId: string, merge = false) {
     const name = draftName.trim();
@@ -337,6 +379,19 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
                       )}
                     </>
                   )}
+                  {row.phone && !row.promotedPlayerId && editingId !== row.guestId && (
+                    <p className="text-[11px] font-normal text-text-tertiary mt-0.5 whitespace-nowrap">
+                      {fmtPhone(row.phone)}
+                      <button
+                        onClick={() => unlinkPhone(row)}
+                        disabled={unlinking === row.guestId}
+                        className="ml-1.5 text-[11px] text-text-tertiary hover:text-red-400 underline disabled:opacity-50"
+                        title="This number is linked to the wrong person — remove it"
+                      >
+                        {unlinking === row.guestId ? 'unlinking…' : 'unlink'}
+                      </button>
+                    </p>
+                  )}
                   {editingId === row.guestId && renameError && (
                     <p className="text-[10px] text-red-400 mt-1">{renameError}</p>
                   )}
@@ -376,6 +431,10 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
         </table>
       </div>
 
+      {unlinkNote && (
+        <p className="mt-3 text-xs text-text-secondary">{unlinkNote}</p>
+      )}
+
       {planError && !plan && (
         <p className="mt-3 text-xs text-red-400">{planError}</p>
       )}
@@ -388,10 +447,30 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
               Dues year {plan.duesYear}. This is what changes — nothing has happened yet.
             </p>
 
+            <label className="block mt-3 text-xs text-text-secondary">
+              Already a member under another name?
+              <select
+                value={plan.attachPlayerId ?? ''}
+                onChange={e => openPromotion(plan.guestId, e.target.value || null)}
+                className="mt-1 w-full px-3 py-2 border border-border-emphasis rounded-lg text-sm bg-surface text-text-primary outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="">No — create a new player called {plan.guestName}</option>
+                {attachChoices.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.onRoster ? '' : ' (former)'}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <ul className="mt-3 space-y-1.5 text-sm text-text-secondary">
               <li>
                 {plan.attachPlayerId ? 'Attaches to the existing player' : 'Creates the player'}{' '}
-                <strong className="text-text-primary">{plan.playerName}</strong>
+                <strong className="text-text-primary">
+                  {plan.attachPlayerId
+                    ? players.find(p => p.id === plan.attachPlayerId)?.name ?? plan.playerName
+                    : plan.playerName}
+                </strong>
                 {plan.memberSince != null && (
                   <span className="text-text-tertiary"> · member since {plan.memberSince} (first turned up)</span>
                 )}
@@ -425,7 +504,7 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
             {plan.nameClashPlayerIds.length > 0 && (
               <p className="mt-3 text-xs text-warning">
                 A player called {plan.playerName} already exists. Confirming creates a SECOND one — if they are the same
-                person, cancel and rename instead.
+                person, pick them above instead.
               </p>
             )}
             {planError && <p className="mt-3 text-xs text-red-400">{planError}</p>}

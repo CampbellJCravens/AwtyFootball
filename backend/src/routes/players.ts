@@ -4,6 +4,7 @@ import prisma from '../prisma';
 import { createPlayerSchema, updatePlayerSchema } from '../schemas/entry';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { resyncPollsForPhone } from '../services/whatsapp/polls';
+import { clearPlayerClaims } from '../services/phoneLinks';
 
 const router = Router();
 
@@ -173,19 +174,29 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
     
     const normalizedPhone = normalizePhone(validatedData.phone);
 
-    const player = await prisma.player.update({
-      where: { id },
-      data: {
-        ...(validatedData.name && { name: validatedData.name }),
-        ...(validatedData.pictureUrl !== undefined && { pictureUrl: storablePicture(validatedData.pictureUrl) }),
-        ...(validatedData.team !== undefined && { team: validatedData.team || null }),
-        ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
-        ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
-        ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
-        ...(validatedData.graduationYear !== undefined && { graduationYear: validatedData.graduationYear }),
-        ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
-        ...(validatedData.staminaExempt !== undefined && { staminaExempt: validatedData.staminaExempt }),
-      },
+    // Changing or clearing a number takes its WhatsApp RSVPs in upcoming games
+    // with it, so a wrong link doesn't leave this player answering for someone else.
+    const before = normalizedPhone !== undefined
+      ? await prisma.player.findUnique({ where: { id }, select: { phone: true } })
+      : null;
+    const phoneChanged = !!before?.phone && before.phone !== normalizedPhone;
+
+    const player = await prisma.$transaction(async tx => {
+      if (phoneChanged) await clearPlayerClaims(tx, id);
+      return tx.player.update({
+        where: { id },
+        data: {
+          ...(validatedData.name && { name: validatedData.name }),
+          ...(validatedData.pictureUrl !== undefined && { pictureUrl: storablePicture(validatedData.pictureUrl) }),
+          ...(validatedData.team !== undefined && { team: validatedData.team || null }),
+          ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
+          ...(validatedData.onRoster !== undefined && { onRoster: validatedData.onRoster }),
+          ...(validatedData.isAlumni !== undefined && { isAlumni: validatedData.isAlumni }),
+          ...(validatedData.graduationYear !== undefined && { graduationYear: validatedData.graduationYear }),
+          ...(validatedData.memberSince !== undefined && { memberSince: validatedData.memberSince }),
+          ...(validatedData.staminaExempt !== undefined && { staminaExempt: validatedData.staminaExempt }),
+        },
+      });
     });
 
     // If a number was just set, retroactively attribute any past poll votes

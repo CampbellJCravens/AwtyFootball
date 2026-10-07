@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../prisma';
+import { clearGuestClaims } from './phoneLinks';
 
 // Guests who actually turned up, tracked across games so a repeat visitor
 // resolves to one identity — that identity is what the dues ledger counts.
@@ -237,6 +238,8 @@ export interface GuestLedgerRow {
   promotedYear: number | null;
   // A former member visiting as a guest: the player she was.
   formerPlayerId: string | null;
+  // Her linked WhatsApp number, so a wrong link can be seen and undone.
+  phone: string | null;
 }
 
 // Dues ledger. The GUEST is the unit of collection (owner decision 2026-08-07):
@@ -246,7 +249,7 @@ export interface GuestLedgerRow {
 // A guest occupying two slots in one game (left and came back) counts once:
 // dues follow appearances, not slots.
 export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
-  const [visits, games, promotions, formers] = await Promise.all([
+  const [visits, games, promotions, formers, phones] = await Promise.all([
     prisma.guestVisit.findMany({ include: { guest: { select: { name: true } } } }),
     prisma.game.findMany({ select: { id: true, createdAt: true } }),
     prisma.guest.findMany({
@@ -257,8 +260,10 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
       where: { formerPlayerId: { not: null } },
       select: { id: true, formerPlayerId: true },
     }),
+    prisma.guest.findMany({ where: { phone: { not: null } }, select: { id: true, phone: true } }),
   ]);
 
+  const phoneByGuestId = new Map(phones.map(g => [g.id, g.phone]));
   const promotionByGuestId = new Map(promotions.map(p => [p.id, p]));
   const formerByGuestId = new Map(formers.map(f => [f.id, f.formerPlayerId]));
 
@@ -340,6 +345,7 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
       promotedPlayerId: promoted?.promotedPlayerId ?? null,
       promotedYear: promoted?.promotedYear ?? null,
       formerPlayerId: isUnnamed ? null : formerByGuestId.get(key) ?? null,
+      phone: isUnnamed ? null : phoneByGuestId.get(key) ?? null,
     });
   }
 
@@ -532,6 +538,10 @@ export async function promoteGuest(
   }
 
   return prisma.$transaction(async tx => {
+    // Slots her number claimed in upcoming games go back to the pool; the member
+    // row picks those votes up when the route re-syncs. Played games stay as played.
+    await clearGuestClaims(tx, guestId);
+
     const player = plan.attachPlayerId
       ? await tx.player.update({
           where: { id: plan.attachPlayerId },

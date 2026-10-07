@@ -24,6 +24,7 @@ import {
 } from '@whiskeysockets/baileys';
 import prisma from '../../prisma';
 import { slotsForGuestPhones } from '../guests';
+import { upcomingGameWhere } from '../phoneLinks';
 import { combineSelections } from './options';
 import { findGameForPollTitle } from './gameMatch';
 import { bufferPendingVote, takePendingVotes } from './pendingVotes';
@@ -785,10 +786,17 @@ export async function getUnmatched(gameId?: string): Promise<UnmatchedVote[]> {
  * numbers get their past votes attributed. Called both when resolving an
  * unmatched vote and when an admin sets a number on a player's profile.
  */
-export async function resyncPollsForPhone(digits: string): Promise<void> {
+export async function resyncPollsForPhone(
+  digits: string,
+  opts: { onlyUpcoming?: boolean } = {}
+): Promise<void> {
   if (!digits) return;
   const polls = await prisma.whatsappPoll.findMany({
-    where: { gameId: { not: null }, latestVotes: { not: null } },
+    where: {
+      gameId: { not: null },
+      latestVotes: { not: null },
+      ...(opts.onlyUpcoming ? { game: upcomingGameWhere() } : {}),
+    },
     select: { pollMessageId: true, latestVotes: true },
   });
   for (const p of polls) {

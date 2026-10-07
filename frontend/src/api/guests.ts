@@ -18,6 +18,7 @@ export interface GuestLedgerRow {
   promotedPlayerId: string | null; // set once they joined; the Player they became
   promotedYear: number | null;     // dues year the per-game meter stopped in
   formerPlayerId?: string | null;
+  phone: string | null;
 }
 
 export async function fetchGuests(): Promise<Guest[]> {
@@ -116,5 +117,13 @@ export async function promoteGuest(
   });
   const body = await res.json();
   if (!res.ok) return body as PromotionRefused;
+  return body;
+}
+
+/** Take a wrongly linked number off a guest; it shows as unmatched again. */
+export async function unlinkGuestPhone(guestId: string): Promise<{ phone: string | null; released: number }> {
+  const res = await fetch(`${API_BASE_URL}/guests/${guestId}/phone`, { method: 'DELETE', credentials: 'include' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'Failed to unlink number');
   return body;
 }
