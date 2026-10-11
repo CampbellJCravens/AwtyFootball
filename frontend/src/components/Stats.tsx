@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { Player } from '../api/players';
 import { Game } from '../api/games';
 import OverallStatsTable from './OverallStatsTable';
+import RankRaceChart from './RankRaceChart';
 import ChemistrySection from './ChemistrySection';
 import LegacyStatsTable from './LegacyStatsTable';
 import FieldStatsTab from './FieldStatsTab';
@@ -278,6 +279,7 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
         {/* Content */}
         {activeView === 'players' && (
           <div className="overflow-hidden">
+            <RankRaceChart players={players} games={filteredGames} currentPlayerId={currentPlayerId} />
             <OverallStatsTable players={players} games={filteredGames} onPlayerClick={onPlayerClick} currentPlayerId={currentPlayerId} />
           </div>
         )}
