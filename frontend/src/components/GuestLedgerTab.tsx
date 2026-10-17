@@ -200,6 +200,11 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
     return [...named.sort(cmp), ...unnamed];
   }, [rows, sortKey, dues]);
 
+  // Converted guests are members now; their guest balance is cleared, so they
+  // fold away below as the record of how they got here.
+  const active = useMemo(() => sorted.filter(r => !r.promotedPlayerId), [sorted]);
+  const converted = useMemo(() => sorted.filter(r => r.promotedPlayerId), [sorted]);
+
   // Uncapped guest charges only push people toward membership if somebody
   // notices they have crossed the line. This is where that gets noticed.
   const toConvert = useMemo(
@@ -226,6 +231,143 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
       </div>
     );
   }
+
+  const renderRow = (row: GuestLedgerRow) => (
+    <tr
+      key={row.guestId ?? '__unnamed__'}
+      className={`border-t border-border ${row.guestId === null ? 'text-text-tertiary italic' : ''}`}
+    >
+      <td className="py-2 pr-2 text-text-primary font-medium">
+        {editingId === row.guestId ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={draftName}
+              maxLength={60}
+              onChange={e => setDraftName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveRename(row.guestId!);
+                if (e.key === 'Escape') { setEditingId(null); setRenameError(''); }
+              }}
+              className="w-28 px-1.5 py-1 text-xs rounded border border-border bg-surface text-text-primary outline-none"
+            />
+            <button
+              onClick={() => saveRename(row.guestId!)}
+              disabled={saving || !draftName.trim()}
+              className="text-[11px] font-semibold text-gold disabled:text-text-tertiary"
+            >
+              {saving ? '…' : 'Save'}
+            </button>
+            <button
+              onClick={() => { setEditingId(null); setRenameError(''); }}
+              className="text-[11px] text-text-tertiary"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <>
+            {row.name}
+            {/* The unnamed aggregate is not one person, so it has no name to edit. */}
+            {row.guestId && (
+              <button
+                onClick={() => { setEditingId(row.guestId!); setDraftName(row.name); setRenameError(''); }}
+                className="ml-1.5 text-[11px] text-text-tertiary hover:text-gold"
+                aria-label={`Rename ${row.name}`}
+                title="Rename this guest"
+              >
+                ✎
+              </button>
+            )}
+            {row.formerPlayerId && !row.promotedPlayerId && (
+              <span
+                className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-secondary whitespace-nowrap"
+                title="Was a member; visiting as a guest. Converting re-attaches them to their player record."
+              >
+                former member
+              </span>
+            )}
+            {row.promotedPlayerId ? (
+              <span
+                className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-tertiary whitespace-nowrap"
+                title={`Joined in ${row.promotedYear ?? ''} — kept here as the history of how they got here`}
+              >
+                member{row.promotedYear ? ` since ${row.promotedYear}` : ''}
+              </span>
+            ) : (
+              // Any named guest can join at any time - most decide within their two free
+              // games. The warning colour still marks the ones whose balance has passed
+              // what membership costs.
+              row.guestId && (
+                dues?.get(row.guestId)?.shouldConvert ? (
+                  <button
+                    onClick={() => openPromotion(row.guestId!)}
+                    className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap hover:brightness-110"
+                    title="Their balance has passed what membership costs — make them a member"
+                  >
+                    convert →
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => openPromotion(row.guestId!)}
+                    className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-secondary whitespace-nowrap hover:text-gold"
+                    title="Make this guest a member"
+                  >
+                    convert →
+                  </button>
+                )
+              )
+            )}
+          </>
+        )}
+        {row.phone && !row.promotedPlayerId && editingId !== row.guestId && (
+          <p className="text-[11px] font-normal text-text-tertiary mt-0.5 whitespace-nowrap">
+            {fmtPhone(row.phone)}
+            <button
+              onClick={() => unlinkPhone(row)}
+              disabled={unlinking === row.guestId}
+              className="ml-1.5 text-[11px] text-text-tertiary hover:text-red-400 underline disabled:opacity-50"
+              title="This number is linked to the wrong person — remove it"
+            >
+              {unlinking === row.guestId ? 'unlinking…' : 'unlink'}
+            </button>
+          </p>
+        )}
+        {editingId === row.guestId && renameError && (
+          <p className="text-[10px] text-red-400 mt-1">{renameError}</p>
+        )}
+      </td>
+      <td className="py-2 px-2 text-right tabular-nums text-text-secondary">{row.visits}</td>
+      <td className="py-2 px-2 text-right tabular-nums font-semibold text-gold">
+        {row.billableVisits === null ? '—' : row.billableVisits}
+        {dues && row.guestId && (() => {
+          const d = dues.get(row.guestId);
+          if (!d) return null;
+          return (
+            <span className={`block text-[11px] font-medium ${
+              Number(d.balance) > 0 ? 'text-text-secondary' : 'text-text-tertiary'
+            }`}>
+              {money(d.balance)}
+            </span>
+          );
+        })()}
+      </td>
+      <td className="py-2 px-2 text-text-secondary whitespace-nowrap">{fmtDate(row.firstSeen)}</td>
+      <td className="py-2 px-2 text-text-secondary whitespace-nowrap">{fmtDate(row.lastSeen)}</td>
+      <td className="py-2 pl-2 text-text-secondary">
+        {row.usualHostId ? (
+          <>
+            {playerNames.get(row.usualHostId) ?? 'Unknown'}
+            {row.usualHostVisits < row.visits && (
+              <span className="text-text-tertiary text-xs"> ({row.usualHostVisits})</span>
+            )}
+          </>
+        ) : (
+          '—'
+        )}
+      </td>
+    </tr>
+  );
 
   const sortButton = (key: SortKey, label: string) => (
     <button
@@ -291,145 +433,40 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map(row => (
-              <tr
-                key={row.guestId ?? '__unnamed__'}
-                className={`border-t border-border ${row.guestId === null ? 'text-text-tertiary italic' : ''}`}
-              >
-                <td className="py-2 pr-2 text-text-primary font-medium">
-                  {editingId === row.guestId ? (
-                    <div className="flex items-center gap-1">
-                      <input
-                        autoFocus
-                        value={draftName}
-                        maxLength={60}
-                        onChange={e => setDraftName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') saveRename(row.guestId!);
-                          if (e.key === 'Escape') { setEditingId(null); setRenameError(''); }
-                        }}
-                        className="w-28 px-1.5 py-1 text-xs rounded border border-border bg-surface text-text-primary outline-none"
-                      />
-                      <button
-                        onClick={() => saveRename(row.guestId!)}
-                        disabled={saving || !draftName.trim()}
-                        className="text-[11px] font-semibold text-gold disabled:text-text-tertiary"
-                      >
-                        {saving ? '…' : 'Save'}
-                      </button>
-                      <button
-                        onClick={() => { setEditingId(null); setRenameError(''); }}
-                        className="text-[11px] text-text-tertiary"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      {row.name}
-                      {/* The unnamed aggregate is not one person, so it has no name to edit. */}
-                      {row.guestId && (
-                        <button
-                          onClick={() => { setEditingId(row.guestId!); setDraftName(row.name); setRenameError(''); }}
-                          className="ml-1.5 text-[11px] text-text-tertiary hover:text-gold"
-                          aria-label={`Rename ${row.name}`}
-                          title="Rename this guest"
-                        >
-                          ✎
-                        </button>
-                      )}
-                      {row.formerPlayerId && !row.promotedPlayerId && (
-                        <span
-                          className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-secondary whitespace-nowrap"
-                          title="Was a member; visiting as a guest. Converting re-attaches them to their player record."
-                        >
-                          former member
-                        </span>
-                      )}
-                      {row.promotedPlayerId ? (
-                        <span
-                          className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-tertiary whitespace-nowrap"
-                          title={`Joined in ${row.promotedYear ?? ''} — kept here as the history of how they got here`}
-                        >
-                          member{row.promotedYear ? ` since ${row.promotedYear}` : ''}
-                        </span>
-                      ) : (
-                        // Any named guest can join at any time - most decide within their two free
-                        // games. The warning colour still marks the ones whose balance has passed
-                        // what membership costs.
-                        row.guestId && (
-                          dues?.get(row.guestId)?.shouldConvert ? (
-                            <button
-                              onClick={() => openPromotion(row.guestId!)}
-                              className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-bg text-warning whitespace-nowrap hover:brightness-110"
-                              title="Their balance has passed what membership costs — make them a member"
-                            >
-                              convert →
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => openPromotion(row.guestId!)}
-                              className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-hover text-text-secondary whitespace-nowrap hover:text-gold"
-                              title="Make this guest a member"
-                            >
-                              convert →
-                            </button>
-                          )
-                        )
-                      )}
-                    </>
-                  )}
-                  {row.phone && !row.promotedPlayerId && editingId !== row.guestId && (
-                    <p className="text-[11px] font-normal text-text-tertiary mt-0.5 whitespace-nowrap">
-                      {fmtPhone(row.phone)}
-                      <button
-                        onClick={() => unlinkPhone(row)}
-                        disabled={unlinking === row.guestId}
-                        className="ml-1.5 text-[11px] text-text-tertiary hover:text-red-400 underline disabled:opacity-50"
-                        title="This number is linked to the wrong person — remove it"
-                      >
-                        {unlinking === row.guestId ? 'unlinking…' : 'unlink'}
-                      </button>
-                    </p>
-                  )}
-                  {editingId === row.guestId && renameError && (
-                    <p className="text-[10px] text-red-400 mt-1">{renameError}</p>
-                  )}
-                </td>
-                <td className="py-2 px-2 text-right tabular-nums text-text-secondary">{row.visits}</td>
-                <td className="py-2 px-2 text-right tabular-nums font-semibold text-gold">
-                  {row.billableVisits === null ? '—' : row.billableVisits}
-                  {dues && row.guestId && (() => {
-                    const d = dues.get(row.guestId);
-                    if (!d) return null;
-                    return (
-                      <span className={`block text-[11px] font-medium ${
-                        Number(d.balance) > 0 ? 'text-text-secondary' : 'text-text-tertiary'
-                      }`}>
-                        {money(d.balance)}
-                      </span>
-                    );
-                  })()}
-                </td>
-                <td className="py-2 px-2 text-text-secondary whitespace-nowrap">{fmtDate(row.firstSeen)}</td>
-                <td className="py-2 px-2 text-text-secondary whitespace-nowrap">{fmtDate(row.lastSeen)}</td>
-                <td className="py-2 pl-2 text-text-secondary">
-                  {row.usualHostId ? (
-                    <>
-                      {playerNames.get(row.usualHostId) ?? 'Unknown'}
-                      {row.usualHostVisits < row.visits && (
-                        <span className="text-text-tertiary text-xs"> ({row.usualHostVisits})</span>
-                      )}
-                    </>
-                  ) : (
-                    '—'
-                  )}
-                </td>
-              </tr>
-            ))}
+            {active.map(renderRow)}
           </tbody>
         </table>
       </div>
+
+      {converted.length > 0 && (
+        <details className="border border-border rounded-xl bg-surface/40 px-3 py-2">
+          <summary className="cursor-pointer text-xs font-semibold text-text-secondary uppercase tracking-wide">
+            Converted <span className="tabular-nums text-text-tertiary">{converted.length}</span>
+            <span className="normal-case tracking-normal font-normal text-text-tertiary"> · now members, nothing owed as a guest</span>
+          </summary>
+          <div className="mt-2">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-text-tertiary text-[11px] uppercase tracking-wide">
+                  <th className="text-left font-medium py-2 pr-2">Guest</th>
+                  <th className="text-right font-medium py-2 px-2">Visits</th>
+                  <th className="text-right font-medium py-2 px-2" title="Visits beyond the 2 free trial games each dues year (Jan-Dec)">
+                    Billable{dues && <span className="block normal-case tracking-normal">owed</span>}
+                  </th>
+                  <th className="text-left font-medium py-2 px-2 whitespace-nowrap">First</th>
+                  <th className="text-left font-medium py-2 px-2 whitespace-nowrap">Last</th>
+                  <th className="text-left font-medium py-2 pl-2">Usual host</th>
+                </tr>
+              </thead>
+              <tbody>
+                {converted.map(renderRow)}
+              </tbody>
+            </table>
+          </div>
+          </div>
+        </details>
+      )}
 
       {unlinkNote && (
         <p className="mt-3 text-xs text-text-secondary">{unlinkNote}</p>
@@ -483,10 +520,10 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
                 Stops billing <strong className="text-text-primary">{plan.visitsRetiredFromBilling}</strong>{' '}
                 guest game{plan.visitsRetiredFromBilling === 1 ? '' : 's'} from {plan.duesYear} on
               </li>
-              {plan.billableVisitsRemaining > 0 && (
-                <li className="text-warning">
-                  Still owes for <strong>{plan.billableVisitsRemaining}</strong> guest game
-                  {plan.billableVisitsRemaining === 1 ? '' : 's'} from earlier years — joining now does not clear those
+              {plan.billableVisitsCleared > 0 && (
+                <li>
+                  Clears the guest balance for <strong className="text-text-primary">{plan.billableVisitsCleared}</strong>{' '}
+                  billable game{plan.billableVisitsCleared === 1 ? '' : 's'}, earlier years included
                 </li>
               )}
               {plan.paymentsCredited.count > 0 && (

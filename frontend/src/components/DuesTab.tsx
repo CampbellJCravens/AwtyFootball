@@ -671,7 +671,7 @@ function RatesEditor({
 type GuestFilter = 'all' | 'owing' | 'partial' | 'paid' | 'convert';
 
 function GuestSection({
-  guests, onPay,
+  guests: all, onPay,
 }: {
   guests: DuesGuestRow[];
   onPay: (p: { name: string; balance: string; guestId: string }) => void;
@@ -680,6 +680,9 @@ function GuestSection({
   // left have no meaning for a guest, and "about to be worth converting" is the
   // one bucket that matters here and nowhere else.
   const [filter, setFilter] = useState<GuestFilter>('all');
+  // Converted guests are members now and owe nothing as guests; they fold away.
+  const guests = all.filter(g => !g.promoted);
+  const converted = all.filter(g => g.promoted);
   const convert = guests.filter(g => g.shouldConvert);
 
   const shown = guests.filter(g => {
@@ -748,6 +751,25 @@ function GuestSection({
           </div>
         ))}
       </div>
+      )}
+
+      {converted.length > 0 && (
+        <details className="border border-border rounded-xl bg-surface/40 px-3 py-2">
+          <summary className="cursor-pointer text-xs font-semibold text-text-secondary uppercase tracking-wide">
+            Converted <span className="tabular-nums text-text-tertiary">{converted.length}</span>
+            <span className="normal-case tracking-normal font-normal text-text-tertiary"> · now members, billed on the roster</span>
+          </summary>
+          <div className="mt-2 space-y-1">
+            {converted.map(g => (
+              <div key={g.guestId} className="flex items-center justify-between text-sm text-text-secondary">
+                <span className="truncate">{g.name}</span>
+                <span className="text-[11px] text-text-tertiary tabular-nums shrink-0">
+                  {g.visits} guest visit{g.visits === 1 ? '' : 's'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );

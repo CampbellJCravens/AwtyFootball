@@ -56,6 +56,7 @@ export interface DuesGuestRow {
   balance: string;
   status: DuesStatus;
   shouldConvert: boolean; // balance has passed what membership costs
+  promoted: boolean; // joined as a member; the guest balance is cleared
 }
 
 /**
@@ -249,6 +250,7 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
         balance: money(balance),
         status: classify(owed, paid),
         shouldConvert: !memberAmount.isZero() && balance.greaterThanOrEqualTo(memberAmount),
+        promoted: row.promotedPlayerId !== null,
       };
     })
     .sort((a, b) => {

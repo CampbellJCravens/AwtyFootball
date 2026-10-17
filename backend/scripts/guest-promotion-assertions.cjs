@@ -3,9 +3,8 @@
  * No database, no network:  node scripts/guest-promotion-assertions.cjs
  *
  * The rules that cost money if they are wrong:
- *  · joining stops the per-game meter for that dues year AND after,
- *  · it does NOT forgive a debt from an earlier dues year,
- *  · the annual free trial still applies to the years that remain billable.
+ *  · joining clears the guest balance for EVERY dues year (owner 2026-10-17),
+ *  · a guest who has not joined still bills beyond the annual free trial.
  */
 require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'commonjs' } });
 
@@ -59,13 +58,17 @@ const billable = async () => (await computeGuestLedger()).find(r => r.guestId ==
   setup({ perYear: { 2026: 5 }, promotedYear: 2026 });
   check('joining stops the meter for that year', await billable(), 0);
 
-  // last year's debt survives joining this year
+  // joining clears earlier years too
   setup({ perYear: { 2025: 6, 2026: 5 }, promotedYear: 2026 });
-  check("last year's debt is not forgiven", await billable(), 4); // 6-2 in 2025, 0 in 2026
+  check("last year's debt is cleared by joining", await billable(), 0);
 
-  // the trial still applies to the years that remain billable
-  setup({ perYear: { 2024: 2, 2025: 3, 2026: 9 }, promotedYear: 2026 });
-  check('trial still applies to earlier years', await billable(), 1); // 0 + 1 + 0
+  // converting in October joins NEXT year; this year's guest games are cleared too
+  setup({ perYear: { 2026: 3 }, promotedYear: 2027 });
+  check('joining next year clears this year', await billable(), 0);
+
+  // the trial is per year for a guest who has not joined
+  setup({ perYear: { 2024: 2, 2025: 3, 2026: 9 } });
+  check('trial applies per year while still a guest', await billable(), 8); // 0 + 1 + 7
 
   // a year AFTER she joined never bills either
   setup({ perYear: { 2026: 1, 2027: 8 }, promotedYear: 2026 });

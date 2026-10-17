@@ -47,6 +47,7 @@ export interface DuesGuestRow {
   balance: string;
   status: DuesStatus;
   shouldConvert: boolean;
+  promoted: boolean;
 }
 
 export interface UnrosteredPaymentRow {
