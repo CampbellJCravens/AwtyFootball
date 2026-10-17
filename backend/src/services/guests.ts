@@ -323,14 +323,15 @@ export async function computeGuestLedger(): Promise<GuestLedgerRow[]> {
       const year = duesYearOf(date);
       visitsByDuesYear.set(year, (visitsByDuesYear.get(year) ?? 0) + 1);
     }
-    // Joining stops the per-game meter for the dues year she joined in and
-    // every year after — membership replaces it. Years BEFORE that still bill:
-    // a debt from last year is not forgiven by joining this year.
+    // Joining clears the guest balance outright, every year included (owner
+    // 2026-10-17: "pay the $175 and we're square"). Converting in October joins
+    // NEXT year, so a year-scoped wipe left that year's guest games still owed.
     const promoted = isUnnamed ? null : promotionByGuestId.get(key) ?? null;
     let billableVisits = 0;
-    for (const [year, count] of visitsByDuesYear) {
-      if (promoted?.promotedYear != null && year >= promoted.promotedYear) continue;
-      billableVisits += Math.max(0, count - FREE_TRIAL_VISITS);
+    if (!promoted) {
+      for (const count of visitsByDuesYear.values()) {
+        billableVisits += Math.max(0, count - FREE_TRIAL_VISITS);
+      }
     }
 
     rows.push({
@@ -420,10 +421,8 @@ export async function slotsForGuestPhones(gameId: string, phones: string[]): Pro
 // rate whose whole purpose is to make joining the cheaper choice. The dues
 // report already flags `shouldConvert`; this is the action behind that flag.
 //
-// Owner decisions (2026-09-17):
-//  · membership REPLACES the guest balance for the year she joins (and after);
-//    earlier dues years still bill, because joining now does not forgive a debt
-//    from last year.
+// Owner decisions (2026-09-17, balance rule revised 2026-10-17):
+//  · membership CLEARS the whole guest balance, earlier dues years included.
 //  · money already paid as a guest CREDITS against her member dues.
 //  · `Player.memberSince` is her FIRST APPEARANCE, not the year she joined —
 //    she has been turning up, and that is what tenure means here. The year she
@@ -444,7 +443,7 @@ export interface PromotionPlan {
   memberSince: number | null;
   phone: string | null;
   visitsRetiredFromBilling: number;
-  billableVisitsRemaining: number; // earlier dues years, still owed
+  billableVisitsCleared: number; // every year's billable guest games, written off by joining
   paymentsCredited: { count: number; total: string };
   memberAmount: string;
   /** Same name as an existing player — the caller has to choose. */
@@ -511,7 +510,7 @@ export async function planPromotion(
     memberSince: keptMemberSince ?? (firstSeen ? duesYearOf(firstSeen) : duesYear),
     phone: guest.phone,
     visitsRetiredFromBilling: retired,
-    billableVisitsRemaining: ledger?.billableVisits ?? 0,
+    billableVisitsCleared: ledger?.billableVisits ?? 0,
     paymentsCredited: { count: payments.length, total: total.toFixed(2) },
     memberAmount: new Prisma.Decimal(config.memberAmount).toFixed(2),
     nameClashPlayerIds: clashes,

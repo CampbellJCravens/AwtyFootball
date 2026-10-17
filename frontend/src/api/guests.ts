@@ -79,7 +79,7 @@ export interface PromotionPlan {
   memberSince: number | null;
   phone: string | null;
   visitsRetiredFromBilling: number;
-  billableVisitsRemaining: number;
+  billableVisitsCleared: number;
   paymentsCredited: { count: number; total: string };
   memberAmount: string;
   nameClashPlayerIds: string[];
