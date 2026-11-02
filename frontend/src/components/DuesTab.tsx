@@ -118,6 +118,128 @@ export default function DuesTab({ players }: { players: Player[] }) {
   }
   if (!report) return null;
 
+  const renderMember = (m: DuesMemberRow) => {
+    const isOpen = expanded === m.entryId;
+    return (
+      <div key={m.entryId} className="border border-border rounded-xl bg-surface/40 overflow-hidden">
+        <button
+          onClick={() => setExpanded(isOpen ? null : m.entryId)}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-hover transition-colors"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
+              {m.perGame && m.status === 'exempt' ? null : (
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CLASS[m.status]}`}>
+                  {STATUS_LABEL[m.status]}
+                </span>
+              )}
+              {m.perGame && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-raised text-text-secondary border border-border-emphasis">
+                  Per game
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-text-tertiary tabular-nums">
+              {m.status === 'left'
+                ? <>Left {fmtDate(m.leftAt)}{Number(m.amountPaid) > 0 && ` · kept ${money(m.amountPaid)}`}</>
+                : m.perGame
+                  ? <>{m.gamesPlayed} game{m.gamesPlayed === 1 ? '' : 's'} × {money(report.guestGameRate)} = {money(m.amountOwed)} · paid {money(m.amountPaid)}</>
+                : m.status === 'exempt'
+                  ? 'Not billed'
+                  : <>{money(m.amountPaid)} of {money(m.amountOwed)}{m.joinedAt && ` · joined ${fmtDate(m.joinedAt)}`}</>}
+              {m.memberSince && ` · since ${m.memberSince}`}
+            </div>
+            {m.note && <div className="text-[11px] text-text-tertiary italic truncate">{m.note}</div>}
+          </div>
+          <div className="text-right shrink-0">
+            <div className={`text-sm font-semibold tabular-nums ${
+              Number(m.balance) > 0 ? 'text-text-primary' : Number(m.balance) < 0 ? 'text-info' : 'text-text-tertiary'
+            }`}>
+              {(m.status === 'exempt' && !m.perGame) || m.status === 'left' ? '—' : money(m.balance)}
+            </div>
+            {m.payments.length > 1 && (
+              <div className="text-[10px] text-text-tertiary">{m.payments.length} payments</div>
+            )}
+          </div>
+        </button>
+
+        {isOpen && (
+          <div className="border-t border-border px-3 py-2.5 space-y-2">
+            {m.payments.length > 0 && (
+              <div className="space-y-1">
+                {m.payments.map(p => (
+                  <div key={p.id} className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="text-text-secondary">
+                      <span className="tabular-nums font-medium">{money(p.amount)}</span>
+                      {' · '}{p.method}{' · '}{fmtDate(p.paidAt)}
+                      {p.note && <span className="text-text-tertiary italic"> — {p.note}</span>}
+                    </span>
+                    <button onClick={() => removePayment(p.id)} disabled={busy}
+                      className="text-text-tertiary hover:text-error shrink-0">Delete</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-1.5 flex-wrap">
+              {m.status === 'left' ? (
+                <button onClick={() => bringBack(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent disabled:opacity-50">
+                  Bring back
+                </button>
+              ) : (
+                <button
+                  onClick={() => setPaying({ name: m.name, balance: m.balance, playerId: m.playerId })}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent"
+                >
+                  Record payment
+                </button>
+              )}
+              {!m.perGame && (
+                <button onClick={() => adjustOwed(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                  Change amount
+                </button>
+              )}
+              {m.status !== 'left' && (
+                <button onClick={() => togglePerGame(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                  {m.perGame ? 'Switch to yearly' : 'Per game'}
+                </button>
+              )}
+              <button onClick={() => editNote(m)} disabled={busy}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                {m.note ? 'Edit note' : 'Add note'}
+              </button>
+              {m.status !== 'left' && (
+                <button onClick={() => markLeft(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-tertiary border border-border-emphasis hover:bg-surface-hover hover:text-error">
+                  Left
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // The chase list stays on top; settled people fold away (owner 2026-11-02).
+  const isPaid = (m: DuesMemberRow) => m.status === 'paid' || m.status === 'overpaid';
+  const paidRows = members.filter(isPaid);
+  const leftRows = members.filter(m => m.status === 'left');
+  const openRows = members.filter(m => !isPaid(m) && m.status !== 'left');
+  const sumOf = (rows: DuesMemberRow[], k: 'amountPaid') => rows.reduce((s, r) => s + Number(r[k]), 0).toFixed(2);
+  const group = (label: string, rows: DuesMemberRow[], peek: string) => rows.length > 0 && (
+    <details className="border border-border rounded-xl bg-surface/40 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-semibold text-text-secondary uppercase tracking-wide">
+        {label} <span className="tabular-nums text-text-tertiary">{rows.length}</span>
+        <span className="normal-case tracking-normal font-normal text-text-tertiary"> · {peek}</span>
+      </summary>
+      <div className="mt-2 space-y-1.5">{rows.map(renderMember)}</div>
+    </details>
+  );
+
   const filterButton = (key: Filter, label: string, count: number) => (
     <button
       onClick={() => setFilter(key)}
@@ -355,111 +477,9 @@ export default function DuesTab({ players }: { players: Player[] }) {
         <div className="text-center py-8 text-text-tertiary text-sm">Nobody in this group.</div>
       ) : (
         <div className="space-y-1.5">
-          {members.map(m => {
-            const isOpen = expanded === m.entryId;
-            return (
-              <div key={m.entryId} className="border border-border rounded-xl bg-surface/40 overflow-hidden">
-                <button
-                  onClick={() => setExpanded(isOpen ? null : m.entryId)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-hover transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
-                      {m.perGame && m.status === 'exempt' ? null : (
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CLASS[m.status]}`}>
-                          {STATUS_LABEL[m.status]}
-                        </span>
-                      )}
-                      {m.perGame && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-raised text-text-secondary border border-border-emphasis">
-                          Per game
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-text-tertiary tabular-nums">
-                      {m.status === 'left'
-                        ? <>Left {fmtDate(m.leftAt)}{Number(m.amountPaid) > 0 && ` · kept ${money(m.amountPaid)}`}</>
-                        : m.perGame
-                          ? <>{m.gamesPlayed} game{m.gamesPlayed === 1 ? '' : 's'} × {money(report.guestGameRate)} = {money(m.amountOwed)} · paid {money(m.amountPaid)}</>
-                        : m.status === 'exempt'
-                          ? 'Not billed'
-                          : <>{money(m.amountPaid)} of {money(m.amountOwed)}{m.joinedAt && ` · joined ${fmtDate(m.joinedAt)}`}</>}
-                      {m.memberSince && ` · since ${m.memberSince}`}
-                    </div>
-                    {m.note && <div className="text-[11px] text-text-tertiary italic truncate">{m.note}</div>}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className={`text-sm font-semibold tabular-nums ${
-                      Number(m.balance) > 0 ? 'text-text-primary' : Number(m.balance) < 0 ? 'text-info' : 'text-text-tertiary'
-                    }`}>
-                      {(m.status === 'exempt' && !m.perGame) || m.status === 'left' ? '—' : money(m.balance)}
-                    </div>
-                    {m.payments.length > 1 && (
-                      <div className="text-[10px] text-text-tertiary">{m.payments.length} payments</div>
-                    )}
-                  </div>
-                </button>
-
-                {isOpen && (
-                  <div className="border-t border-border px-3 py-2.5 space-y-2">
-                    {m.payments.length > 0 && (
-                      <div className="space-y-1">
-                        {m.payments.map(p => (
-                          <div key={p.id} className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="text-text-secondary">
-                              <span className="tabular-nums font-medium">{money(p.amount)}</span>
-                              {' · '}{p.method}{' · '}{fmtDate(p.paidAt)}
-                              {p.note && <span className="text-text-tertiary italic"> — {p.note}</span>}
-                            </span>
-                            <button onClick={() => removePayment(p.id)} disabled={busy}
-                              className="text-text-tertiary hover:text-error shrink-0">Delete</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex gap-1.5 flex-wrap">
-                      {m.status === 'left' ? (
-                        <button onClick={() => bringBack(m)} disabled={busy}
-                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent disabled:opacity-50">
-                          Bring back
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setPaying({ name: m.name, balance: m.balance, playerId: m.playerId })}
-                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent"
-                        >
-                          Record payment
-                        </button>
-                      )}
-                      {!m.perGame && (
-                        <button onClick={() => adjustOwed(m)} disabled={busy}
-                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
-                          Change amount
-                        </button>
-                      )}
-                      {m.status !== 'left' && (
-                        <button onClick={() => togglePerGame(m)} disabled={busy}
-                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
-                          {m.perGame ? 'Switch to yearly' : 'Per game'}
-                        </button>
-                      )}
-                      <button onClick={() => editNote(m)} disabled={busy}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
-                        {m.note ? 'Edit note' : 'Add note'}
-                      </button>
-                      {m.status !== 'left' && (
-                        <button onClick={() => markLeft(m)} disabled={busy}
-                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-tertiary border border-border-emphasis hover:bg-surface-hover hover:text-error">
-                          Left
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {openRows.map(renderMember)}
+          {group('Paid', paidRows, `${money(sumOf(paidRows, 'amountPaid'))} collected`)}
+          {group('Left', leftRows, `kept ${money(sumOf(leftRows, 'amountPaid'))}`)}
         </div>
       )}
 
