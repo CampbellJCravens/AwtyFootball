@@ -17,7 +17,12 @@ const today = () => new Date().toISOString().slice(0, 10);
 // Months left in the dues year, mirroring monthsRemainingInDuesYear on the
 // server. This drives the hint only — the amount that gets stored is whatever
 // is in the field when you save, so the two can never disagree about money.
-const monthsRemaining = (iso: string) => 12 - new Date(`${iso}T12:00:00`).getMonth();
+const monthsRemaining = (iso: string, duesYear: number) => {
+  const y = Number(iso.slice(0, 4));
+  if (y < duesYear) return 12;
+  if (y > duesYear) return 0;
+  return 12 - new Date(`${iso}T12:00:00`).getMonth();
+};
 
 const PRORATA_MONTHS = 3;
 
@@ -33,7 +38,7 @@ export default function AddDuesEntryModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const left = monthsRemaining(joinedAt);
+  const left = monthsRemaining(joinedAt, duesYear);
   const isProrata = left <= PRORATA_MONTHS;
   const suggestion = useMemo(() => {
     const full = Number(memberAmount);
@@ -45,7 +50,7 @@ export default function AddDuesEntryModal({
   const setDate = (iso: string) => {
     setJoinedAt(iso);
     if (!touchedAmount) {
-      const l = monthsRemaining(iso);
+      const l = monthsRemaining(iso, duesYear);
       const full = Number(memberAmount);
       setAmount((l <= PRORATA_MONTHS ? (full * l) / 12 : full).toFixed(2));
     }

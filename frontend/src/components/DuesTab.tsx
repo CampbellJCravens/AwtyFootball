@@ -3,7 +3,7 @@ import { Player } from '../api/players';
 import {
   DuesGuestRow, DuesMemberRow, DuesStatus, DuesYearNotConfigured, DuesYearReport,
   addDuesEntry, deleteDuesPayment, fetchDuesReport, fetchDuesYears, isCollectionWindow,
-  markDuesEntriesLeft, markDuesEntryLeft, openDuesYear, saveDuesConfig, updateDuesEntry,
+  markDuesEntriesLeft, markDuesEntryLeft, openDuesYear, saveDuesConfig, setDuesPerGame, updateDuesEntry,
 } from '../api/dues';
 import RecordPaymentModal from './RecordPaymentModal';
 import AddDuesEntryModal from './AddDuesEntryModal';
@@ -118,6 +118,144 @@ export default function DuesTab({ players }: { players: Player[] }) {
   }
   if (!report) return null;
 
+  const renderMember = (m: DuesMemberRow) => {
+    const isOpen = expanded === m.entryId;
+    return (
+      <div key={m.entryId} className="border border-border rounded-xl bg-surface/40 overflow-hidden">
+        <button
+          onClick={() => setExpanded(isOpen ? null : m.entryId)}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-hover transition-colors"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
+              {m.perGame && m.status === 'exempt' ? null : (
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CLASS[m.status]}`}>
+                  {STATUS_LABEL[m.status]}
+                </span>
+              )}
+              {m.perGame && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-raised text-text-secondary border border-border-emphasis">
+                  Per game
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-text-tertiary tabular-nums">
+              {m.status === 'left'
+                ? <>Left {fmtDate(m.leftAt)}{Number(m.amountPaid) > 0 && ` · kept ${money(m.amountPaid)}`}</>
+                : m.perGame
+                  ? <>{m.gamesPlayed} game{m.gamesPlayed === 1 ? '' : 's'} × {money(report.guestGameRate)} = {money(m.amountOwed)} · paid {money(m.amountPaid)}</>
+                : m.status === 'exempt'
+                  ? 'Not billed'
+                  : <>{money(m.amountPaid)} of {money(m.amountOwed)}{m.joinedAt && ` · joined ${fmtDate(m.joinedAt)}`}</>}
+              {m.memberSince && ` · since ${m.memberSince}`}
+            </div>
+            {m.note && <div className="text-[11px] text-text-tertiary italic truncate">{m.note}</div>}
+          </div>
+          <div className="text-right shrink-0">
+            <div className={`text-sm font-semibold tabular-nums ${
+              Number(m.balance) > 0 ? 'text-text-primary' : Number(m.balance) < 0 ? 'text-info' : 'text-text-tertiary'
+            }`}>
+              {(m.status === 'exempt' && !m.perGame) || m.status === 'left' ? '—' : money(m.balance)}
+            </div>
+            {m.payments.length > 1 && (
+              <div className="text-[10px] text-text-tertiary">{m.payments.length} payments</div>
+            )}
+          </div>
+        </button>
+
+        {isOpen && (
+          <div className="border-t border-border px-3 py-2.5 space-y-2">
+            {m.payments.length > 0 && (
+              <div className="space-y-1">
+                {m.payments.map(p => (
+                  <div key={p.id} className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="text-text-secondary">
+                      <span className="tabular-nums font-medium">{money(p.amount)}</span>
+                      {' · '}{p.method}{' · '}{fmtDate(p.paidAt)}
+                      {p.note && <span className="text-text-tertiary italic"> — {p.note}</span>}
+                    </span>
+                    <button onClick={() => removePayment(p.id)} disabled={busy}
+                      className="text-text-tertiary hover:text-error shrink-0">Delete</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-1.5 flex-wrap">
+              {m.status === 'left' ? (
+                <button onClick={() => bringBack(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent disabled:opacity-50">
+                  Bring back
+                </button>
+              ) : (
+                <button
+                  onClick={() => setPaying({ name: m.name, balance: m.balance, playerId: m.playerId })}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent"
+                >
+                  Record payment
+                </button>
+              )}
+              {!m.perGame && (
+                <button onClick={() => adjustOwed(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                  Change amount
+                </button>
+              )}
+              {m.status !== 'left' && (
+                <button onClick={() => togglePerGame(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                  {m.perGame ? 'Switch to yearly' : 'Per game'}
+                </button>
+              )}
+              <button onClick={() => editNote(m)} disabled={busy}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                {m.note ? 'Edit note' : 'Add note'}
+              </button>
+              {m.status !== 'left' && (
+                <button onClick={() => markLeft(m)} disabled={busy}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-tertiary border border-border-emphasis hover:bg-surface-hover hover:text-error">
+                  Left
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // The chase list stays on top; everyone else folds into groups (owner 2026-11-02):
+  // per game is its own category, and settled yearly people split by why.
+  const isPaid = (m: DuesMemberRow) => m.status === 'paid' || m.status === 'overpaid';
+  const leftRows = members.filter(m => m.status === 'left');
+  const live = members.filter(m => m.status !== 'left');
+  const perGameRows = live.filter(m => m.perGame);
+  const yearly = live.filter(m => !m.perGame);
+  const paidRows = yearly.filter(isPaid);
+  const alumniRows = yearly.filter(m => m.status === 'exempt' && m.exemption === 'alumni');
+  const otherExempt = yearly.filter(m => m.status === 'exempt' && m.exemption !== 'alumni');
+  const openRows = yearly.filter(m => !isPaid(m) && m.status !== 'exempt');
+  const settled = [...paidRows, ...alumniRows, ...otherExempt];
+  const total = (rows: DuesMemberRow[], k: 'amountPaid' | 'balance') =>
+    rows.reduce((sum, r) => sum + Math.max(0, Number(r[k])), 0).toFixed(2);
+  const group = (label: string, count: number, peek: string, children: React.ReactNode) => count > 0 && (
+    <details className="border border-border rounded-xl bg-surface/40 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-semibold text-text-secondary uppercase tracking-wide">
+        {label} <span className="tabular-nums text-text-tertiary">{count}</span>
+        <span className="normal-case tracking-normal font-normal text-text-tertiary"> · {peek}</span>
+      </summary>
+      <div className="mt-2 space-y-1.5">{children}</div>
+    </details>
+  );
+  const sub = (label: string, rows: DuesMemberRow[]) => rows.length > 0 && (
+    <div className="space-y-1.5">
+      <div className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide pt-1">
+        {label} <span className="tabular-nums">{rows.length}</span>
+      </div>
+      {rows.map(renderMember)}
+    </div>
+  );
+
   const filterButton = (key: Filter, label: string, count: number) => (
     <button
       onClick={() => setFilter(key)}
@@ -170,6 +308,20 @@ export default function DuesTab({ players }: { players: Player[] }) {
       await load(year);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark as left');
+    } finally { setBusy(false); }
+  };
+
+  const togglePerGame = async (m: DuesMemberRow) => {
+    const message = m.perGame
+      ? `Put ${m.name} back on yearly dues?\n\nThey'll owe the ${year} member rate, and next year too.`
+      : `Bill ${m.name} per game?\n\n${money(report?.guestGameRate ?? '0')} for every game they play, no cap. Sticks for future years until you switch it back.`;
+    if (!window.confirm(message)) return;
+    setBusy(true);
+    try {
+      await setDuesPerGame(m.entryId, !m.perGame);
+      await load(year);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to change billing');
     } finally { setBusy(false); }
   };
 
@@ -341,94 +493,16 @@ export default function DuesTab({ players }: { players: Player[] }) {
         <div className="text-center py-8 text-text-tertiary text-sm">Nobody in this group.</div>
       ) : (
         <div className="space-y-1.5">
-          {members.map(m => {
-            const isOpen = expanded === m.entryId;
-            return (
-              <div key={m.entryId} className="border border-border rounded-xl bg-surface/40 overflow-hidden">
-                <button
-                  onClick={() => setExpanded(isOpen ? null : m.entryId)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-hover transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CLASS[m.status]}`}>
-                        {STATUS_LABEL[m.status]}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-text-tertiary tabular-nums">
-                      {m.status === 'left'
-                        ? <>Left {fmtDate(m.leftAt)}{Number(m.amountPaid) > 0 && ` · kept ${money(m.amountPaid)}`}</>
-                        : m.status === 'exempt'
-                          ? 'Not billed'
-                          : <>{money(m.amountPaid)} of {money(m.amountOwed)}{m.joinedAt && ` · joined ${fmtDate(m.joinedAt)}`}</>}
-                      {m.memberSince && ` · since ${m.memberSince}`}
-                    </div>
-                    {m.note && <div className="text-[11px] text-text-tertiary italic truncate">{m.note}</div>}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className={`text-sm font-semibold tabular-nums ${
-                      Number(m.balance) > 0 ? 'text-text-primary' : Number(m.balance) < 0 ? 'text-info' : 'text-text-tertiary'
-                    }`}>
-                      {m.status === 'exempt' || m.status === 'left' ? '—' : money(m.balance)}
-                    </div>
-                    {m.payments.length > 1 && (
-                      <div className="text-[10px] text-text-tertiary">{m.payments.length} payments</div>
-                    )}
-                  </div>
-                </button>
-
-                {isOpen && (
-                  <div className="border-t border-border px-3 py-2.5 space-y-2">
-                    {m.payments.length > 0 && (
-                      <div className="space-y-1">
-                        {m.payments.map(p => (
-                          <div key={p.id} className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="text-text-secondary">
-                              <span className="tabular-nums font-medium">{money(p.amount)}</span>
-                              {' · '}{p.method}{' · '}{fmtDate(p.paidAt)}
-                              {p.note && <span className="text-text-tertiary italic"> — {p.note}</span>}
-                            </span>
-                            <button onClick={() => removePayment(p.id)} disabled={busy}
-                              className="text-text-tertiary hover:text-error shrink-0">Delete</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex gap-1.5 flex-wrap">
-                      {m.status === 'left' ? (
-                        <button onClick={() => bringBack(m)} disabled={busy}
-                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent disabled:opacity-50">
-                          Bring back
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setPaying({ name: m.name, balance: m.balance, playerId: m.playerId })}
-                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-accent text-text-on-accent"
-                        >
-                          Record payment
-                        </button>
-                      )}
-                      <button onClick={() => adjustOwed(m)} disabled={busy}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
-                        Change amount
-                      </button>
-                      <button onClick={() => editNote(m)} disabled={busy}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
-                        {m.note ? 'Edit note' : 'Add note'}
-                      </button>
-                      {m.status !== 'left' && (
-                        <button onClick={() => markLeft(m)} disabled={busy}
-                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-tertiary border border-border-emphasis hover:bg-surface-hover hover:text-error">
-                          Left
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {openRows.map(renderMember)}
+          {group('Per game', perGameRows.length,
+            `${perGameRows.reduce((n, m) => n + (m.gamesPlayed ?? 0), 0)} games · ${money(total(perGameRows, 'balance'))} owing`,
+            perGameRows.map(renderMember))}
+          {group('Paid & not billed', settled.length, `${money(total(paidRows, 'amountPaid'))} collected`, <>
+            {sub('Paid in full', paidRows)}
+            {sub('Alumni', alumniRows)}
+            {sub('Other exempt', otherExempt)}
+          </>)}
+          {group('Left', leftRows.length, `kept ${money(total(leftRows, 'amountPaid'))}`, leftRows.map(renderMember))}
         </div>
       )}
 

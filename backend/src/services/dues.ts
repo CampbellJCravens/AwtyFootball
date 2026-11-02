@@ -43,6 +43,8 @@ export interface DuesMemberRow {
   note: string | null;
   joinedAt: string | null;
   leftAt: string | null;
+  perGame: boolean;
+  gamesPlayed: number | null; // per-game players only
   payments: DuesPaymentDto[];
 }
 
@@ -141,12 +143,44 @@ export const classify = (
 };
 
 // Months left in the dues year at a given date, used to decide whether a
-// mid-year joiner is full price or the owner's call.
-export const monthsRemainingInDuesYear = (date: Date): number =>
-  12 - (date.getMonth() + 1) + 1;
+// mid-year joiner is full price or the owner's call. Joining before the year
+// starts (Oct-Dec collection for next year) is the whole year, not the stub.
+export const monthsRemainingInDuesYear = (date: Date, duesYear: number): number => {
+  if (date.getFullYear() < duesYear) return 12;
+  if (date.getFullYear() > duesYear) return 0;
+  return 12 - date.getMonth();
+};
 
-export const isProrataWindow = (date: Date): boolean =>
-  monthsRemainingInDuesYear(date) <= PRORATA_MONTHS_REMAINING;
+export const isProrataWindow = (date: Date, duesYear: number): boolean =>
+  monthsRemainingInDuesYear(date, duesYear) <= PRORATA_MONTHS_REMAINING;
+
+export const PER_GAME = 'per_game';
+
+// Games each player was on a team for in a dues year (game date = createdAt, the
+// app-wide rule). Cancelled games are not charged.
+export const gamesPlayedInYear = async (
+  duesYear: number,
+  db: Prisma.TransactionClient = prisma
+): Promise<Map<string, number>> => {
+  const games = await db.game.findMany({
+    where: {
+      createdAt: { gte: new Date(duesYear, 0, 1), lt: new Date(duesYear + 1, 0, 1) },
+      NOT: { field: 'cancelled' },
+    },
+    select: { teamAssignments: true },
+  });
+  const counts = new Map<string, number>();
+  for (const g of games) {
+    let teams: Record<string, unknown> = {};
+    try { teams = JSON.parse(g.teamAssignments || '{}') ?? {}; } catch { /* unreadable row: no attendance */ }
+    for (const id of Object.keys(teams)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+};
+
+// Per-game entries are billed live while active; once Left, the stored amount
+// (set to what they paid) is the record, same as a member.
+const perGameOwed = (rate: Prisma.Decimal, games: number) => rate.times(games);
 
 export const getDuesYearConfig = async (duesYear: number) => {
   const config = await prisma.duesYearConfig.findUnique({ where: { duesYear } });
@@ -164,6 +198,7 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
   ]);
 
   const playerMap = new Map(players.map(p => [p.id, p]));
+  const games = entries.some(e => e.exemption === PER_GAME) ? await gamesPlayedInYear(duesYear) : new Map<string, number>();
 
   const paidByPlayer = new Map<string, Prisma.Decimal>();
   const paymentsByPlayer = new Map<string, DuesPaymentDto[]>();
@@ -189,7 +224,9 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
 
   const members: DuesMemberRow[] = entries.map(entry => {
     const player = playerMap.get(entry.playerId);
-    const owed = D(entry.amountOwed);
+    const perGame = entry.exemption === PER_GAME;
+    const played = perGame ? games.get(entry.playerId) ?? 0 : null;
+    const owed = perGame && !entry.leftAt ? perGameOwed(D(config.guestGameRate), played!) : D(entry.amountOwed);
     const paid = paidByPlayer.get(entry.playerId) ?? ZERO;
     return {
       entryId: entry.id,
@@ -206,6 +243,8 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
       note: entry.note,
       joinedAt: entry.joinedAt?.toISOString() ?? null,
       leftAt: entry.leftAt?.toISOString() ?? null,
+      perGame,
+      gamesPlayed: played,
       payments: paymentsByPlayer.get(entry.playerId) ?? [],
     };
   });
@@ -338,8 +377,8 @@ export const openDuesYear = async (duesYear: number) => {
     data: billable.map(p => ({
       duesYear,
       playerId: p.id,
-      amountOwed: p.isAlumni ? new Prisma.Decimal(0) : config.memberAmount,
-      exemption: p.isAlumni ? 'alumni' : null,
+      amountOwed: p.isAlumni || p.paysPerGame ? new Prisma.Decimal(0) : config.memberAmount,
+      exemption: p.isAlumni ? 'alumni' : p.paysPerGame ? PER_GAME : null,
       joinedAt,
     })),
     skipDuplicates: true,
@@ -356,9 +395,9 @@ export const openDuesYear = async (duesYear: number) => {
 // the season is nearly over, then a share of the year — offered as an editable
 // default, never as a rule: the last three months are explicitly the owner's
 // discretion, and whatever gets saved is what is stored.
-export const prorataSuggestion = (memberAmount: Prisma.Decimal, joinedAt: Date): Prisma.Decimal => {
-  if (!isProrataWindow(joinedAt)) return memberAmount;
-  return memberAmount.times(monthsRemainingInDuesYear(joinedAt)).dividedBy(12).toDecimalPlaces(2);
+export const prorataSuggestion = (memberAmount: Prisma.Decimal, joinedAt: Date, duesYear: number): Prisma.Decimal => {
+  if (!isProrataWindow(joinedAt, duesYear)) return memberAmount;
+  return memberAmount.times(monthsRemainingInDuesYear(joinedAt, duesYear)).dividedBy(12).toDecimalPlaces(2);
 };
 
 // Add one person to a dues year, or bring back someone who left. Until this
@@ -382,9 +421,9 @@ export const addDuesEntry = async (input: {
   const owed =
     input.amountOwed !== undefined && input.amountOwed !== null
       ? new Prisma.Decimal(input.amountOwed)
-      : player.isAlumni
+      : player.isAlumni || player.paysPerGame
         ? ZERO
-        : prorataSuggestion(D(config.memberAmount), joinedAt);
+        : prorataSuggestion(D(config.memberAmount), joinedAt, input.duesYear);
   if (!owed.isFinite() || owed.isNegative()) {
     throw new Error('amountOwed must be a non-negative number.');
   }
@@ -404,6 +443,7 @@ export const addDuesEntry = async (input: {
             amountOwed: owed,
             leftAt: null,
             joinedAt,
+            ...(player.paysPerGame && { exemption: PER_GAME }),
             ...(input.note !== undefined && { note: input.note }),
           },
         })
@@ -412,7 +452,7 @@ export const addDuesEntry = async (input: {
             duesYear: input.duesYear,
             playerId: input.playerId,
             amountOwed: owed,
-            exemption: player.isAlumni ? 'alumni' : null,
+            exemption: player.isAlumni ? 'alumni' : player.paysPerGame ? PER_GAME : null,
             joinedAt,
             note: input.note ?? null,
           },
@@ -449,7 +489,12 @@ const applyLeft = async (
     where: { duesYear: entry.duesYear, playerId: entry.playerId },
   });
   const paid = payments.reduce((sum, p) => sum.plus(p.amount), ZERO);
-  const billed = D(entry.amountOwed);
+  let billed = D(entry.amountOwed);
+  if (entry.exemption === PER_GAME) {
+    const config = await tx.duesYearConfig.findUnique({ where: { duesYear: entry.duesYear } });
+    const played = (await gamesPlayedInYear(entry.duesYear, tx)).get(entry.playerId) ?? 0;
+    billed = perGameOwed(D(config?.guestGameRate ?? 0), played);
+  }
   const note = [entry.note, `Left — billed $${money(billed)}, kept $${money(paid)}.`]
     .filter(Boolean)
     .join(' · ');
@@ -460,6 +505,31 @@ const applyLeft = async (
   });
   await tx.player.update({ where: { id: entry.playerId }, data: { onRoster: false } });
   return updated;
+};
+
+// Switch someone between yearly dues and per game. The person-level flag is what
+// future years read; this year's entry is re-priced now. Turning it off bills the
+// year's member rate (alumni stay exempt) - change the amount after if needed.
+export const setPerGame = async (entryId: string, on: boolean) => {
+  const entry = await prisma.duesRosterEntry.findUnique({ where: { id: entryId } });
+  if (!entry) throw new Error('No such dues entry.');
+  if (entry.leftAt) throw new Error('They have left - bring them back first.');
+  const [player, config] = await Promise.all([
+    prisma.player.findUnique({ where: { id: entry.playerId } }),
+    getDuesYearConfig(entry.duesYear),
+  ]);
+  if (!player) throw new Error('No such player.');
+  return prisma.$transaction(async tx => {
+    await tx.player.update({ where: { id: player.id }, data: { paysPerGame: on } });
+    return tx.duesRosterEntry.update({
+      where: { id: entryId },
+      data: on
+        ? { exemption: PER_GAME, amountOwed: ZERO }
+        : player.isAlumni
+          ? { exemption: 'alumni', amountOwed: ZERO }
+          : { exemption: null, amountOwed: config.memberAmount },
+    });
+  });
 };
 
 export const markPlayerLeft = async (entryId: string) => {

@@ -34,6 +34,8 @@ export interface DuesMemberRow {
   note: string | null;
   joinedAt: string | null;
   leftAt: string | null;
+  perGame: boolean;
+  gamesPlayed: number | null;
   payments: DuesPaymentDto[];
 }
 
@@ -146,6 +148,10 @@ export const addDuesEntry = (
   year: number,
   data: { playerId: string; amountOwed?: string; joinedAt?: string; note?: string | null }
 ) => req<unknown>(`/dues/${year}/entry`, { method: 'POST', body: JSON.stringify(data) });
+
+// Standing switch between yearly dues and per game; later years follow it.
+export const setDuesPerGame = (entryId: string, on: boolean) =>
+  req<unknown>(`/dues/entry/${entryId}/per-game`, { method: 'POST', body: JSON.stringify({ on }) });
 
 // They left and the dues are kept: what they owed becomes what they paid.
 export const markDuesEntryLeft = (entryId: string) =>

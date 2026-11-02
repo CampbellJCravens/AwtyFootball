@@ -9,6 +9,7 @@ import {
   markPlayerLeft,
   openDuesYear,
   recordPayment,
+  setPerGame,
   DuesYearNotConfiguredError,
 } from '../services/dues';
 
@@ -142,6 +143,22 @@ router.post('/entry/:id/left', requireAdmin, async (req: AuthenticatedRequest, r
       return res.status(400).json({ error: error.message });
     }
     fail(res, error, 'Failed to mark as left');
+  }
+});
+
+// POST /api/dues/entry/:id/per-game - { on: boolean }. Standing setting: it sticks
+// to the person, so later years bill them per game too.
+router.post('/entry/:id/per-game', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { on } = req.body ?? {};
+  if (typeof on !== 'boolean') return res.status(400).json({ error: 'on must be true or false.' });
+  try {
+    const row = await setPerGame(req.params.id, on);
+    res.json({ ...row, amountOwed: row.amountOwed.toFixed(2) });
+  } catch (error) {
+    if (error instanceof Error && !(error as { code?: string }).code) {
+      return res.status(400).json({ error: error.message });
+    }
+    fail(res, error, 'Failed to change billing');
   }
 });
 

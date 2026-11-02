@@ -908,3 +908,14 @@ keep the entered figure authoritative. A mass re-apply after a rate change is
       **G** end-of-collection sweep (`POST /:year/sweep`) ·
       **H** collection-window banner
 - [x] Guest chips confirmed as **(a) filter-only** (2026-08-10)
+
+---
+
+## ADDENDUM 2026-11-02 — Per-game members (owner: "Royce will always pay per game")
+
+- **Rule:** a roster player can be billed **guestGameRate × games played** in the dues year instead of `memberAmount`. **No free games, no cap** (owner's choices). This deliberately differs from guests (2 free): a per-game member is a known regular who chose it.
+- **Standing, person-level:** `Player.paysPerGame`. `openDuesYear` and `addDuesEntry` create their entry with `exemption = 'per_game'`, `amountOwed = 0`. The report computes owed LIVE from attendance (on a team in `teamAssignments`, game year = `createdAt`, `field = 'cancelled'` excluded; leaving early still counts).
+- **Switch:** "Per game" / "Switch to yearly" on the dues row → `POST /api/dues/entry/:id/per-game {on}`. Switching back bills that year's `memberAmount` (alumni stay exempt).
+- **Left:** same as members: unpaid games are written off, the note records "billed $X (live), kept $Y".
+- **No convert nudge** for per-game members: the choice is deliberate.
+- Out of scope: back-billing past years, per-person rates, reminders.
