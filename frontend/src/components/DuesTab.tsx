@@ -227,7 +227,9 @@ export default function DuesTab({ players }: { players: Player[] }) {
   // The chase list stays on top; everyone else folds into groups (owner 2026-11-02):
   // per game is its own category, and settled yearly people split by why.
   const isPaid = (m: DuesMemberRow) => m.status === 'paid' || m.status === 'overpaid';
-  const leftRows = members.filter(m => m.status === 'left');
+  // Shown under Active too: tracking who left is the point, not chasing them.
+  const leftRows = filter === 'active' || filter === 'left' ? report.members.filter(m => m.status === 'left') : [];
+
   const live = members.filter(m => m.status !== 'left');
   const perGameRows = live.filter(m => m.perGame);
   const yearly = live.filter(m => !m.perGame);
@@ -247,13 +249,14 @@ export default function DuesTab({ players }: { players: Player[] }) {
       <div className="mt-2 space-y-1.5">{children}</div>
     </details>
   );
-  const sub = (label: string, rows: DuesMemberRow[]) => rows.length > 0 && (
-    <div className="space-y-1.5">
-      <div className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide pt-1">
+  const sub = (label: string, rows: DuesMemberRow[], peek?: string) => rows.length > 0 && (
+    <details className="pt-1">
+      <summary className="cursor-pointer text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">
         {label} <span className="tabular-nums">{rows.length}</span>
-      </div>
-      {rows.map(renderMember)}
-    </div>
+        {peek && <span className="normal-case tracking-normal font-normal"> · {peek}</span>}
+      </summary>
+      <div className="mt-1.5 space-y-1.5">{rows.map(renderMember)}</div>
+    </details>
   );
 
   const filterButton = (key: Filter, label: string, count: number) => (
@@ -498,11 +501,12 @@ export default function DuesTab({ players }: { players: Player[] }) {
             `${perGameRows.reduce((n, m) => n + (m.gamesPlayed ?? 0), 0)} games · ${money(total(perGameRows, 'balance'))} owing`,
             perGameRows.map(renderMember))}
           {group('Paid & not billed', settled.length, `${money(total(paidRows, 'amountPaid'))} collected`, <>
-            {sub('Paid in full', paidRows)}
+            {sub('Paid in full', paidRows, `${money(total(paidRows, 'amountPaid'))}`)}
             {sub('Alumni', alumniRows)}
             {sub('Other exempt', otherExempt)}
           </>)}
-          {group('Left', leftRows.length, `kept ${money(total(leftRows, 'amountPaid'))}`, leftRows.map(renderMember))}
+          {group(`Left before ${year}`, leftRows.length,
+            `off the current roster · kept ${money(total(leftRows, 'amountPaid'))}`, leftRows.map(renderMember))}
         </div>
       )}
 
@@ -779,8 +783,15 @@ function GuestSection({
   );
 
   return (
-    <div className="space-y-2 pt-2">
-      <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">Guests</h3>
+    <details className="border border-border rounded-xl bg-surface/40 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-semibold text-text-secondary uppercase tracking-wide">
+        Guests <span className="tabular-nums text-text-tertiary">{guests.length}</span>
+        <span className="normal-case tracking-normal font-normal text-text-tertiary">
+          {' · '}{money(guests.reduce((s, g) => s + Math.max(0, Number(g.balance)), 0).toFixed(2))} owing
+          {convert.length > 0 && ` · ${convert.length} to convert`}
+        </span>
+      </summary>
+      <div className="mt-2 space-y-2">
 
       {convert.map(g => (
         <div key={g.guestId} className="border border-warning-border bg-warning-bg rounded-xl px-3 py-2.5">
@@ -845,7 +856,8 @@ function GuestSection({
           </div>
         </details>
       )}
-    </div>
+      </div>
+    </details>
   );
 }
 
