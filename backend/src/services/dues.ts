@@ -141,12 +141,16 @@ export const classify = (
 };
 
 // Months left in the dues year at a given date, used to decide whether a
-// mid-year joiner is full price or the owner's call.
-export const monthsRemainingInDuesYear = (date: Date): number =>
-  12 - (date.getMonth() + 1) + 1;
+// mid-year joiner is full price or the owner's call. Joining before the year
+// starts (Oct-Dec collection for next year) is the whole year, not the stub.
+export const monthsRemainingInDuesYear = (date: Date, duesYear: number): number => {
+  if (date.getFullYear() < duesYear) return 12;
+  if (date.getFullYear() > duesYear) return 0;
+  return 12 - date.getMonth();
+};
 
-export const isProrataWindow = (date: Date): boolean =>
-  monthsRemainingInDuesYear(date) <= PRORATA_MONTHS_REMAINING;
+export const isProrataWindow = (date: Date, duesYear: number): boolean =>
+  monthsRemainingInDuesYear(date, duesYear) <= PRORATA_MONTHS_REMAINING;
 
 export const getDuesYearConfig = async (duesYear: number) => {
   const config = await prisma.duesYearConfig.findUnique({ where: { duesYear } });
@@ -356,9 +360,9 @@ export const openDuesYear = async (duesYear: number) => {
 // the season is nearly over, then a share of the year — offered as an editable
 // default, never as a rule: the last three months are explicitly the owner's
 // discretion, and whatever gets saved is what is stored.
-export const prorataSuggestion = (memberAmount: Prisma.Decimal, joinedAt: Date): Prisma.Decimal => {
-  if (!isProrataWindow(joinedAt)) return memberAmount;
-  return memberAmount.times(monthsRemainingInDuesYear(joinedAt)).dividedBy(12).toDecimalPlaces(2);
+export const prorataSuggestion = (memberAmount: Prisma.Decimal, joinedAt: Date, duesYear: number): Prisma.Decimal => {
+  if (!isProrataWindow(joinedAt, duesYear)) return memberAmount;
+  return memberAmount.times(monthsRemainingInDuesYear(joinedAt, duesYear)).dividedBy(12).toDecimalPlaces(2);
 };
 
 // Add one person to a dues year, or bring back someone who left. Until this
@@ -384,7 +388,7 @@ export const addDuesEntry = async (input: {
       ? new Prisma.Decimal(input.amountOwed)
       : player.isAlumni
         ? ZERO
-        : prorataSuggestion(D(config.memberAmount), joinedAt);
+        : prorataSuggestion(D(config.memberAmount), joinedAt, input.duesYear);
   if (!owed.isFinite() || owed.isNegative()) {
     throw new Error('amountOwed must be a non-negative number.');
   }
