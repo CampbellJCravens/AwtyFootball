@@ -3,7 +3,7 @@ import { Player } from '../api/players';
 import {
   DuesGuestRow, DuesMemberRow, DuesStatus, DuesYearNotConfigured, DuesYearReport,
   addDuesEntry, deleteDuesPayment, fetchDuesReport, fetchDuesYears, isCollectionWindow,
-  markDuesEntriesLeft, markDuesEntryLeft, openDuesYear, saveDuesConfig, updateDuesEntry,
+  markDuesEntriesLeft, markDuesEntryLeft, openDuesYear, saveDuesConfig, setDuesPerGame, updateDuesEntry,
 } from '../api/dues';
 import RecordPaymentModal from './RecordPaymentModal';
 import AddDuesEntryModal from './AddDuesEntryModal';
@@ -170,6 +170,20 @@ export default function DuesTab({ players }: { players: Player[] }) {
       await load(year);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark as left');
+    } finally { setBusy(false); }
+  };
+
+  const togglePerGame = async (m: DuesMemberRow) => {
+    const message = m.perGame
+      ? `Put ${m.name} back on yearly dues?\n\nThey'll owe the ${year} member rate, and next year too.`
+      : `Bill ${m.name} per game?\n\n${money(report?.guestGameRate ?? '0')} for every game they play, no cap. Sticks for future years until you switch it back.`;
+    if (!window.confirm(message)) return;
+    setBusy(true);
+    try {
+      await setDuesPerGame(m.entryId, !m.perGame);
+      await load(year);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to change billing');
     } finally { setBusy(false); }
   };
 
@@ -352,13 +366,22 @@ export default function DuesTab({ players }: { players: Player[] }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CLASS[m.status]}`}>
-                        {STATUS_LABEL[m.status]}
-                      </span>
+                      {m.perGame && m.status === 'exempt' ? null : (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CLASS[m.status]}`}>
+                          {STATUS_LABEL[m.status]}
+                        </span>
+                      )}
+                      {m.perGame && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-raised text-text-secondary border border-border-emphasis">
+                          Per game
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-text-tertiary tabular-nums">
                       {m.status === 'left'
                         ? <>Left {fmtDate(m.leftAt)}{Number(m.amountPaid) > 0 && ` · kept ${money(m.amountPaid)}`}</>
+                        : m.perGame
+                          ? <>{m.gamesPlayed} game{m.gamesPlayed === 1 ? '' : 's'} × {money(report.guestGameRate)} = {money(m.amountOwed)} · paid {money(m.amountPaid)}</>
                         : m.status === 'exempt'
                           ? 'Not billed'
                           : <>{money(m.amountPaid)} of {money(m.amountOwed)}{m.joinedAt && ` · joined ${fmtDate(m.joinedAt)}`}</>}
@@ -370,7 +393,7 @@ export default function DuesTab({ players }: { players: Player[] }) {
                     <div className={`text-sm font-semibold tabular-nums ${
                       Number(m.balance) > 0 ? 'text-text-primary' : Number(m.balance) < 0 ? 'text-info' : 'text-text-tertiary'
                     }`}>
-                      {m.status === 'exempt' || m.status === 'left' ? '—' : money(m.balance)}
+                      {(m.status === 'exempt' && !m.perGame) || m.status === 'left' ? '—' : money(m.balance)}
                     </div>
                     {m.payments.length > 1 && (
                       <div className="text-[10px] text-text-tertiary">{m.payments.length} payments</div>
@@ -409,10 +432,18 @@ export default function DuesTab({ players }: { players: Player[] }) {
                           Record payment
                         </button>
                       )}
-                      <button onClick={() => adjustOwed(m)} disabled={busy}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
-                        Change amount
-                      </button>
+                      {!m.perGame && (
+                        <button onClick={() => adjustOwed(m)} disabled={busy}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                          Change amount
+                        </button>
+                      )}
+                      {m.status !== 'left' && (
+                        <button onClick={() => togglePerGame(m)} disabled={busy}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
+                          {m.perGame ? 'Switch to yearly' : 'Per game'}
+                        </button>
+                      )}
                       <button onClick={() => editNote(m)} disabled={busy}
                         className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-raised text-text-secondary border border-border-emphasis hover:bg-surface-hover">
                         {m.note ? 'Edit note' : 'Add note'}

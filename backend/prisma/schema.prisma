@@ -31,6 +31,10 @@ model Player {
   // of remembering to tag every departure. Per-departure reasons cover one-offs;
   // setting both is harmless, exclusion is exclusion.
   staminaExempt Boolean @default(false)
+  // Pays per game instead of yearly dues (owner 2026-11-02: "Royce will always pay
+  // per game"). A standing arrangement, so new dues years pick it up: their entry
+  // gets exemption 'per_game' and is billed guestGameRate x games played, live.
+  paysPerGame   Boolean @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
