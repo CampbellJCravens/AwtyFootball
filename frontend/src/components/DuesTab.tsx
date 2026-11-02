@@ -224,20 +224,36 @@ export default function DuesTab({ players }: { players: Player[] }) {
     );
   };
 
-  // The chase list stays on top; settled people fold away (owner 2026-11-02).
+  // The chase list stays on top; everyone else folds into groups (owner 2026-11-02):
+  // per game is its own category, and settled yearly people split by why.
   const isPaid = (m: DuesMemberRow) => m.status === 'paid' || m.status === 'overpaid';
-  const paidRows = members.filter(isPaid);
   const leftRows = members.filter(m => m.status === 'left');
-  const openRows = members.filter(m => !isPaid(m) && m.status !== 'left');
-  const sumOf = (rows: DuesMemberRow[], k: 'amountPaid') => rows.reduce((s, r) => s + Number(r[k]), 0).toFixed(2);
-  const group = (label: string, rows: DuesMemberRow[], peek: string) => rows.length > 0 && (
+  const live = members.filter(m => m.status !== 'left');
+  const perGameRows = live.filter(m => m.perGame);
+  const yearly = live.filter(m => !m.perGame);
+  const paidRows = yearly.filter(isPaid);
+  const alumniRows = yearly.filter(m => m.status === 'exempt' && m.exemption === 'alumni');
+  const otherExempt = yearly.filter(m => m.status === 'exempt' && m.exemption !== 'alumni');
+  const openRows = yearly.filter(m => !isPaid(m) && m.status !== 'exempt');
+  const settled = [...paidRows, ...alumniRows, ...otherExempt];
+  const total = (rows: DuesMemberRow[], k: 'amountPaid' | 'balance') =>
+    rows.reduce((sum, r) => sum + Math.max(0, Number(r[k])), 0).toFixed(2);
+  const group = (label: string, count: number, peek: string, children: React.ReactNode) => count > 0 && (
     <details className="border border-border rounded-xl bg-surface/40 px-3 py-2">
       <summary className="cursor-pointer text-xs font-semibold text-text-secondary uppercase tracking-wide">
-        {label} <span className="tabular-nums text-text-tertiary">{rows.length}</span>
+        {label} <span className="tabular-nums text-text-tertiary">{count}</span>
         <span className="normal-case tracking-normal font-normal text-text-tertiary"> · {peek}</span>
       </summary>
-      <div className="mt-2 space-y-1.5">{rows.map(renderMember)}</div>
+      <div className="mt-2 space-y-1.5">{children}</div>
     </details>
+  );
+  const sub = (label: string, rows: DuesMemberRow[]) => rows.length > 0 && (
+    <div className="space-y-1.5">
+      <div className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide pt-1">
+        {label} <span className="tabular-nums">{rows.length}</span>
+      </div>
+      {rows.map(renderMember)}
+    </div>
   );
 
   const filterButton = (key: Filter, label: string, count: number) => (
@@ -478,8 +494,15 @@ export default function DuesTab({ players }: { players: Player[] }) {
       ) : (
         <div className="space-y-1.5">
           {openRows.map(renderMember)}
-          {group('Paid', paidRows, `${money(sumOf(paidRows, 'amountPaid'))} collected`)}
-          {group('Left', leftRows, `kept ${money(sumOf(leftRows, 'amountPaid'))}`)}
+          {group('Per game', perGameRows.length,
+            `${perGameRows.reduce((n, m) => n + (m.gamesPlayed ?? 0), 0)} games · ${money(total(perGameRows, 'balance'))} owing`,
+            perGameRows.map(renderMember))}
+          {group('Paid & not billed', settled.length, `${money(total(paidRows, 'amountPaid'))} collected`, <>
+            {sub('Paid in full', paidRows)}
+            {sub('Alumni', alumniRows)}
+            {sub('Other exempt', otherExempt)}
+          </>)}
+          {group('Left', leftRows.length, `kept ${money(total(leftRows, 'amountPaid'))}`, leftRows.map(renderMember))}
         </div>
       )}
 
