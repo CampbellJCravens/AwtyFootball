@@ -1,6 +1,6 @@
 # PRD — Hardening pass + features the data now supports
 
-Status: DRAFT, awaiting sign-off. Owner: Morgan-Sean. Drafted 2026-11-12 from a read-only review (code + public endpoints + two read-only counts on prod).
+Status: BUILT on three local branches 2026-11-12 (owner: "let's do all of them", "as well as the new features that are data supported"). NOT pushed, NOT merged, NOT deployed. Was: DRAFT. Owner: Morgan-Sean. Drafted 2026-11-12 from a read-only review (code + public endpoints + two read-only counts on prod).
 
 ## Problem
 1. **Player writes need no login.** `POST /api/players` and `PATCH /api/players/:id` (`backend/src/routes/players.ts:76`, `:170`) accept any caller, and ids are public from `GET /api/players`. Writable fields include `isAlumni` (the dues exemption), `phone` (decides whose WhatsApp votes count; changing it clears that player's RSVP claims), `onRoster`, `memberSince`, `name`, `staminaExempt` and a photo of up to 10 MB. This was a deliberate open-access choice, made before dues and WhatsApp attribution depended on those fields. The create route also logs every request body.
@@ -102,3 +102,19 @@ Each PR is a branch off `origin/main`, `tsc` clean in both packages, verified ag
 3. Site password: it gates the screen, not the data (names, photos and rosters are readable from the API without it; phone numbers are not exposed). Accept that as the casual gate it was meant to be, or gate the read API too? Recommendation: accept.
 4. Anonymous members can add their own phone when none is set; changing or clearing one becomes admin-only. OK?
 5. Direct merge to `main` as usual, or pull requests for Campbell to see? Either way he should hear about cut A before it deploys.
+
+## Build notes (2026-11-12)
+| Branch | Commit | Holds | Checks |
+|---|---|---|---|
+| `fix/player-write-lock` | 943f556 | Cuts A, B, F, G (gitignore) | backend tsc clean; `npm test` = 20 rule + 12 route + 18 existing assertions |
+| `ci/typecheck-and-tests` (on top of the first) | 7c1ffd8 | Cut E, workflow only | not run until pushed to GitHub |
+| `feat/guest-hosting-and-lateness` (off `origin/main`) | 9fe7384 | Cuts I, J | both tsc clean, vite build clean, 7 assertions, both computations run read-only on prod |
+
+- **Defaults taken where the owner had not answered:** anonymous members may add a missing phone but not change or clear one (Q4); the site password stays a screen gate only (Q3); the lateness award is built, named **Fashionably Late**, yearly report only (Q2).
+- **Cut A result:** a blocked request returns 403 with the refused field names and writes nothing, including when it is mixed with an allowed field.
+- **Cut F result:** `npm audit` 12 → 5. What remains needs major upgrades (`zod`, `googleapis`).
+- **Cut I on prod data:** window opens 2026-08-15, 13 played games, 12 hosts, 15 guests promised, 20 brought (8 unannounced), 5 visits with no host.
+- **Cut J on prod data:** 19 players have 5+ measured games, 5 have been late at least once, one current holder (3 late of 7).
+- **Cut C is LIVE on the NUC:** `~/afc-backups/export.cjs`, cron Saturday 14:00 CST, hub job "AFC backup". First export 11.2 MB. Sign-in sessions and the WhatsApp link credentials are deliberately left out.
+- **Still open:** cut D (owner, Render dashboard); cut H (2027 roster size); cut G branch cleanup; confirm the Render build command is `npm run build`; add `guest-hosting-assertions.cjs` to `npm test` once both branches are on `main`; phase 2 extraction of goal logic.
+- **Not verified:** nothing browser-tested; the yearly report now has one more award tile, so check its layout.
