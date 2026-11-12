@@ -10,6 +10,7 @@ dist/
 
 # Script backups (one per --apply run). These hold live roster and money data
 # and must never be committed.
+*-backup-*.json
 import-poll-backup-*.json
 mark-former-backup-*.json
 dues-*-backup.json
