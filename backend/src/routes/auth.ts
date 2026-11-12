@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import passport from 'passport';
 import prisma from '../prisma';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
@@ -29,7 +30,7 @@ const router = Router();
  * bundle. Returns 200 on match, 401 on miss. Frontend persists a localStorage
  * flag on success so each device only types the password once.
  */
-router.post('/site-password', async (req: Request, res: Response) => {
+router.post('/site-password', rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false }), async (req: Request, res: Response) => {
   const submitted = (req.body as { password?: unknown })?.password;
   if (typeof submitted !== 'string') {
     return res.status(400).json({ error: 'password required' });

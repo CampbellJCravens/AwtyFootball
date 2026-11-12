@@ -5,6 +5,8 @@ import { createPlayerSchema, updatePlayerSchema } from '../schemas/entry';
 import { requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { resyncPollsForPhone } from '../services/whatsapp/polls';
 import { clearPlayerClaims } from '../services/phoneLinks';
+import { refusedPlayerFields } from '../services/playerWrites';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
@@ -62,6 +64,22 @@ const serializePlayer = (p: any, isAdmin: boolean, req?: AuthenticatedRequest) =
 
 const isReqAdmin = (req: AuthenticatedRequest) => req.user?.role === 'admin';
 
+// Anonymous writes are part of the design (see services/playerWrites.ts), so they
+// are throttled per address. Admins are never limited: scoring a game creates
+// guest slots in bursts.
+const anonLimit = (max: number) =>
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: req => isReqAdmin(req as AuthenticatedRequest),
+    message: { error: 'Too many changes from this connection. Try again in an hour.' },
+  });
+
+const adminRequired = (res: Response, fields: string[]) =>
+  res.status(403).json({ error: `Only an admin can change: ${fields.join(', ')}`, code: 'admin_required', fields });
+
 /*
  * A photo is only ever stored as base64. Since serialisation now hands clients a
  * URL, any caller that echoes a whole player object back would otherwise write
@@ -72,12 +90,13 @@ const isReqAdmin = (req: AuthenticatedRequest) => req.user?.role === 'admin';
 const storablePicture = (value: string | null | undefined) =>
   value && isStorableImage(value) ? value : null;
 
-// POST /api/players - Create a new player (public; new RSVPers can self-register)
-router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// POST /api/players - Create a new player. Anyone may add themselves by name
+// ("Pick your player"); every other field takes an admin.
+router.post('/', anonLimit(10), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    console.log('Received request body:', req.body);
     const validatedData = createPlayerSchema.parse(req.body);
-    console.log('Validated data:', validatedData);
+    const refused = refusedPlayerFields({ isAdmin: isReqAdmin(req), mode: 'create', data: validatedData });
+    if (refused.length) return adminRequired(res, refused);
     const player = await prisma.player.create({
       data: {
         name: validatedData.name,
@@ -166,8 +185,9 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// PATCH /api/players/:id - Update a player (public; matches existing "any signed-in user can edit" behavior under the open-access model)
-router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// PATCH /api/players/:id - Update a player. Anyone may set a photo, or add a
+// phone where there is none; every other change takes an admin.
+router.patch('/:id', anonLimit(30), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const validatedData = updatePlayerSchema.parse(req.body);
@@ -179,6 +199,13 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response, next: Next
     const before = normalizedPhone !== undefined
       ? await prisma.player.findUnique({ where: { id }, select: { phone: true } })
       : null;
+    const refused = refusedPlayerFields({
+      isAdmin: isReqAdmin(req),
+      mode: 'update',
+      data: validatedData,
+      hasPhone: !!before?.phone,
+    });
+    if (refused.length) return adminRequired(res, refused);
     const phoneChanged = !!before?.phone && before.phone !== normalizedPhone;
 
     const player = await prisma.$transaction(async tx => {
