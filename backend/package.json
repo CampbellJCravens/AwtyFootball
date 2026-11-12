@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "prisma generate && tsc && prisma db push",
-    "test": "node scripts/player-write-assertions.cjs && node scripts/player-route-assertions.cjs && node scripts/guest-slot-assertions.cjs && node scripts/guest-promotion-assertions.cjs",
+    "test": "node scripts/player-write-assertions.cjs && node scripts/player-route-assertions.cjs && node scripts/guest-slot-assertions.cjs && node scripts/guest-promotion-assertions.cjs && node scripts/guest-hosting-assertions.cjs",
     "start": "node dist/index.js",
     "postinstall": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
