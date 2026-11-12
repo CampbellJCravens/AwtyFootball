@@ -328,6 +328,8 @@ export interface YearlyStatsResponse {
     sportsman: MonthlyAward[] | null;
     dirtiestPlayer: MonthlyAward[] | null;
     lackOfStamina: MonthlyAward[] | null;
+    // Late arrivals over measured games; optional so an older backend still renders.
+    fashionablyLate?: MonthlyAward[] | null;
   };
   bestDuo: { players: [PlayerStatsPlayer, PlayerStatsPlayer]; value: number }[] | null;
   bestTrio: { players: PlayerStatsPlayer[]; value: number; games?: number; wins?: number }[] | null;

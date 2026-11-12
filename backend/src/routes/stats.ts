@@ -12,6 +12,7 @@ import { summariseTempo } from '../services/tempo';
 import { computeChurn } from '../services/churn';
 import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
 import { computeDepartures, staminaAward } from '../services/departures';
+import { computeArrivals, latenessAward } from '../services/arrivals';
 import { publicPlayer, avatarUrl, loadPlayersForDisplay } from '../services/avatar';
 
 const router = Router();
@@ -943,6 +944,11 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         lackOfStamina: staminaAward(computeDepartures(yearGames, allPlayers))
           .filter(r => playerMap.has(r.playerId))
           .map(r => ({ player: playerMap.get(r.playerId)!, value: r.departures, games: r.gamesPlayed })),
+        // Most often late, as a rate. Yearly only: a month rarely has the five
+        // measured games the floor needs. Empty until someone qualifies.
+        fashionablyLate: latenessAward(computeArrivals(yearGames, allPlayers))
+          .filter(r => playerMap.has(r.playerId))
+          .map(r => ({ player: playerMap.get(r.playerId)!, value: r.late, games: r.measuredGames })),
       },
       bestDuo: bestDuo.length ? bestDuo : null,
       bestTrio: bestTrio.length ? bestTrio : null,
@@ -1208,7 +1214,7 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 // the DB is incomplete/stale, so we don't use it). Update each November when the
 // next year's roster is set; unlisted future years carry forward the latest.
 const ROSTER_BY_YEAR: Record<number, number> = {
-  2018: 43, 2019: 45, 2020: 47, 2021: 43, 2022: 48, 2023: 43, 2024: 48, 2025: 56, 2026: 55,
+  2018: 43, 2019: 45, 2020: 47, 2021: 43, 2022: 48, 2023: 43, 2024: 48, 2025: 56, 2026: 55, 2027: 39,
 };
 const ROSTER_YEARS = Object.keys(ROSTER_BY_YEAR).map(Number).sort((a, b) => a - b);
 function rosterSizeForYear(yr: number): number | null {

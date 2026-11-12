@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import GuestHostingCard from './GuestHostingCard';
 import { Player } from '../api/players';
 import {
   GuestLedgerRow,
@@ -382,6 +383,7 @@ export default function GuestLedgerTab({ players }: GuestLedgerTabProps) {
 
   return (
     <div className="space-y-3">
+      <GuestHostingCard />
       <div className="border border-border rounded-xl bg-surface/40 px-3 py-2.5">
         <p className="text-[11px] text-text-tertiary">
           Appearances by guest across all games. A guest in two slots in one game still counts once.

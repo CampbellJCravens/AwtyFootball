@@ -76,6 +76,8 @@ export default function Stats({ players, games, onPlayerClick, currentPlayerId }
         tile(data.awards.sportsman, 'SPORTSMAN', a => `${a.value} SP`),
         tile(data.awards.lackOfStamina, 'LACK OF STAMINA',
           a => `${a.value} exit${a.value === 1 ? '' : 's'} \u00b7 ${a.games ?? 0} GP \u00b7 ${a.games ? Math.round((a.value / a.games) * 100) : 0}%`),
+        tile(data.awards.fashionablyLate ?? null, 'FASHIONABLY LATE',
+          a => `${a.value} late \u00b7 ${a.games ?? 0} GP \u00b7 ${a.games ? Math.round((a.value / a.games) * 100) : 0}%`),
       ].filter((x): x is YearlyAwardItem => x !== null);
 
       const lb = (title: string, entries: { player: { name: string }; value: number }[]): YearlyLeaderboard =>
