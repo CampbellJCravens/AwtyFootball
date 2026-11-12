@@ -12,6 +12,7 @@ import { summariseTempo } from '../services/tempo';
 import { computeChurn } from '../services/churn';
 import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
 import { computeDepartures, staminaAward } from '../services/departures';
+import { computeArrivals, latenessAward } from '../services/arrivals';
 import { publicPlayer, avatarUrl, loadPlayersForDisplay } from '../services/avatar';
 
 const router = Router();
@@ -943,6 +944,11 @@ router.get('/yearly', async (req: AuthenticatedRequest, res: Response) => {
         lackOfStamina: staminaAward(computeDepartures(yearGames, allPlayers))
           .filter(r => playerMap.has(r.playerId))
           .map(r => ({ player: playerMap.get(r.playerId)!, value: r.departures, games: r.gamesPlayed })),
+        // Most often late, as a rate. Yearly only: a month rarely has the five
+        // measured games the floor needs. Empty until someone qualifies.
+        fashionablyLate: latenessAward(computeArrivals(yearGames, allPlayers))
+          .filter(r => playerMap.has(r.playerId))
+          .map(r => ({ player: playerMap.get(r.playerId)!, value: r.late, games: r.measuredGames })),
       },
       bestDuo: bestDuo.length ? bestDuo : null,
       bestTrio: bestTrio.length ? bestTrio : null,

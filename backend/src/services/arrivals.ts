@@ -100,6 +100,20 @@ export function bucketFor(
 }
 
 /**
+ * The lateness award: worst LATE rate (arrivals after the grace window) among
+ * players over the games floor. Ties share it, and a period with nobody late
+ * returns nothing so the reports render no tile. Mirrors staminaAward.
+ */
+export function latenessAward(rows: ArrivalRow[]): ArrivalRow[] {
+  const qualified = rows.filter(r => r.measuredGames >= MIN_GAMES && r.late > 0);
+  if (qualified.length === 0) return [];
+  const worst = Math.max(...qualified.map(r => r.late / r.measuredGames));
+  return qualified
+    .filter(r => r.late / r.measuredGames === worst)
+    .sort((a, b) => b.late - a.late);
+}
+
+/**
  * Per-player arrival counts over the given games.
  *
  * `players` supplies names, so the GuestN pool drops out. Ids with no player

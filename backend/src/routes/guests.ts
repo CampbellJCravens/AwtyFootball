@@ -11,6 +11,7 @@ import {
 import { unlinkGuestPhone } from '../services/phoneLinks';
 import { resyncPollsForPhone } from '../services/whatsapp/polls';
 import prisma from '../prisma';
+import { computeGuestHosting } from '../services/guestHosting';
 
 const router = Router();
 
@@ -23,6 +24,17 @@ router.get('/', requireAdmin, async (_req: AuthenticatedRequest, res: Response) 
   } catch (error) {
     console.error('Error fetching guests:', error);
     res.status(500).json({ error: 'Failed to fetch guests' });
+  }
+});
+
+// GET /api/guests/hosting - guests each member said they'd bring vs the guests
+// recorded against them, from the first game that has a host on record.
+router.get('/hosting', requireAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    res.json(await computeGuestHosting());
+  } catch (error) {
+    console.error('Error computing guest hosting:', error);
+    res.status(500).json({ error: 'Failed to compute guest hosting' });
   }
 });
 

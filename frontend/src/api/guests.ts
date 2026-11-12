@@ -127,3 +127,26 @@ export async function unlinkGuestPhone(guestId: string): Promise<{ phone: string
   if (!res.ok) throw new Error(body.error || 'Failed to unlink number');
   return body;
 }
+
+export interface GuestHostingRow {
+  playerId: string;
+  name: string;
+  promised: number;
+  brought: number;
+  gamesPromised: number;
+  gamesKept: number;
+  unannounced: number;
+}
+
+export interface GuestHosting {
+  since: string | null;
+  games: number;
+  unhostedVisits: number;
+  rows: GuestHostingRow[];
+}
+
+export async function fetchGuestHosting(): Promise<GuestHosting> {
+  const response = await fetch(`${API_BASE_URL}/guests/hosting`, { credentials: 'include' });
+  if (!response.ok) throw new Error('Failed to fetch guest hosting');
+  return response.json();
+}
