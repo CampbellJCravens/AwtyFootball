@@ -50,6 +50,14 @@ Out: moving any other stat to the roster year; changing who counts as having res
 - **The 17 dues-exempt members are in the 39.** They are on the roster and expected to respond, so they count. If the owner wants only billed members, the number would be 22 and the rule needs to say so.
 - **A close date set too early** re-measures games already played. The confirm line shows the first affected game before saving.
 
+## Known issue (2026-11-12) — fix or test before closing the 2028 roster
+The 2027 close was attempted twice from the Dues tab and never reached the server (no row change, no error shown; the owner saw the control "disappear", leaving only Add someone / Sync roster). The date was then set directly in the database: 2027 closed 12 Nov 2026, verified (7 Nov reads 55, 14 Nov reads 39).
+Cause unknown. Suspects: a stale cached page in the owner's browser (no cache headers on the static site yet), or the two-step control below the money bar never reaching its second button.
+Before the Oct/Nov 2027 close:
+1. Test the control end to end in a browser with an admin session.
+2. Consider moving it beside Add someone / Sync roster and making it one step with a confirm.
+3. After closing, check the first game on or after the date in `GET /api/stats/field-stats` shows the new `rosterYear` and `rosterSize`.
+
 ## Open questions
 1. Close date for 2027: today, 12 Nov 2026, so game #46 on 14 Nov is the first measured against 39? Or an earlier date (the first members were marked left on 30 Sep)?
 2. Do the 17 dues-exempt members (alumni and school dads) count in the roster size? The 39 you gave includes them, so the draft says yes.
