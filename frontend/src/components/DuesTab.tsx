@@ -7,6 +7,7 @@ import {
 } from '../api/dues';
 import RecordPaymentModal from './RecordPaymentModal';
 import AddDuesEntryModal from './AddDuesEntryModal';
+import RosterCloseControl from './RosterCloseControl';
 
 // The October collection, on one page. Sorted by what's outstanding so the
 // chase list is the top of the list, and part-payers read as part-payers rather
@@ -435,6 +436,15 @@ export default function DuesTab({ players }: { players: Player[] }) {
           </p>
         </div>
       </div>
+
+      <RosterCloseControl
+        key={`${year}-${report.rosterClosedAt ?? 'open'}`}
+        year={year}
+        closedAt={report.rosterClosedAt ?? null}
+        size={report.rosterSize ?? report.members.length - report.totals.left}
+        onChanged={() => load(year)}
+        onError={setError}
+      />
 
       {/* Collection opens in October for the year ahead, and nothing in this app
           runs on a clock — a dues year exists only once someone opens it. */}

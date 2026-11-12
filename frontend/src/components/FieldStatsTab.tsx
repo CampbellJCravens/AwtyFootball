@@ -380,7 +380,15 @@ export default function FieldStatsTab() {
             {(() => {
               const rows: JSX.Element[] = [];
               let lastYear: number | null = null;
+              let prev: (typeof validFiltered)[number] | null = null;
               for (const r of [...validFiltered].reverse()) {
+                // Newest first: the line goes under the oldest game measured against
+                // next year's roster, so a jump in the percentages is explained.
+                const rosterChanged =
+                  !!prev && !!prev.rosterYear && !!r.rosterYear &&
+                  prev.rosterYear !== r.rosterYear && prev.rosterYear !== prev.year && prev.year === r.year;
+                const changedFrom = prev;
+                prev = r;
                 if (r.year !== lastYear) {
                   lastYear = r.year;
                   const yc = effectiveCollapsed.has(r.year);
@@ -394,6 +402,15 @@ export default function FieldStatsTab() {
                   );
                 }
                 if (effectiveCollapsed.has(r.year)) continue;
+                if (rosterChanged && changedFrom) {
+                  rows.push(
+                    <tr key={`roster-${changedFrom.isoDate}`} className="border-b border-gold/40">
+                      <td colSpan={8} className="py-1 px-1 pl-4 text-[10px] text-gold">
+                        ↑ {changedFrom.rosterYear} roster{changedFrom.rosterSize ? ` · ${changedFrom.rosterSize} members` : ''} from {changedFrom.date} · Resp% and Show% above use it
+                      </td>
+                    </tr>
+                  );
+                }
                 const key      = r.played.toLowerCase();
                 const info     = FIELD_STATUS[key] || { label: r.played, color: 'text-text-secondary', bg: '' };
                 const isPlayed = key === 'yes';
