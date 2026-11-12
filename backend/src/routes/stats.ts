@@ -1214,7 +1214,7 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 // the DB is incomplete/stale, so we don't use it). Update each November when the
 // next year's roster is set; unlisted future years carry forward the latest.
 const ROSTER_BY_YEAR: Record<number, number> = {
-  2018: 43, 2019: 45, 2020: 47, 2021: 43, 2022: 48, 2023: 43, 2024: 48, 2025: 56, 2026: 55,
+  2018: 43, 2019: 45, 2020: 47, 2021: 43, 2022: 48, 2023: 43, 2024: 48, 2025: 56, 2026: 55, 2027: 39,
 };
 const ROSTER_YEARS = Object.keys(ROSTER_BY_YEAR).map(Number).sort((a, b) => a - b);
 function rosterSizeForYear(yr: number): number | null {
