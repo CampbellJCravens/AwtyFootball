@@ -111,6 +111,10 @@ model DuesYearConfig {
   memberAmount  Decimal  @db.Decimal(10, 2) // per billed member, e.g. 150.00
   guestGameRate Decimal  @db.Decimal(10, 2) // per billable guest game, e.g. 30.00
   openedAt      DateTime? // when collection opened and memberAmount was fixed
+  // The day this year's roster was declared final (usually Oct/Nov of the year
+  // before). From then on Response% and Show% are measured against THIS year's
+  // roster. Nothing else moves: a November game still belongs to its calendar year.
+  rosterClosedAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

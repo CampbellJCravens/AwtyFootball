@@ -87,6 +87,10 @@ export interface DuesYearReport {
   memberAmount: string;
   guestGameRate: string;
   openedAt: string | null;
+  /** The day this year's roster was declared final; null while still open. */
+  rosterClosedAt: string | null;
+  /** Members on the year's roster right now (exempt included, left excluded). */
+  rosterSize: number;
   members: DuesMemberRow[];
   /** Money received from people with no roster entry for this year. */
   unrostered: UnrosteredPaymentRow[];
@@ -328,6 +332,8 @@ export const computeDuesYearReport = async (duesYear: number): Promise<DuesYearR
     memberAmount: money(memberAmount),
     guestGameRate: money(rate),
     openedAt: config.openedAt?.toISOString() ?? null,
+    rosterClosedAt: config.rosterClosedAt?.toISOString() ?? null,
+    rosterSize: entries.filter(e => !e.leftAt).length,
     members,
     unrostered,
     guests,

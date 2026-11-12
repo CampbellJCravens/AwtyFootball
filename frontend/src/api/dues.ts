@@ -65,6 +65,8 @@ export interface DuesYearReport {
   memberAmount: string;
   guestGameRate: string;
   openedAt: string | null;
+  rosterClosedAt?: string | null;
+  rosterSize?: number;
   members: DuesMemberRow[];
   /** Payments from people with no roster entry for the year — historical
    *  imports, and anyone paid for before being added to the roster. */
@@ -127,6 +129,12 @@ export const saveDuesConfig = (
   year: number,
   config: { targetAmount: string; memberAmount: string; guestGameRate: string }
 ) => req<DuesYearSummary>(`/dues/${year}/config`, { method: 'PUT', body: JSON.stringify(config) });
+
+export const setRosterClose = (year: number, date: string | null) =>
+  req<{ duesYear: number; rosterClosedAt: string | null }>(`/dues/${year}/roster-close`, {
+    method: 'POST',
+    body: JSON.stringify({ date }),
+  });
 
 export const openDuesYear = (year: number) =>
   req<{ added: number; alreadyPresent: number }>(`/dues/${year}/open`, { method: 'POST' });

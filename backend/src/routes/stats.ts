@@ -13,6 +13,7 @@ import { computeChurn } from '../services/churn';
 import { computePercentiles, DEFAULT_MIN_GAMES } from '../services/percentiles';
 import { computeDepartures, staminaAward } from '../services/departures';
 import { computeArrivals, latenessAward } from '../services/arrivals';
+import { rosterOn } from '../services/rosterSize';
 import { publicPlayer, avatarUrl, loadPlayersForDisplay } from '../services/avatar';
 
 const router = Router();
@@ -1211,10 +1212,12 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 
 // Annual member roster sizes from the club's field-statistics sheet. This is the
 // denominator for response/attendance rates (the stored FieldStat.groupSize in
-// the DB is incomplete/stale, so we don't use it). Update each November when the
-// next year's roster is set; unlisted future years carry forward the latest.
+// the DB is incomplete/stale, so we don't use it). FROZEN: from 2027 on the size
+// comes from the dues roster (services/rosterSize.ts), so nothing is added here.
+// Unlisted years carry forward the latest, which only matters if a year somehow
+// has no dues roster.
 const ROSTER_BY_YEAR: Record<number, number> = {
-  2018: 43, 2019: 45, 2020: 47, 2021: 43, 2022: 48, 2023: 43, 2024: 48, 2025: 56, 2026: 55, 2027: 39,
+  2018: 43, 2019: 45, 2020: 47, 2021: 43, 2022: 48, 2023: 43, 2024: 48, 2025: 56, 2026: 55,
 };
 const ROSTER_YEARS = Object.keys(ROSTER_BY_YEAR).map(Number).sort((a, b) => a - b);
 function rosterSizeForYear(yr: number): number | null {
@@ -1230,12 +1233,15 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
     const year = yearParam ? parseInt(yearParam) : null;
     const where = year && !isNaN(year) ? { year } : {};
 
-    const [stats, allGames, allPlayers, allRsvps] = await Promise.all([
+    const [stats, allGames, allPlayers, allRsvps, duesYears, duesEntries] = await Promise.all([
       prisma.fieldStat.findMany({ where, orderBy: { date: 'asc' } }),
       prisma.game.findMany({ select: { id: true, createdAt: true, teamAssignments: true, field: true } }),
       prisma.player.findMany({ select: { id: true, name: true, isAlumni: true } }),
       prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true } }),
+      prisma.duesYearConfig.findMany({ select: { duesYear: true, rosterClosedAt: true } }),
+      prisma.duesRosterEntry.findMany({ select: { duesYear: true, joinedAt: true, leftAt: true } }),
     ]);
+    const rosterFor = (isoDate: string) => rosterOn(isoDate, duesYears, duesEntries, rosterSizeForYear);
 
     const nameById = new Map(allPlayers.map(p => [p.id, p.name]));
     const isGuest = (pid: string) => (nameById.get(pid) ?? '').includes('Guest');
@@ -1276,9 +1282,11 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
       else if (r.status === 'no') poll.out++;
     }
 
-    // Live response/attendance vs the year's roster (0 when we can't compute).
-    const liveRates = (isoDate: string, yr: number) => {
-      const size = rosterSizeForYear(yr);
+    // Live response/attendance vs the roster in force on the day (0 when we
+    // can't compute). That is the calendar year's roster until next year's is
+    // closed, and next year's from then on.
+    const liveRates = (isoDate: string) => {
+      const { size } = rosterFor(isoDate);
       const responders = respByDate.get(isoDate)?.size ?? 0;
       const shown = shownByDate.get(isoDate)?.size ?? 0;
       return {
@@ -1315,7 +1323,7 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
       // recent weeks (no sheet rate yet) still populate.
       const storedResp = parseFloat((s.responseRate * 100).toFixed(2));
       const storedAtt = parseFloat((s.attendanceRate * 100).toFixed(2));
-      const live = liveRates(isoDate, s.year);
+      const live = liveRates(isoDate);
 
       return {
         year: s.year,
@@ -1337,6 +1345,8 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         turnoutVsRsvp,
         alumniRate: alumniRateFor(isoDate),
         notes: s.notes ?? null,
+        rosterYear: rosterFor(isoDate).rosterYear,
+        rosterSize: rosterFor(isoDate).size,
       };
     });
 
@@ -1347,7 +1357,7 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
       const dateObj = new Date(isoDate + 'T00:00:00Z');
       const yr = dateObj.getUTCFullYear();
       if (year && yr !== year) continue;
-      const live = liveRates(isoDate, yr);
+      const live = liveRates(isoDate);
       records.push({
         year: yr,
         date: `${dateObj.getUTCDate()}-${MONTH_NAMES[dateObj.getUTCMonth()]}`,
@@ -1368,6 +1378,8 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
         turnoutVsRsvp: null,
         alumniRate: alumniRateFor(isoDate),
         notes: null,
+        rosterYear: rosterFor(isoDate).rosterYear,
+        rosterSize: rosterFor(isoDate).size,
       });
     }
     records.sort((a, b) => a.isoDate.localeCompare(b.isoDate));

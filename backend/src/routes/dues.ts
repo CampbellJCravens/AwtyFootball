@@ -5,6 +5,7 @@ import {
   addDuesEntry,
   computeDuesYearReport,
   currentDuesYear,
+  getDuesYearConfig,
   markManyLeft,
   markPlayerLeft,
   openDuesYear,
@@ -85,6 +86,37 @@ router.put('/:year/config', requireAdmin, async (req: AuthenticatedRequest, res:
     });
   } catch (error) {
     fail(res, error, 'Failed to save dues config');
+  }
+});
+
+// POST /api/dues/:year/roster-close - declare the year's roster final as of a
+// day, or re-open it with { date: null }. From that day on Response% and Show%
+// are measured against this year's roster (services/rosterSize.ts). Nothing
+// else changes, and re-opening restores the old numbers.
+router.post('/:year/roster-close', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const year = parseYear(req.params.year, NaN);
+  if (year === null || Number.isNaN(year)) return res.status(400).json({ error: 'Invalid year.' });
+
+  const { date } = req.body ?? {};
+  if (date !== null && (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+    return res.status(400).json({ error: 'date must be yyyy-mm-dd, or null to re-open.' });
+  }
+  // A roster is closed in the autumn before its year, or during it. Anything
+  // else is a typo that would re-measure games it has no business touching.
+  if (date && (date < `${year - 1}-07-01` || date > `${year}-12-31`)) {
+    return res.status(400).json({ error: `The ${year} roster can only be closed between 1 Jul ${year - 1} and 31 Dec ${year}.` });
+  }
+
+  try {
+    await getDuesYearConfig(year);
+    // Noon UTC so the stored instant is the same calendar day in every timezone.
+    const row = await prisma.duesYearConfig.update({
+      where: { duesYear: year },
+      data: { rosterClosedAt: date ? new Date(`${date}T12:00:00Z`) : null },
+    });
+    res.json({ duesYear: year, rosterClosedAt: row.rosterClosedAt?.toISOString() ?? null });
+  } catch (error) {
+    fail(res, error, 'Failed to update the roster close');
   }
 });
 

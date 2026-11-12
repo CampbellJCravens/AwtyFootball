@@ -451,6 +451,10 @@ export interface FieldGameRecord {
   // null for the frozen pre-2026 history (no per-player roster recorded).
   alumniRate?: number | null;
   notes: string | null;
+  // The roster Resp%/Show% were measured against. Differs from `year` for games
+  // played after next year's roster was closed. Absent on the frozen history.
+  rosterYear?: number;
+  rosterSize?: number | null;
 }
 
 const HISTORICAL_FIELD_STATS: FieldGameRecord[] = [
