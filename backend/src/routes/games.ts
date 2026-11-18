@@ -263,6 +263,11 @@ router.put('/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response
 
     if (data.field !== undefined) {
       updateData.field = data.field; // null clears, 'stadium'/'grass' sets
+      if (data.field !== 'cancelled') updateData.cancelReason = null;
+    }
+
+    if (data.cancelReason !== undefined && (data.field ?? 'cancelled') === 'cancelled') {
+      updateData.cancelReason = data.cancelReason;
     }
 
     if (data.startedAt !== undefined) {

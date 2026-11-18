@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import EditGameModal from './EditGameModal';
-import { updateGame, Goal, GameField } from '../api/games';
+import { updateGame, Goal, GameField, CancelReason, fieldLabel } from '../api/games';
 import { scoreFor } from '../utils/goals';
 
 interface GameModuleCondensedProps {
@@ -8,6 +8,7 @@ interface GameModuleCondensedProps {
   date: string;
   gameNumber: number | null;
   field?: GameField | null;
+  cancelReason?: CancelReason | null;
   goals?: Goal[];
   teamAssignments?: Record<string, 'color' | 'white'>;
   onClick: () => void;
@@ -17,7 +18,7 @@ interface GameModuleCondensedProps {
   showEditDate?: boolean;
 }
 
-export default function GameModuleCondensed({ gameId, date, gameNumber, field = null, goals, teamAssignments, onClick, onDelete, onDateUpdated, showDelete = true, showEditDate = true }: GameModuleCondensedProps) {
+export default function GameModuleCondensed({ gameId, date, gameNumber, field = null, cancelReason = null, goals, teamAssignments, onClick, onDelete, onDateUpdated, showDelete = true, showEditDate = true }: GameModuleCondensedProps) {
   const [showEditModal, setShowEditModal] = useState(false);
 
   const formatDate = (dateString: string) => {
@@ -29,12 +30,13 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, field = 
   const whiteGoals = scoreFor(goals ?? [], 'white');
   const playerCount = teamAssignments ? Object.keys(teamAssignments).length : 0;
 
-  const handleEdit = async (updates: { dateIso: string; gameNumber: number; field: GameField | null }) => {
+  const handleEdit = async (updates: { dateIso: string; gameNumber: number; field: GameField | null; cancelReason: CancelReason | null }) => {
     try {
       await updateGame(gameId, {
         createdAt: updates.dateIso,
         gameNumber: updates.gameNumber,
         field: updates.field,
+        cancelReason: updates.cancelReason,
       });
       if (onDateUpdated) onDateUpdated();
     } catch (err) {
@@ -66,7 +68,7 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, field = 
             <span className="text-text-tertiary text-xs">{formatDate(date)}</span>
             <span className="text-text-muted text-xs">•</span>
             <span className="text-text-tertiary text-xs uppercase tracking-wider truncate">
-              {field === 'stadium' ? 'Stadium' : field === 'grass' ? 'Grass' : field === 'cancelled' ? 'Cancelled' : 'N/A'}
+              {fieldLabel(field, cancelReason, 'N/A')}
             </span>
           </div>
           {(showEditDate || showDelete) && (
@@ -115,6 +117,7 @@ export default function GameModuleCondensed({ gameId, date, gameNumber, field = 
           currentDate={date}
           currentGameNumber={gameNumber}
           currentField={field}
+          currentCancelReason={cancelReason}
           onSelect={handleEdit}
           onClose={() => setShowEditModal(false)}
         />

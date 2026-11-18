@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GameField } from '../api/games';
+import { GameField, CancelReason, CANCEL_REASONS } from '../api/games';
 import {
   toDateInputValue,
   toTimeInputValue,
@@ -10,7 +10,8 @@ interface EditGameModalProps {
   currentDate: string; // ISO date string
   currentGameNumber: number | null;
   currentField: GameField | null;
-  onSelect: (updates: { dateIso: string; gameNumber: number; field: GameField | null }) => void;
+  currentCancelReason?: CancelReason | null;
+  onSelect: (updates: { dateIso: string; gameNumber: number; field: GameField | null; cancelReason: CancelReason | null }) => void;
   onClose: () => void;
   onTriggerImport?: () => void; // optional admin-only entry point to CSV import
 }
@@ -26,6 +27,7 @@ export default function EditGameModal({
   currentDate,
   currentGameNumber,
   currentField,
+  currentCancelReason = null,
   onSelect,
   onClose,
   onTriggerImport,
@@ -35,6 +37,7 @@ export default function EditGameModal({
   const [timeValue, setTimeValue] = useState(() => toTimeInputValue(initial));
   const [gameNumber, setGameNumber] = useState<number>(currentGameNumber || 1);
   const [field, setField] = useState<GameField | ''>(currentField ?? '');
+  const [cancelReason, setCancelReason] = useState<CancelReason | ''>(currentCancelReason ?? '');
 
   useEffect(() => {
     if (currentGameNumber !== null) setGameNumber(currentGameNumber);
@@ -46,6 +49,7 @@ export default function EditGameModal({
       dateIso: date.toISOString(),
       gameNumber,
       field: field === '' ? null : field,
+      cancelReason: field === 'cancelled' && cancelReason !== '' ? cancelReason : null,
     });
     onClose();
   };
@@ -99,6 +103,22 @@ export default function EditGameModal({
             ))}
           </select>
         </div>
+
+        {field === 'cancelled' && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-text-secondary mb-2">Reason</label>
+            <select
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value as CancelReason | '')}
+              className="w-full px-3 py-2 border border-border-emphasis rounded-xl focus:ring-2 focus:ring-accent focus:border-transparent outline-none text-base bg-surface-raised text-text-primary"
+            >
+              <option value="">Other / not sure</option>
+              {CANCEL_REASONS.map(r => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="mb-6">
           <label className="block text-sm font-medium text-text-secondary mb-2">Game Number</label>

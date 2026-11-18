@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Player, fetchPlayers, createPlayer } from '../api/players';
-import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, Game, LeaveReason, LEAVE_REASON_LABELS, GoalQualifier, GOAL_QUALIFIER_LABELS, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
+import { fetchGame, updateGame, Goal, TeamChange, GameEvent, GameField, CancelReason, fieldLabel, Game, LeaveReason, LEAVE_REASON_LABELS, GoalQualifier, GOAL_QUALIFIER_LABELS, exportGameToSheets, importGameFromCsv, parseAvailableGames } from '../api/games';
 import { scoreFor, pickMenOfTheMatch } from '../utils/goals';
 import Accordion from './Accordion';
 import GamePlayerCard from './GamePlayerCard';
@@ -87,9 +87,6 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
 
   const formatTime = (dateString: string) =>
     new Date(dateString).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const fieldLabel = (f: GameField | null) => (
-    f === 'stadium' ? 'Stadium' : f === 'grass' ? 'Grass' : f === 'cancelled' ? 'Cancelled' : 'N/A FIELD'
-  );
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   // Autosave must never run against state that was never loaded. setLoading(false)
@@ -147,6 +144,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   const [activeTab, setActiveTab] = useState<GameViewTab>(initialTab);
   const [pollVersion, setPollVersion] = useState(0); // bump to refresh the RSVP poll view
   const [currentField, setCurrentField] = useState<GameField | null>(null);
+  const [currentCancelReason, setCurrentCancelReason] = useState<CancelReason | null>(null);
   const [balance, setBalance] = useState<Game['balance']>(undefined);
   const [currentDate, setCurrentDate] = useState<string>(gameDate);
   // Guest name + host, keyed by the GuestN pool player holding the slot.
@@ -154,7 +152,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   // Slot awaiting details: `team` is set when the guest is being added (assign
   // on confirm), null when an existing guest is being edited.
   const [guestSlotPending, setGuestSlotPending] = useState<{ slotPlayerId: string; team: 'color' | 'white' | null } | null>(null);
-  const gameTitle = `${formatDate(currentDate)} - ${formatTime(currentDate)} - ${fieldLabel(currentField)}`;
+  const gameTitle = `${formatDate(currentDate)} - ${formatTime(currentDate)} - ${fieldLabel(currentField, currentCancelReason)}`;
 
   // Display label for a guest with a name on them. Falls back to the canonical
   // Player.name — which is what every guest-exclusion check in the app matches
@@ -194,6 +192,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
       // Pull the persisted field + date into local state so the header title
       // reflects whatever was last saved (rather than the stale prop).
       setCurrentField(gameData.field ?? null);
+      setCurrentCancelReason(gameData.cancelReason ?? null);
       setCurrentDate(gameData.createdAt);
       setBalance(gameData.balance);
 
@@ -754,12 +753,13 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
   }, []);
 
   // Handle editing game (date, time, field, game number)
-  const handleEditGame = useCallback(async (updates: { dateIso: string; gameNumber: number; field: GameField | null }) => {
+  const handleEditGame = useCallback(async (updates: { dateIso: string; gameNumber: number; field: GameField | null; cancelReason: CancelReason | null }) => {
     try {
       await updateGame(gameId, {
         createdAt: updates.dateIso,
         gameNumber: updates.gameNumber,
         field: updates.field,
+        cancelReason: updates.cancelReason,
       });
       await loadGameData();
       setShowEditModal(false);
@@ -2313,6 +2313,7 @@ export default function GameModuleExpanded({ gameId, gameNumber, gameDate, onClo
           currentDate={currentDate}
           currentGameNumber={gameNumber}
           currentField={currentField}
+          currentCancelReason={currentCancelReason}
           onSelect={handleEditGame}
           onClose={() => setShowEditModal(false)}
           onTriggerImport={isAdmin ? () => { setShowEditModal(false); setShowImportModal(true); } : undefined}

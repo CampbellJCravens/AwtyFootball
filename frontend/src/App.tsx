@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Player, fetchPlayers, deletePlayer } from './api/players';
-import { Game, GameField, fetchGames, createGame, updateGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
+import { Game, GameField, CancelReason, fetchGames, createGame, updateGame, deleteGame, importGameFromCsvNew, parseAvailableGames } from './api/games';
 import { Achievement, fetchNewAchievements } from './api/stats';
 import { useAuth } from './contexts/AuthContext';
 import { usePlayerIdentity } from './hooks/usePlayerIdentity';
@@ -412,6 +412,7 @@ function App() {
                   date={game.createdAt}
                   gameNumber={game.gameNumber}
                   field={game.field}
+                  cancelReason={game.cancelReason}
                   goals={game.goals}
                   teamAssignments={game.teamAssignments}
                   onClick={() => handleEditGame(game.id)}
@@ -841,11 +842,11 @@ function App() {
         {fieldPromptGameId && (
           <FieldPickerModal
             onSkip={() => setFieldPromptGameId(null)}
-            onSelect={async (field: GameField | null) => {
+            onSelect={async (field: GameField | null, cancelReason?: CancelReason | null) => {
               const id = fieldPromptGameId;
               setFieldPromptGameId(null);
               try {
-                const updated = await updateGame(id, { field });
+                const updated = await updateGame(id, { field, cancelReason });
                 setGames((prev) => prev.map((g) => (g.id === id ? updated : g)));
                 setGameModuleRefresh((n) => n + 1); // remount so the open game shows the field
               } catch (err) {

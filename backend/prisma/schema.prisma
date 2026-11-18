@@ -58,6 +58,11 @@ model Game {
   // Which field/turf the game was played on. "stadium" | "grass" |
   // "cancelled" | null. null = "N/A FIELD" in the UI.
   field           String?
+  // Why a cancelled game was called off: "school use" | "weather" |
+  // "low numbers" | null. Values match the historical FieldStat.played keys so
+  // Field Stats buckets old and new cancellations together. Only meaningful
+  // when field = "cancelled"; cleared whenever the field changes away from it.
+  cancelReason    String?
 
   // Kick-off, set by the start button. null = not started. This is NOT the game
   // date: createdAt remains the date everywhere in the app, and reading

@@ -1235,7 +1235,7 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
 
     const [stats, allGames, allPlayers, allRsvps, duesYears, duesEntries] = await Promise.all([
       prisma.fieldStat.findMany({ where, orderBy: { date: 'asc' } }),
-      prisma.game.findMany({ select: { id: true, createdAt: true, teamAssignments: true, field: true } }),
+      prisma.game.findMany({ select: { id: true, createdAt: true, teamAssignments: true, field: true, cancelReason: true } }),
       prisma.player.findMany({ select: { id: true, name: true, isAlumni: true } }),
       prisma.gameRsvp.findMany({ select: { gameId: true, playerId: true, status: true } }),
       prisma.duesYearConfig.findMany({ select: { duesYear: true, rosterClosedAt: true } }),
@@ -1253,10 +1253,12 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
     const gameDate = new Map<string, string>();          // gameId → iso date
     const shownByDate = new Map<string, Set<string>>();  // non-guest players who showed
     const fieldByDate = new Map<string, string>();       // iso date → game field/location
+    const cancelledByDate = new Map<string, string | null>(); // iso date → cancel reason
     for (const g of allGames) {
       const dateKey = g.createdAt.toISOString().slice(0, 10);
       gameDate.set(g.id, dateKey);
-      if (g.field && !fieldByDate.has(dateKey)) fieldByDate.set(dateKey, g.field);
+      if (g.field === 'cancelled') cancelledByDate.set(dateKey, g.cancelReason ?? null);
+      else if (g.field && !fieldByDate.has(dateKey)) fieldByDate.set(dateKey, g.field);
       const assignments = safeParseJSON<Record<string, string>>(g.teamAssignments, {});
       playerCountByDate.set(dateKey, (playerCountByDate.get(dateKey) ?? 0) + Object.keys(assignments).length);
       let shown = shownByDate.get(dateKey);
@@ -1317,7 +1319,10 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
 
       // App game tracking supersedes FieldStat: if a game was played for this date,
       // mark played='yes' regardless of stored FieldStat.played value.
-      const playedStatus = trackedPlayers && trackedPlayers > 0 ? 'yes' : s.played;
+      // A game cancelled in the app overrides the sheet only when it names a reason.
+      const playedStatus = trackedPlayers && trackedPlayers > 0
+        ? 'yes'
+        : cancelledByDate.get(isoDate) ?? s.played;
 
       // Prefer the stored sheet rate; fall back to live RSVP/roster data so
       // recent weeks (no sheet rate yet) still populate.
@@ -1358,11 +1363,12 @@ router.get('/field-stats', async (req: AuthenticatedRequest, res: Response) => {
       const yr = dateObj.getUTCFullYear();
       if (year && yr !== year) continue;
       const live = liveRates(isoDate);
+      const cancelled = count === 0 && cancelledByDate.has(isoDate);
       records.push({
         year: yr,
         date: `${dateObj.getUTCDate()}-${MONTH_NAMES[dateObj.getUTCMonth()]}`,
         isoDate,
-        played: 'yes',
+        played: cancelled ? cancelledByDate.get(isoDate) ?? 'no' : 'yes',
         location: fieldByDate.get(isoDate) ?? null,
         waIn: pollByDate.get(isoDate)?.in ?? null,
         waPlus1: null,

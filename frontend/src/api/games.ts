@@ -95,6 +95,25 @@ export interface GameEvent {
 
 export type GameField = 'stadium' | 'grass' | 'cancelled';
 
+// Values match the historical Field Stats "played" keys. null = no reason given.
+export type CancelReason = 'school use' | 'weather' | 'low numbers';
+
+export const CANCEL_REASONS: { value: CancelReason; label: string }[] = [
+  { value: 'school use', label: 'School use' },
+  { value: 'weather', label: 'Weather' },
+  { value: 'low numbers', label: 'Low numbers' },
+];
+
+export function fieldLabel(field: GameField | null | undefined, reason?: CancelReason | null, none = 'N/A FIELD'): string {
+  if (field === 'stadium') return 'Stadium';
+  if (field === 'grass') return 'Grass';
+  if (field === 'cancelled') {
+    const r = CANCEL_REASONS.find(o => o.value === reason);
+    return r ? `Cancelled · ${r.label}` : 'Cancelled';
+  }
+  return none;
+}
+
 // One guest appearance. `slotPlayerId` is the GuestN pool Player that carries
 // the guest through teamAssignments/goals — `guestName` is a display label
 // only and is NEVER written to Player.name (guest exclusion across the app
@@ -129,6 +148,7 @@ export interface Game {
   sportsmanship?: Record<string, number>;
   fouls?: Record<string, number>;
   field?: GameField | null;
+  cancelReason?: CancelReason | null;
   // Kick-off, set by the start button. null/absent = not started. Never use this
   // as the game date — createdAt is the date everywhere.
   startedAt?: string | null;
@@ -156,6 +176,7 @@ export interface UpdateGameData {
   createdAt?: string; // ISO date string
   gameNumber?: number; // Add game number
   field?: GameField | null;
+  cancelReason?: CancelReason | null;
   startedAt?: string | null; // ISO date string; null clears a mis-tapped start
 }
 

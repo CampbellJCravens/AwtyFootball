@@ -89,6 +89,7 @@ export const updateGameSchema = z.object({
   createdAt: z.string().datetime().optional(), // ISO date string
   gameNumber: z.number().int().positive().optional(), // Add game number support
   field: z.enum(['stadium', 'grass', 'cancelled']).nullable().optional(),
+  cancelReason: z.enum(['school use', 'weather', 'low numbers']).nullable().optional(),
   // Kick-off. null clears it, so a mis-tap on the start button is undoable.
   startedAt: z.string().datetime().nullable().optional(),
 });
